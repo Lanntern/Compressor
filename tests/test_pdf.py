@@ -91,3 +91,28 @@ def test_convert_pdfs_and_undo(tmp_path):
     r = process_convert(pic, Plan(True, "", ".pdf", route="pdf"), s, None,
                         opts=convert.ConvertOptions(image_target="pdf"))
     assert r.status == DONE and pdftools.page_count(r.output) == 1
+
+
+def test_undo_of_pages_made_in_replace_mode_removes_the_folder(tmp_path):
+    """PDF → page images with Replace: undoing brings the PDF back from the bin and removes the page folder."""
+    import time
+
+    from compressor import journal
+    from compressor.engine import undo_record
+    from compressor.fileops import move_to_trash
+
+    pdf = tmp_path / "report.pdf"
+    pdf.write_bytes(b"%PDF-1.4 stand-in")
+    pages = tmp_path / "report pages"
+    pages.mkdir()
+    (pages / "page 1.png").write_bytes(b"x")
+    trashed_at = time.time()
+    move_to_trash(pdf)
+    writer = journal.RunWriter(tmp_path, {})
+    rec = journal.FileRecord(original=str(pdf), output=str(pages), original_size=17, output_size=1, kind="pdf",
+                             method="PDF → PNG", reversible=False, trashed_at=trashed_at)
+    writer.add(rec)
+    writer.close()
+    ok, msg = undo_record(writer.run.run_id, rec)
+    assert ok, msg
+    assert pdf.exists() and not pages.exists()

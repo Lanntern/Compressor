@@ -2,18 +2,43 @@ name: Check bundled components
 
 # Weekly: are the pinned tools (ffmpeg, libjxl, gifsicle) behind upstream, or does any Python library in
 # requirements.txt have a known vulnerability? Opens (or updates) one issue when something needs attention.
+# Also audits the Python libraries whenever the requirements change (instead of on every push).
 on:
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["requirements*.txt"]
+  pull_request:
+    paths: ["requirements*.txt"]
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
-  check:
+  audit:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - name: Audit dependencies for known vulnerabilities
+        run: |
+          pip-audit -r requirements.txt --require-hashes --disable-pip
+          pip-audit -r requirements-build.txt --require-hashes --disable-pip
+
+  check:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

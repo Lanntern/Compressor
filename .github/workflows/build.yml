@@ -4,57 +4,93 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths-ignore: ["README.md", ".gitignore", ".github/workflows/updates.yml"]   # (tag pushes always run)
   pull_request:
+    paths-ignore: ["README.md", ".gitignore", ".github/workflows/updates.yml"]
   workflow_dispatch:
 
+# A newer push to the same pull request makes the older run pointless: stop it. Runs on main and tags finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
-  contents: write  # attach the .zip to releases on version tags
+  contents: read
 
 jobs:
-  linux:
+  lint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install (exact versions from requirements.txt, checksums enforced)
+        run: |
+          pip install --require-hashes -r requirements.txt
+          pip install ruff==0.16.9 mypy==2.3.1
+      - name: Lint and type check (settings in pyproject.toml)
+        run: |
+          ruff check .
+          mypy compressor
+
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
       - name: Install encoders and Qt runtime libraries
         timeout-minutes: 20
         run: |
+          # Skip rebuilding the man page index after installing (the slowest part of apt-get on a runner).
+          sudo rm -f /var/lib/man-db/auto-update
           # A slow package mirror once held this step for 40 minutes: give up on a stuck attempt and retry.
           apt="sudo timeout 420 apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30"
           for attempt in 1 2 3; do
-            $apt update && $apt install -y ffmpeg gifsicle libegl1 libxkbcommon0 libfontconfig1 && exit 0
+            $apt update && $apt install -y --no-install-recommends ffmpeg gifsicle libegl1 libxkbcommon0 libfontconfig1 \
+              && exit 0
             echo "apt-get didn't finish (attempt $attempt); trying again"
             sleep 15
           done
           exit 1
-      - name: Download libjxl 0.11 (cjxl, djxl, cjpegli) and Pandoc
+      - uses: actions/cache@v4
+        with:
+          path: tools
+          key: tools-linux-${{ hashFiles('scripts/fetch_tools.py') }}
+      - name: Download libjxl 0.11 (cjxl, djxl, cjpegli) and Pandoc (skipped when cached)
         run: python scripts/fetch_tools.py --libjxl --pandoc
       - name: Install (exact versions from requirements.txt, checksums enforced)
         run: |
           pip install --require-hashes -r requirements.txt
           pip install --no-deps .
-          pip install pytest pip-audit
-      - name: Audit dependencies for known vulnerabilities
-        run: pip-audit -r requirements.txt --require-hashes --disable-pip
-      - name: Lint and type check (settings in pyproject.toml)
-        run: |
-          pip install ruff==0.16.9 mypy==2.3.1
-          ruff check .
-          mypy compressor
+          pip install pytest
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest -v --durations=25
+        run: python -m pytest --durations=25
 
   windows:
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - uses: actions/cache@v4
+        with:
+          path: tools
+          key: tools-windows-${{ hashFiles('scripts/fetch_tools.py') }}
       - name: Download encoders (ffmpeg, libjxl, gifsicle), checked against their recorded checksums
         run: |
           pip install --require-hashes -r requirements-build.txt
@@ -63,7 +99,7 @@ jobs:
         run: |
           pip install --require-hashes -r requirements.txt
           pip install --no-deps .
-          pip install pytest pyinstaller
+          pip install pytest
       - name: Start Everything (voidtools), to test asking it for file lists
         id: everything
         continue-on-error: true
@@ -78,7 +114,7 @@ jobs:
         env:
           COMPRESSOR_SHOTS_DIR: ${{ runner.temp }}/window-shots
           COMPRESSOR_REQUIRE_EVERYTHING: ${{ steps.everything.outcome == 'success' && '1' || '0' }}
-        run: python -m pytest -v --durations=25
+        run: python -m pytest --durations=25
       - name: Keep window screenshots (title bar check)
         if: always()
         uses: actions/upload-artifact@v7
@@ -87,6 +123,36 @@ jobs:
           path: ${{ runner.temp }}/window-shots
           if-no-files-found: ignore
           retention-days: 7
+
+  # The app bundle and installer: for main, version tags and manual runs. Pull requests only run the tests
+  # (start this workflow by hand on a branch to build it there).
+  package:
+    if: github.event_name != 'pull_request'
+    needs: [lint, linux, windows]
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write  # attach the .zip and installer to releases on version tags
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - uses: actions/cache@v4
+        with:
+          path: tools
+          key: tools-windows-${{ hashFiles('scripts/fetch_tools.py') }}
+      - name: Download encoders (ffmpeg, libjxl, gifsicle), checked against their recorded checksums
+        run: |
+          pip install --require-hashes -r requirements-build.txt
+          python scripts/fetch_tools.py
+      - name: Install (exact versions from requirements.txt, checksums enforced)
+        run: |
+          pip install --require-hashes -r requirements.txt
+          pip install --no-deps .
+          pip install pyinstaller
       - name: Draw the app icon (.ico)
         run: |
           New-Item -ItemType Directory -Force build | Out-Null

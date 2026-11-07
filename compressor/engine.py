@@ -450,14 +450,23 @@ def run_job(
     from . import power
     from .video import parallel_videos
 
+    def run_all(pool: ThreadPoolExecutor, jobs: list[tuple[FileEntry, Plan]]) -> None:
+        futures = [pool.submit(one, e, p) for e, p in jobs]
+        try:
+            for fut in futures:
+                fut.result()
+        except BaseException:
+            # Ctrl+C (or an event handler failing): stop starting new files before the pool's exit waits for
+            # the queued ones, which would otherwise all run to the end first.
+            cancel.set()
+            raise
+
     with power.awake():
         with ThreadPoolExecutor(max_workers=default_workers(s)) as pool:
-            for fut in [pool.submit(one, e, p) for e, p in images]:
-                fut.result()
+            run_all(pool, images)
         # Own threads so priority can be lowered; two at once on NVIDIA GPUs (two hardware encoders).
         with ThreadPoolExecutor(max_workers=parallel_videos(s) if videos else 1) as pool:
-            for fut in [pool.submit(one, e, p) for e, p in videos]:
-                fut.result()
+            run_all(pool, videos)
 
     from . import calibration
 
@@ -592,7 +601,12 @@ def undo_record(run_id: str, rec: journal.FileRecord) -> tuple[bool, str]:
             os.rename(aside, out)
         return False, str(e)
 
-    remove_quietly(aside if same_path else out)
+    if same_path:
+        remove_quietly(aside)
+    elif out.is_dir():            # a folder of pages (PDF → images) made in Replace mode
+        _remove_made_folder(out)
+    else:
+        remove_quietly(out)
     journal.mark_undone(run_id, rec.original, how)
     rec.undone, rec.undo_note = True, how
     return True, how
@@ -657,7 +671,11 @@ def undo_run(run_id: str, progress: Callable[[journal.FileRecord, bool, str], No
     for rec in run.files:
         if rec.undone:
             continue
-        success, msg = undo_record(run_id, rec)
+        try:
+            success, msg = undo_record(run_id, rec)
+        except Exception as e:  # noqa: BLE001 - one file's problem mustn't stop the rest (as UndoThread)
+            log.exception("Undo failed: %s", rec.original)
+            success, msg = False, str(e)
         ok += success
         failed += not success
         if progress:

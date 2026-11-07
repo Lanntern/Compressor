@@ -4,6 +4,7 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from compressor import power
@@ -89,3 +90,32 @@ def test_background_and_efficiency_modes_are_safe_everywhere():
     assert ran
     power.set_efficiency_mode(True)
     power.set_efficiency_mode(False)
+
+
+def test_an_interrupted_job_starts_nothing_new(tmp_path):
+    """Ctrl+C in the command line: files still queued are cancelled, not all run to the end first."""
+    from compressor.engine import run_job
+    from compressor.plan import plan_entry
+    from compressor.scanner import scan
+    from compressor.settings import Settings
+
+    for i in range(6):
+        Image.effect_noise((64, 48), 40).convert("RGB").save(tmp_path / f"{i}.png")
+    s = Settings(image_format="webp", png_mode="lossy", min_image_kb=0, require_savings=False, output_mode="suffix",
+                 workers=1)
+    items = [(e, plan_entry(e, s)) for e in scan([tmp_path], s).entries]
+    cancel, started = threading.Event(), []
+
+    class Events:
+        def file_started(self, e):
+            started.append(e)
+
+        def file_progress(self, *a): ...
+        def file_step(self, *a): ...
+
+        def file_finished(self, r):
+            raise KeyboardInterrupt      # as if Ctrl+C arrived while the first file finished
+
+    with pytest.raises(KeyboardInterrupt):
+        run_job(items, s, tmp_path, Events(), cancel)
+    assert cancel.is_set() and len(started) < len(items)
