@@ -1,0 +1,203 @@
+name: Test and build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # attach the .zip to releases on version tags
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install encoders and Qt runtime libraries
+        timeout-minutes: 20
+        run: |
+          # A slow package mirror once held this step for 40 minutes: give up on a stuck attempt and retry.
+          apt="sudo timeout 420 apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+          for attempt in 1 2 3; do
+            $apt update && $apt install -y ffmpeg gifsicle libegl1 libxkbcommon0 libfontconfig1 && exit 0
+            echo "apt-get didn't finish (attempt $attempt); trying again"
+            sleep 15
+          done
+          exit 1
+      - name: Download libjxl 0.11 (cjxl, djxl, cjpegli) and Pandoc
+        run: python scripts/fetch_tools.py --libjxl --pandoc
+      - name: Install (exact versions from requirements.txt, checksums enforced)
+        run: |
+          pip install --require-hashes -r requirements.txt
+          pip install --no-deps .
+          pip install pytest pip-audit
+      - name: Audit dependencies for known vulnerabilities
+        run: pip-audit -r requirements.txt --require-hashes --disable-pip
+      - name: Lint and type check (settings in pyproject.toml)
+        run: |
+          pip install ruff==0.16.9 mypy==2.3.1
+          ruff check .
+          mypy compressor
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -v --durations=25
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Download encoders (ffmpeg, libjxl, gifsicle), checked against their recorded checksums
+        run: |
+          pip install --require-hashes -r requirements-build.txt
+          python scripts/fetch_tools.py
+      - name: Install (exact versions from requirements.txt, checksums enforced)
+        run: |
+          pip install --require-hashes -r requirements.txt
+          pip install --no-deps .
+          pip install pytest pyinstaller
+      - name: Start Everything (voidtools), to test asking it for file lists
+        id: everything
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          choco install everything -y --no-progress
+          $exe = Join-Path $env:ProgramFiles "Everything\Everything.exe"
+          Start-Process $exe -ArgumentList "-startup"
+          Start-Sleep 20
+          "Everything started."
+      - name: Test (uses the real Recycle Bin)
+        env:
+          COMPRESSOR_SHOTS_DIR: ${{ runner.temp }}/window-shots
+          COMPRESSOR_REQUIRE_EVERYTHING: ${{ steps.everything.outcome == 'success' && '1' || '0' }}
+        run: python -m pytest -v --durations=25
+      - name: Keep window screenshots (title bar check)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: window-screenshots
+          path: ${{ runner.temp }}/window-shots
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Draw the app icon (.ico)
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          python packaging/make_icon.py build/Compressor.ico
+      - name: Build Compressor.exe
+        run: >
+          pyinstaller --noconfirm --windowed --name Compressor --icon build/Compressor.ico
+          --collect-submodules compressor
+          --collect-all pillow_heif --collect-all imagequant
+          --collect-all mozjpeg_lossless_optimization --collect-all oxipng --collect-all py7zr
+          --collect-all pikepdf --collect-all rawpy --collect-submodules fontTools
+          packaging/launch.py
+      - name: Trim parts of Qt the app doesn't use
+        shell: pwsh
+        run: |
+          # Software OpenGL fallback and Qt Quick/QML: a Widgets app never loads them. (Qt PDF stays: Convert
+          # draws PDF pages with it.)
+          # The smoke test below opens the real window, so a needed file removed here fails the build.
+          $root = "dist/Compressor/_internal/PySide6"
+          $gone = Get-ChildItem $root -Recurse -File | Where-Object {
+            $_.Name -match '^(opengl32sw\.dll|Qt6Quick.*\.dll|Qt6Qml.*\.dll|Qt6VirtualKeyboard.*\.dll)$' }
+          "{0} files, {1:N0} MB removed" -f $gone.Count, (($gone | Measure-Object Length -Sum).Sum / 1MB)
+          $gone | Remove-Item
+      - name: Report bundle size (what a cold start has to load)
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Recurse -File dist/Compressor
+          "{0} files, {1:N0} MB" -f $files.Count, (($files | Measure-Object Length -Sum).Sum / 1MB)
+          $files | Sort-Object Length -Descending | Select-Object -First 30 `
+            @{n='MB';e={[math]::Round($_.Length/1MB,1)}}, @{n='File';e={$_.FullName.Substring((Resolve-Path dist/Compressor).Path.Length)}} `
+            | Format-Table -AutoSize | Out-String -Width 220
+      - name: Smoke-test the built app
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse tools dist/Compressor/tools
+          python packaging/smoke_test.py dist/Compressor
+      - name: Add docs and zip
+        shell: pwsh
+        run: |
+          Copy-Item README.md dist/Compressor/
+          Compress-Archive -Path dist/Compressor -DestinationPath Compressor-windows-x64.zip
+      - name: Build the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y | Out-Null
+          $version = python -c "import compressor; print(compressor.__version__)"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=$version" `
+            "/DSourceDir=..\dist\Compressor" "/DIconFile=..\build\Compressor.ico" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+          Get-Item dist\Compressor-setup-x64.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
+      - name: Install, check, and uninstall (silently, for this user)
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "CompressorInstalled"
+          $menu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Compressor.lnk"
+          $run = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+          function Uninstall {
+            Start-Process "$dir\unins000.exe" -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+            for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Compressor.exe"); $i++) { Start-Sleep 1 }  # (it finishes in a copy)
+            if (Test-Path "$dir\Compressor.exe") { throw "Uninstall left Compressor.exe behind" }
+          }
+          # 1. Every option ticked: each one takes effect, and uninstalling takes each one away again.
+          Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir", `
+            "/TASKS=startmenu,contextmenu,autostart,updatecheck"
+          if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed" }
+          if (-not (Test-Path $menu)) { throw "No Start menu entry" }
+          $uninst = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
+            Where-Object DisplayName -eq "Compressor"
+          if (-not $uninst) { throw "Not listed in Apps & features" }
+          python -c "from compressor.gui import integration; assert integration.context_menu_installed(), 'no context menu'"
+          if (-not (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue)) { throw "Not started at sign-in" }
+          python -c "from PySide6.QtCore import QSettings; assert QSettings('Compressor', 'Compressor').value('updates/auto') in (True, 'true'), 'update check not saved'"
+          Uninstall
+          if (Test-Path $menu) { throw "Uninstall left the Start menu entry" }
+          python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu left behind'"
+          if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Start at sign-in left behind" }
+          # 2. The defaults: nothing optional is added.
+          Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"
+          if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed (defaults)" }
+          if (Test-Path $menu) { throw "A Start menu entry without asking" }
+          python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu without asking'"
+          if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Starts at sign-in without asking" }
+          Uninstall
+          # 3. For everyone (the recommended mode; the runner is an administrator): into a protected folder.
+          $all = Join-Path $env:ProgramFiles "CompressorCI"
+          Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
+            "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS", "/DIR=`"$all`""   # (quoted: it has a space)
+          if (-not (Test-Path "$all\Compressor.exe")) { throw "Compressor.exe wasn't installed for everyone" }
+          $machine = Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
+            Where-Object DisplayName -eq "Compressor"
+          if (-not $machine) { throw "Not listed in Apps & features (for everyone)" }
+          Start-Process "$all\unins000.exe" -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+          for ($i = 0; $i -lt 60 -and (Test-Path "$all\Compressor.exe"); $i++) { Start-Sleep 1 }
+          if (Test-Path "$all\Compressor.exe") { throw "Uninstall (for everyone) left Compressor.exe behind" }
+          "Installed, checked and uninstalled cleanly (all options, the defaults, and for everyone)."
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Compressor-windows-x64
+          path: dist/Compressor
+          retention-days: 30
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Compressor-setup-x64
+          path: dist/Compressor-setup-x64.exe
+          retention-days: 30
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            Compressor-windows-x64.zip
+            dist/Compressor-setup-x64.exe

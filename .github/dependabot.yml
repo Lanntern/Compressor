@@ -1,0 +1,16 @@
+# Pull requests when a Python library or a CI action has a new version (security fixes included).
+# requirements.txt holds exact versions with checksums; Dependabot updates both.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      python-libraries:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

@@ -1,0 +1,26 @@
+name: Check bundled components
+
+# Weekly: are the pinned tools (ffmpeg, libjxl, gifsicle) behind upstream, or does any Python library in
+# requirements.txt have a known vulnerability? Opens (or updates) one issue when something needs attention.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - name: Compare with upstream and audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/check_updates.py --issue

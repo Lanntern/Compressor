@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "compressor"
+version = "0.1.0"
+description = "One-click, verified, undoable image and video compression (JPEG XL, WebP, AV1, HEVC)."
+readme = "README.md"
+requires-python = ">=3.11"   # 3.10 is end of life; Pillow 13 (security fixes) needs 3.11
+dependencies = [
+    "PySide6>=6.8",
+    "send2trash>=1.8",
+    "Pillow>=13.0",       # 12.x and older: decoder vulnerabilities (pip-audit)
+    "pillow-heif>=1.8",
+    "mozjpeg-lossless-optimization>=1.3",
+    "imagequant>=1.1",
+    "pyoxipng>=9.1",
+    "py7zr>=1.0",
+    "numpy>=1.24",
+    "pikepdf>=10",
+    "rawpy>=0.25",        # camera RAW photos (LibRaw), an input for Convert
+    "fonttools>=4.50",    # fonts: TrueType/OpenType ↔ WOFF/WOFF2, smaller web fonts
+    "brotli>=1.1",        # (WOFF2 compression, for fonttools)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyinstaller>=6"]
+
+[project.scripts]
+compressor = "compressor.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["compressor*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+faulthandler_timeout = 300   # a hung test dumps every thread's stack instead of waiting silently
+
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+extend-exclude = ["compressor/_ssimulacra2.py"]   # vendored (BSD), kept as published
+
+[tool.ruff.lint]
+# Bugs first: pyflakes, pycodestyle errors, bugbear, pylint errors.
+select = ["E4", "E7", "E9", "E501", "F", "B", "PLE", "W6"]
+
+[tool.ruff.lint.per-file-ignores]
+"compressor/gui/style.py" = ["E501"]                # icon paths and stylesheet text
+"compressor/gui/file_model.py" = ["B008"]           # Qt's own QModelIndex() default argument idiom
+
+[tool.mypy]
+python_version = "3.12"     # (CI's Python; numpy's own type stubs need 3.12 syntax)
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = false
+check_untyped_defs = false
+# Not checked: attribute errors on Windows-only modules (winreg, ctypes.windll) when checked on Linux, Qt's
+# "lambda: (a(), b())" slot idiom, attributes that are None until a thread starts (guarded at run time), and
+# notes about unannotated functions.
+disable_error_code = ["attr-defined", "union-attr", "func-returns-value", "annotation-unchecked", "has-type",
+                      "var-annotated"]
