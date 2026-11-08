@@ -4,9 +4,25 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-    paths-ignore: ["README.md", ".gitignore", ".github/workflows/updates.yml"]   # (tag pushes always run)
+    paths-ignore:   # (tag pushes always run)
+      - "README.md"
+      - "CLA.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - ".gitignore"
+      - ".github/FUNDING.yml"
+      - ".github/workflows/updates.yml"
+      - ".github/workflows/cla.yml"
   pull_request:
-    paths-ignore: ["README.md", ".gitignore", ".github/workflows/updates.yml"]
+    paths-ignore:   # (the same list)
+      - "README.md"
+      - "CLA.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - ".gitignore"
+      - ".github/FUNDING.yml"
+      - ".github/workflows/updates.yml"
+      - ".github/workflows/cla.yml"
   workflow_dispatch:
 
 # A newer push to the same pull request makes the older run pointless: stop it. Runs on main and tags finish.
@@ -189,10 +205,13 @@ jobs:
         run: |
           Copy-Item -Recurse tools dist/Compressor/tools
           python packaging/smoke_test.py dist/Compressor
-      - name: Add docs and zip
+      - name: Add docs and licences, and zip
         shell: pwsh
         run: |
-          Copy-Item README.md dist/Compressor/
+          Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md dist/Compressor/
+          foreach ($f in "LICENSE-ffmpeg.txt", "LICENSE-libjxl.txt", "LICENSE-gifsicle.txt") {
+            if (-not (Test-Path "dist/Compressor/tools/$f")) { throw "tools/$f is missing from the build" }
+          }
           Compress-Archive -Path dist/Compressor -DestinationPath Compressor-windows-x64.zip
       - name: Build the installer (Inno Setup)
         shell: pwsh

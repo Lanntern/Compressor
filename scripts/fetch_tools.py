@@ -62,7 +62,7 @@ WINDOWS = [
              held="newest libjxl release that still ships cjpegli for Windows"),
     Download("gifsicle", "1.95", "https://eternallybored.org/misc/gifsicle/releases/gifsicle-1.95-win64.zip",
              "7e47dd0bfd5ee47f911464c57faeed89a8709a7625dd1c449b16579889539ee8",   # as first downloaded by CI
-             {"gifsicle.exe": "gifsicle.exe"}, required=False),
+             {"gifsicle.exe": "gifsicle.exe", "COPYING": "LICENSE-gifsicle.txt"}, required=False),
 ]
 
 # libjxl stopped publishing static Linux builds after 0.11.1.
@@ -80,6 +80,9 @@ LINUX_PANDOC = Download(
     "https://github.com/jgm/pandoc/releases/download/3.12.1/pandoc-3.12.1-linux-amd64.tar.gz",
     "d0c90410e90204c9ca83b8539fac5c7aed01fd537207e4585849f8abc5df20b8",
     {"pandoc": "pandoc"})
+
+
+LICENSES = Path(__file__).resolve().parent.parent / "packaging" / "licenses"   # fallback licence texts
 
 
 class ChecksumMismatch(Exception):
@@ -164,6 +167,10 @@ def fetch(d: Download, dest: Path, force: bool, allow_unpinned: bool = False) ->
         if os.name != "nt":
             os.chmod(dest / out_name, os.stat(dest / out_name).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         found.add(base)
+    for m, out in wanted.items():
+        # A licence the archive doesn't carry (gifsicle's Windows zip): ship the copy kept in packaging/licenses.
+        if out and out.startswith("LICENSE") and m not in found and (LICENSES / out).is_file():
+            shutil.copyfile(LICENSES / out, dest / out)
     missing = [m for m, out in wanted.items()
                if m != "*.dll" and out and not out.startswith(("LICENSE", "?")) and m not in found]
     if missing:

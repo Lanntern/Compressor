@@ -62,6 +62,10 @@ A second page finds space Windows doesn't free for you. Each tool scans first, p
 
 ## Safety first
 
+> **Keep backups of files that matter.** Compressor is built to never lose a file (below), but it changes and
+> replaces files, and it comes with **no warranty** (see [License](#license)). Run it on files you also have
+> elsewhere, and check the results before you empty the Recycle Bin.
+
 * **Nothing changes until you press Compress.** The scan only reads files and estimates savings.
 * **Every result is verified before the original is touched.**
   * Lossless JPEG → JPEG XL: the original JPEG is rebuilt from the `.jxl` and compared **byte for byte**.
@@ -180,7 +184,8 @@ Compressor opens files with decoders it bundles (FFmpeg, libjxl, Pillow with its
 qpdf). Those get security fixes, so:
 
 * **Builds are pinned and audited.** `requirements.txt` holds every Python library's exact version and checksum
-  (installed with `--require-hashes`), and CI fails if `pip-audit` finds a known vulnerability in any of them.
+  (installed with `--require-hashes`); `pip-audit` checks them for known vulnerabilities whenever they change
+  and every week.
   The command-line tools are exact releases checked against recorded SHA-256 checksums
   (`scripts/fetch_tools.py`); a changed download is refused.
 * **You hear about new versions.** Dependabot opens pull requests for new library versions, and a weekly job
@@ -190,6 +195,43 @@ qpdf). Those get security fixes, so:
   request to GitHub's release list, nothing downloaded or installed by itself). Settings → About → About
   Compressor lists every component's version (Copy Versions for bug reports).
 
-## Licenses of bundled tools
+## Privacy
 
-The Windows build ships unmodified ffmpeg (GPL build, from BtbN/FFmpeg-Builds), libjxl (cjxl, djxl, cjpegli) and gifsicle (GPL) as separate programs in `tools/`. Compressor calls them as external programs and does not link to them. Python libraries used in-process: Pillow, pillow-heif (libheif), mozjpeg-lossless-optimization, imagequant (libimagequant, GPL v3), pyoxipng, PySide6 (LGPL), NumPy; `compressor/_ssimulacra2.py` is adapted from the BSD-3 `ssimulacra2` Python package. Check these licenses before selling a closed-source build; libimagequant is also available under a commercial license.
+Compressor works entirely on your computer. It has no accounts, no telemetry and no ads, and it never sends your
+files or anything about them anywhere. It goes online only to:
+
+* **check for a newer version**, once a week: one anonymous request to GitHub's list of releases (GitHub sees
+  your IP address, like any website). Turn it off in Settings → About, or in the installer.
+* **download Pandoc**, only when you convert a document and only after you agree, from Pandoc's own release page.
+
+## Support Compressor
+
+Compressor is free, with no ads, no paid tier and nothing locked. If it saved you space or time, you can support
+it on **[Ko-fi](https://ko-fi.com/lanntern)**. Donations are entirely optional and don't buy support or features;
+they help keep the project going.
+
+## License
+
+Copyright © 2026 Lanntern.
+
+Compressor is free software: you can redistribute it and/or modify it under the terms of the
+**GNU General Public License, version 3** only, as published by the Free Software Foundation ([LICENSE](LICENSE)).
+
+Compressor is distributed in the hope that it will be useful, but **WITHOUT ANY WARRANTY**; without even the
+implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+more details.
+
+The Windows build includes unmodified third-party programs (FFmpeg, libjxl, gifsicle) in `tools/`, which
+Compressor runs as separate programs, and libraries such as Qt (LGPL) and libimagequant (GPL-3.0). Their
+licences, and where to get their source code, are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); the
+licence files of the tools are next to them in `tools/`.
+
+Contributions are welcome under the [Contributor License Agreement](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
+Security problems: [SECURITY.md](SECURITY.md).
+
+## Name and logo
+
+The Compressor name and icon identify the official releases from this repository and are not licensed under
+the GPL. You're welcome to fork and redistribute the code under the GPL, but please give your version a
+different name and icon so nobody mistakes it for the official app. Saying that it is "based on Compressor"
+is fine.
