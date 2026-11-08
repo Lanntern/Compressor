@@ -1,7 +1,8 @@
 name: CLA
 
 # Asks each new contributor to sign CLA.md by commenting on their pull request, and records who signed in
-# signatures/cla.json on the cla-signatures branch (not main, so main can be protected: the bot commits there). Pull requests are blocked by the "CLA" check until it's signed.
+# signatures/cla.json on the cla-signatures branch (not main, so main can be protected: the bot commits there).
+# Pull requests are blocked by the "CLA" check until it's signed.
 # It never checks out or runs the pull request's code (pull_request_target is safe for that reason only).
 on:
   issue_comment:
