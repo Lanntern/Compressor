@@ -1,8 +1,9 @@
 ; Compressor's Windows installer (Inno Setup 6). Built by CI from the PyInstaller folder:
 ;   iscc /DAppVersion=0.1.0 /DSourceDir=..\dist\Compressor /DIconFile=..\dist\Compressor.ico packaging\installer.iss
 ; Installs for everyone (recommended: Program Files is protected from other programs), or only for the current
-; user without administrator rights. Optional, all off: a Start menu shortcut, a desktop shortcut, the Explorer
-; right-click menu, starting at sign-in, and (Windows 11 24H2+) Microsoft's JPEG XL Image Extension from the Store.
+; user without administrator rights. Optional: a Start menu shortcut (on by default: without one, Windows Search
+; can't find the app or show its actions), and, off by default, a desktop shortcut, the Explorer right-click menu,
+; starting at sign-in, and (Windows 11 24H2+) Microsoft's JPEG XL Image Extension from the Store.
 ; How often to check for updates is a list on the same page (weekly by default; /UPDATES=launch|weekly|monthly|never
 ; for silent installs). Uninstalls cleanly: the right-click menu and start-at-sign-in are removed, and the user is
 ; asked whether to keep settings and History.
@@ -74,7 +75,7 @@ FinishedLabel=Setup has finished installing [name] on your computer.
 FinishedLabelNoIcons=Setup has finished installing [name] on your computer.
 
 [Tasks]
-Name: "startmenu"; Description: "Add a shortcut to the Start menu"; Flags: unchecked
+Name: "startmenu"; Description: "Add a shortcut to the Start menu"
 Name: "desktopicon"; Description: "Add a shortcut to the desktop"; Flags: unchecked
 Name: "contextmenu"; Description: "Add Compressor to the right-click menu in File Explorer"; Flags: unchecked
 Name: "autostart"; Description: "Start Compressor when I sign in"; Flags: unchecked

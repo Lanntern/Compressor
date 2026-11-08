@@ -252,14 +252,15 @@ jobs:
           if (Test-Path $menu) { throw "Uninstall left the Start menu entry" }
           python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu left behind'"
           if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Start at sign-in left behind" }
-          # 2. The defaults: nothing optional is added.
+          # 2. The defaults: a Start menu shortcut, and nothing else optional.
           Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"
           if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed (defaults)" }
-          if (Test-Path $menu) { throw "A Start menu entry without asking" }
+          if (-not (Test-Path $menu)) { throw "No Start menu entry by default" }
           python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu without asking'"
           if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Starts at sign-in without asking" }
           Uninstall
+          if (Test-Path $menu) { throw "Uninstall left the default Start menu entry" }
           # 3. For everyone (the recommended mode; the runner is an administrator): into a protected folder.
           $all = Join-Path $env:ProgramFiles "CompressorCI"
           Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
