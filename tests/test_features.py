@@ -86,6 +86,11 @@ def test_gui_command_line_parsing():
     _bg, _p, convert_to, paths = parse_args(["--convert=mp4_h264", "clip.mov"])
     assert convert_to == "mp4_h264" and paths == [os.path.abspath("clip.mov")]
 
+    from compressor.gui.app import open_target
+
+    assert open_target(["--open=history"]) == "history" and open_target(["--open", "cleanup"]) == "cleanup"
+    assert open_target(["a.jpg"]) == "" and parse_args(["--open", "cleanup"])[3] == []   # not taken for a path
+
 
 def test_video_target_size_rules():
     s = Settings(video_max_height=720)

@@ -314,7 +314,8 @@ def main(argv: list[str] | None = None) -> int:
         return ntfs_main(argv)
     commands = {"scan", "run", "history", "undo", "tools", "presets", "speedtest", "gui", "-h", "--help", "--version"}
     opens_app = not argv or (argv[0] not in commands and (
-        argv[0] in ("--background", "--preset", "--convert") or argv[0].startswith(("--preset=", "--convert="))
+        argv[0] in ("--background", "--preset", "--convert", "--open")
+        or argv[0].startswith(("--preset=", "--convert=", "--open="))
         or not argv[0].startswith("-")))
     if opens_app:
         # No command: open the app (paths from Explorer's context menu or drag onto the .exe).

@@ -10,3 +10,4 @@ undone).
 
 __version__ = "0.1.0"
 APP_NAME = "Compressor"
+DESCRIPTION = "Shrink photos, videos and music safely: every result verified, every change undoable."

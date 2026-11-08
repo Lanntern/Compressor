@@ -171,13 +171,14 @@ jobs:
           pip install --require-hashes -r requirements.txt
           pip install --no-deps .
           pip install pyinstaller
-      - name: Draw the app icon (.ico)
+      - name: Draw the app icon (.ico) and write the version details (file Properties, Task Manager)
         run: |
           New-Item -ItemType Directory -Force build | Out-Null
           python packaging/make_icon.py build/Compressor.ico
+          python packaging/make_version_file.py build/version.txt
       - name: Build Compressor.exe
         run: >
-          pyinstaller --noconfirm --windowed --name Compressor --icon build/Compressor.ico
+          pyinstaller --noconfirm --windowed --name Compressor --icon build/Compressor.ico --version-file build/version.txt
           --collect-submodules compressor
           --collect-all pillow_heif --collect-all imagequant
           --collect-all mozjpeg_lossless_optimization --collect-all oxipng --collect-all py7zr

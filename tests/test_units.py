@@ -418,3 +418,20 @@ def test_output_names_from_a_pattern(tmp_path):
     assert output_name(src, "%name%-%time%.%ext%", t) == "Holiday-14-05-09.jpg"
     assert output_name(src, "%name%: copy?", t) == "Holiday_ copy_"           # never characters a name can't hold
     assert output_name(src, "%unknown%", t) == "%unknown%"
+
+
+def test_jump_list_tasks():
+    """The taskbar / Start / Search tasks: each opens a page the app knows; on Windows the list is really built."""
+    import sys
+
+    from compressor.gui import jumplist
+    from compressor.gui.main_window import MainWindow
+
+    for title, target, description in jumplist.TASKS:
+        page = target.removesuffix("-files")
+        assert title and description and page in MainWindow.OPEN_PAGES, target
+    if not jumplist.IS_WINDOWS:
+        assert jumplist.update(exe="unused") is False
+        return
+    jumplist.set_process_app_id()
+    assert jumplist.update(exe=sys.executable, args_prefix="-c pass ")     # COM calls all succeeded

@@ -239,13 +239,15 @@ def _server_name() -> str:
     return f"{APP_NAME}-{user}"
 
 
-def send_to_running_instance(paths: list[str], show: bool = True, preset: str = "", convert: str = "") -> bool:
+def send_to_running_instance(paths: list[str], show: bool = True, preset: str = "", convert: str = "",
+                             open_target: str = "") -> bool:
     """Hand ``paths`` to an already-running Compressor. True if one answered."""
     sock = QLocalSocket()
     sock.connectToServer(_server_name())
     if not sock.waitForConnected(500):
         return False
-    sock.write(json.dumps({"paths": paths, "show": show, "preset": preset, "convert": convert}).encode("utf-8"))
+    sock.write(json.dumps({"paths": paths, "show": show, "preset": preset, "convert": convert,
+                           "open": open_target}).encode("utf-8"))
     sock.flush()
     sock.waitForBytesWritten(1000)
     sock.disconnectFromServer()
@@ -255,7 +257,8 @@ def send_to_running_instance(paths: list[str], show: bool = True, preset: str = 
 class InstanceServer(QObject):
     """Receives paths from later launches (e.g. Explorer's context menu)."""
 
-    paths_received = Signal(list, bool, str, str)   # paths, show window, preset ("": current options), convert to
+    # paths, show window, preset ("": current options), convert to, page to open (app.open_target)
+    paths_received = Signal(list, bool, str, str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -276,7 +279,8 @@ class InstanceServer(QObject):
             try:
                 msg = json.loads(bytes(buf).decode("utf-8"))
                 self.paths_received.emit(list(msg.get("paths", [])), bool(msg.get("show", True)),
-                                         str(msg.get("preset") or ""), str(msg.get("convert") or ""))
+                                         str(msg.get("preset") or ""), str(msg.get("convert") or ""),
+                                         str(msg.get("open") or ""))
             except ValueError:
                 pass
             sock.deleteLater()

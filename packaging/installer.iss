@@ -22,7 +22,18 @@ AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=Lanntern
 AppCopyright=Copyright (C) 2026 Lanntern. GNU GPL version 3.
+; What Settings → Apps, Control Panel and uninstallers (Revo and others) show for the installed app.
 AppPublisherURL=https://github.com/Lanntern/Compressor
+AppSupportURL=https://github.com/Lanntern/Compressor/issues
+AppUpdatesURL=https://github.com/Lanntern/Compressor/releases/latest
+AppComments=Shrink photos, videos and music safely: every result verified, every change undoable.
+AppContact=https://github.com/Lanntern/Compressor/issues
+; The setup .exe's own details (file Properties → Details).
+VersionInfoVersion={#AppVersion}
+VersionInfoProductVersion={#AppVersion}
+VersionInfoCompany=Lanntern
+VersionInfoDescription={#AppName} Setup
+VersionInfoProductName={#AppName}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
@@ -73,8 +84,10 @@ Name: "jxlext"; Description: "Get the JPEG XL Image Extension from the Microsoft
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\Compressor.exe"; Tasks: startmenu
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Compressor.exe"; Tasks: desktopicon
+; AppUserModelID: the same as the app's (compressor/gui/jumplist.py), so the shortcut, the running window and the
+; jump list (taskbar right-click, Start, Windows Search actions) are one app.
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\Compressor.exe"; Comment: "Shrink photos, videos and music safely"; AppUserModelID: "Lanntern.Compressor"; Tasks: startmenu
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Compressor.exe"; Comment: "Shrink photos, videos and music safely"; AppUserModelID: "Lanntern.Compressor"; Tasks: desktopicon
 
 [Run]
 ; The choices above that the app keeps itself (right-click menu, sign-in, update check).

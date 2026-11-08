@@ -680,7 +680,26 @@ class MainWindow(QMainWindow):
         integration.refresh_context_menu()
         self.watch.refresh_presets()
 
-    def receive_paths(self, paths: list[str], show: bool = True, preset: str = "", convert: str = "") -> None:
+    # --open=TARGET → the page's attribute name (see app.open_target).
+    OPEN_PAGES = {"home": "home", "compress": "compress", "convert": "converter", "metadata": "metadata",
+                  "cleanup": "cleanup", "watch": "watch", "history": "history", "settings": "app_settings"}
+
+    def open_target(self, target: str) -> None:
+        """Show a page (jump list, tray), or pick files on one: compress-files, convert-files."""
+        self.show_window()
+        page_name, _, action = target.partition("-")
+        attr = self.OPEN_PAGES.get(page_name)
+        if attr is None:
+            return
+        page = getattr(self, attr)
+        self.go_to(page)
+        if action == "files" and hasattr(page, "browse_files"):
+            QTimer.singleShot(0, page.browse_files)        # once the window is in front
+
+    def receive_paths(self, paths: list[str], show: bool = True, preset: str = "", convert: str = "",
+                      open_target: str = "") -> None:
+        if open_target:
+            self.open_target(open_target)
         if show:
             self.show_window()
         if convert:                 # Explorer's "Convert with Compressor"
@@ -739,11 +758,22 @@ class MainWindow(QMainWindow):
             return
         self.tray = QSystemTrayIcon(app_icon(), self)
         menu = QMenu()
-        menu.addAction("Open Compressor", self.show_window)
-        menu.addAction("About Compressor", lambda: (self.show_window(), self.show_about()))
+        open_app = menu.addAction(f"Open {APP_NAME}", self.show_window)
+        menu.setDefaultAction(open_app)          # (bold: what clicking the icon does)
+        menu.addSeparator()
+        # The same shortcuts as the taskbar's jump list (jumplist.TASKS).
+        menu.addAction("Compress Files…", lambda: self.open_target("compress-files"))
+        menu.addAction("Convert Files…", lambda: self.open_target("convert-files"))
+        menu.addAction("Clean Up", lambda: self.open_target("cleanup"))
+        menu.addAction("History", lambda: self.open_target("history"))
+        menu.addSeparator()
         self.tray_watch = QAction("Watch Folders", menu, checkable=True)
+        self.tray_watch.setToolTip("Compress new files in your watched folders automatically")
         self.tray_watch.toggled.connect(lambda on: self.watch.switch.setChecked(on))
         menu.addAction(self.tray_watch)
+        menu.addAction("Check for Updates", lambda: (self.open_target("settings"),
+                                                     self.check_for_updates(manual=True)))
+        menu.addAction(f"About {APP_NAME}", lambda: (self.show_window(), self.show_about()))
         menu.addSeparator()
         menu.addAction("Quit", self.quit)
         self.tray.setContextMenu(menu)
