@@ -11,7 +11,8 @@ Thanks for helping! Bug reports, ideas and pull requests are all welcome.
 ## Pull requests
 
 1. **Sign the Contributor License Agreement.** On your first pull request a bot asks you to sign
-   [CLA.md](CLA.md) by posting a comment; that one comment covers all your future contributions. You keep the
+   [CLA.md](CLA.md) by posting a comment; that one comment covers all your future contributions (signatures are
+   kept on the `cla-signatures` branch). You keep the
    copyright in your work. The agreement lets the maintainer keep the project's licensing flexible (for
    example, move to a newer licence) without tracking down every contributor. Pull requests can't be merged
    until it's signed.
