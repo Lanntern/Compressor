@@ -36,8 +36,8 @@ CREDITS: tuple[Credit, ...] = (
            "https://github.com/hwanseung2/ssimulacra2", "code"),
     Credit("FFmpeg", "Video and audio: decoding, encoding, measuring", "GPL-3.0 (this build)",
            "https://ffmpeg.org/", "tool"),
-    Credit("x265, SVT-AV1, libopus, LAME, libvmaf", "Encoders and VMAF inside FFmpeg",
-           "GPL-2.0 / BSD / BSD / LGPL / BSD", "https://github.com/BtbN/FFmpeg-Builds", "tool"),
+    Credit("x265, SVT-AV1, libopus, LAME, libvmaf", "Encoders and VMAF inside FFmpeg (Gyan.dev \"full\" build)",
+           "GPL-2.0+ / BSD / BSD / LGPL / BSD", "https://www.gyan.dev/ffmpeg/builds/", "tool"),
     Credit("libjxl (cjxl, djxl, cjpegli, ssimulacra2)", "JPEG XL, jpegli and SSIMULACRA2", "BSD-3-Clause",
            "https://github.com/libjxl/libjxl", "tool"),
     Credit("gifsicle", "GIF optimisation", "GPL-2.0", "https://www.lcdf.org/gifsicle/", "tool"),
@@ -53,9 +53,13 @@ PRIVACY = ("Compressor works entirely on this computer. It has no accounts, no t
            "version (Settings → About; you can turn it off) and, when you ask for it, to download Pandoc for "
            "converting documents.")
 
-LICENCE_NOTE = ("Encoders in the tools folder are separate, unmodified programs that Compressor runs; their licence "
-                "files are next to them. Components marked GPL require that their source stays available: follow "
-                "the links for each project's source code.")
+LICENCE_NOTE = ("Compressor is free software, © Lanntern, licensed under the GNU GPL version 3 (LICENSE), with "
+                "NO WARRANTY. Encoders in the tools folder are separate, unmodified programs that Compressor runs; "
+                "their licence files are next to them. Where to get the source code of every GPL component: "
+                "THIRD-PARTY-NOTICES.md.")
 
 
-__all__ = ["Credit", "CREDITS", "PRIVACY", "LICENCE_NOTE"]
+DONATE_URL = "https://ko-fi.com/lanntern"     # Compressor is free; donations are welcome, never required
+
+
+__all__ = ["Credit", "CREDITS", "PRIVACY", "LICENCE_NOTE", "DONATE_URL"]

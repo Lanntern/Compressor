@@ -210,6 +210,9 @@ def run_ffmpeg_progress(
                     except ValueError:
                         continue
                     on_progress(max(0.0, min(1.0, us / 1e6 / duration)))
+        except BaseException:
+            proc.kill()     # nobody reads its output any more: waiting below would hang once the pipe is full
+            raise
         finally:
             proc.wait()
         if cancelled:

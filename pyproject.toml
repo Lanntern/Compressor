@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]   # (77: SPDX licence expressions)
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,9 @@ name = "compressor"
 version = "0.1.0"
 description = "One-click, verified, undoable image and video compression (JPEG XL, WebP, AV1, HEVC)."
 readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICENSE", "THIRD-PARTY-NOTICES.md"]
+authors = [{ name = "Lanntern" }]
 requires-python = ">=3.11"   # 3.10 is end of life; Pillow 13 (security fixes) needs 3.11
 dependencies = [
     "PySide6>=6.8",
@@ -23,6 +26,11 @@ dependencies = [
     "fonttools>=4.50",    # fonts: TrueType/OpenType ↔ WOFF/WOFF2, smaller web fonts
     "brotli>=1.1",        # (WOFF2 compression, for fonttools)
 ]
+
+[project.urls]
+Source = "https://github.com/Lanntern/Compressor"
+Issues = "https://github.com/Lanntern/Compressor/issues"
+Funding = "https://ko-fi.com/lanntern"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyinstaller>=6"]
