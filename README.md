@@ -1,4 +1,15 @@
-# Compressor
+<p align="center"><img src="docs/icon.png" width="96" height="96" alt=""></p>
+
+<h1 align="center">Compressor</h1>
+
+<p align="center">
+Shrink photos, videos and music on Windows. Every result is verified, every change can be undone, and nothing leaves your computer.
+<br><br>
+<a href="https://github.com/Lanntern/Compressor/releases/latest"><b>Download for Windows</b></a> ·
+<a href="#safety-first">Safety</a> ·
+<a href="#privacy">Privacy</a> ·
+<a href="https://ko-fi.com/lanntern">Support on Ko-fi</a>
+</p>
 
 One place for real disk savings. Drop folders or files on it (or right-click them in Explorer) and it shrinks photos, videos and music:
 
@@ -80,16 +91,20 @@ A second page finds space Windows doesn't free for you. Each tool scans first, p
 * **HDR video** keeps 10-bit colour and its HDR10/HLG colour description; HDR10 mastering and light-level metadata are carried over on the CPU encoders. Dolby Vision files are skipped. Interlaced video is deinterlaced; repeated frames are removed only on constant-frame-rate video.
 * Size estimates learn from your real results, per kind of conversion.
 
-## Download (Windows)
+## Download
 
-Every push to `main` builds a ready-to-run Windows version on GitHub Actions:
-**Actions → "Test and build" → latest run → Artifacts → `Compressor-windows-x64`**. Unzip it and run `Compressor.exe`. The encoders are included in its `tools` folder.
+Get the latest version from the **[Releases page](https://github.com/Lanntern/Compressor/releases/latest)** (Windows 10 or 11, 64-bit):
 
-To view `.jxl` files in Windows 11 Photos/Explorer, install Microsoft's free **JPEG XL Image Extension** from the Microsoft Store. Browsers and most chat apps don't open JPEG XL yet; use WebP for images you share.
+* **`Compressor-setup-x64.exe`**: the installer (recommended). It can add Start menu and desktop shortcuts and the right-click menu in File Explorer, and uninstalls cleanly from Settings → Apps.
+* **`Compressor-windows-x64.zip`**: the portable version. Unzip it anywhere and run `Compressor.exe`.
+
+Everything it needs, encoders included, comes in the download. Compressor isn't code-signed yet, so the first time you run it Windows may say "Windows protected your PC": choose **More info → Run anyway**.
+
+To view `.jxl` files in Windows 11 Photos/Explorer, install Microsoft's free **[JPEG XL Image Extension](https://apps.microsoft.com/detail/9MZPRTH5C0TB)** from the Microsoft Store. Browsers and most chat apps don't open JPEG XL yet; use WebP for images you share.
 
 ## Run from source
 
-Requires Python 3.10+.
+Requires Python 3.11 or newer. (On Windows, the [download](#download) is simpler.)
 
 ```bash
 pip install -e .
@@ -145,55 +160,13 @@ Images and audio are processed one file per CPU thread (capped by memory), which
 
 Everything works without a mouse. `F1` lists every shortcut. The essentials: `Ctrl+1`…`7` switch pages (focus lands in the page's list), `Ctrl+O` adds files to the page you're on, `Ctrl+A` / `Ctrl+Shift+A` tick all / none, `Space` ticks a row (Compress: preview), the Menu key or `Shift+F10` opens a file's actions, `Ctrl+Return` runs the page's main action and `Esc` stops it.
 
-## Development
+## Security updates
 
-```bash
-pip install -e ".[dev]"
-python -m pytest          # unit tests + real round trips (needs the encoders)
-```
-
-CI runs the tests on Linux and on Windows (including the real Recycle Bin restore and offscreen GUI tests that drive the main window), then builds the `.exe` with PyInstaller.
-
-Data lives in `%LOCALAPPDATA%\Compressor` (`~/.local/share/compressor` on Linux): run history (`runs/`), presets (`presets.json`), the file index that makes repeat scans fast (`index.sqlite`, safe to delete) and a small rotating log (`logs/`). Settings → Diagnostics opens the log folder or copies a summary for bug reports. `COMPRESSOR_DATA_DIR` and `COMPRESSOR_SETTINGS_FILE` override the locations (used by the tests).
-
-Layout:
-
-```
-compressor/
-  scanner.py       walk folders, skip system/program folders, probe videos
-  index.py         cache of probed file details (fast repeat scans)
-  presets.py       built-in and user presets
-  quality.py       SSIMULACRA2 / VMAF / SSIM scoring and the Smart quality search
-  log.py           log file, crash hooks, diagnostics
-  plan.py          per-file decision + savings estimate
-  images.py        all image routes (cjxl, cjpegli, mozjpeg, oxipng, imagequant, gifsicle, Pillow) + verification
-  metadata.py      lossless EXIF/XMP editing in JPEG, PNG, WebP and JPEG XL
-  video.py         ffmpeg AV1/HEVC (NVENC or CPU) + verification
-  audio.py         FLAC (sample-exact check), Opus/AAC/MP3, mono detection, CD quality, tags and album art
-  engine.py        run a job: convert → verify → swap → journal; undo
-  trash_restore.py restore from the Windows Recycle Bin / freedesktop Trash
-  journal.py       run history (JSON lines in %LOCALAPPDATA%\Compressor)
-  cli.py           command line
-  gui/             PySide6 desktop app (compress, preview, watch folders, history, settings, tray)
-scripts/fetch_tools.py   download Windows encoders
-```
-
-## Keeping components up to date
-
-Compressor opens files with decoders it bundles (FFmpeg, libjxl, Pillow with its WebP/JPEG libraries, libheif,
-qpdf). Those get security fixes, so:
-
-* **Builds are pinned and audited.** `requirements.txt` holds every Python library's exact version and checksum
-  (installed with `--require-hashes`); `pip-audit` checks them for known vulnerabilities whenever they change
-  and every week.
-  The command-line tools are exact releases checked against recorded SHA-256 checksums
-  (`scripts/fetch_tools.py`); a changed download is refused.
-* **You hear about new versions.** Dependabot opens pull requests for new library versions, and a weekly job
-  (`scripts/check_updates.py`) opens an issue when FFmpeg, libjxl or gifsicle has a newer release or a library
-  has a new advisory.
-* **Installed copies check weekly** for a newer Compressor by default (Settings → About: whenever you open it, weekly, monthly or never; one anonymous
-  request to GitHub's release list, nothing downloaded or installed by itself). Settings → About → About
-  Compressor lists every component's version (Copy Versions for bug reports).
+Compressor opens your files with decoders it bundles (FFmpeg, libjxl, Pillow with its WebP/JPEG libraries,
+libheif, qpdf), and those get security fixes. Every release ships exact, checksum-verified versions of them,
+which are checked every week for newer releases and known vulnerabilities. The app checks for a newer Compressor
+weekly by default (Settings → About: whenever you open it, weekly, monthly or never), and Settings → About →
+About Compressor lists every component's version. To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## Privacy
 
@@ -204,6 +177,9 @@ files or anything about them anywhere. It goes online only to:
   sees your IP address, like any website). Choose how often (whenever you open it, weekly, monthly or never) in
   Settings → About, or in the installer.
 * **download Pandoc**, only when you convert a document and only after you agree, from Pandoc's own release page.
+
+Your settings, history (what can be undone), presets and a small log stay in `%LOCALAPPDATA%\Compressor`
+(`~/.local/share/compressor` on Linux). Uninstalling asks whether to remove them.
 
 ## Support Compressor
 

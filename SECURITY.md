@@ -23,5 +23,5 @@ interval can be changed in Settings), and a release that fixes a security proble
 
 Many problems turn out to be in a bundled component (FFmpeg, libjxl, Pillow, pikepdf, Qt, …). Report those
 here too; if a fix is needed upstream, it will be reported there and Compressor updated once it's released.
-Components are pinned and checked weekly for known vulnerabilities (see "Keeping components up to date" in
-the README).
+Components are pinned and checked weekly for known vulnerabilities (see "How bundled components are kept up to
+date" in [CONTRIBUTING.md](CONTRIBUTING.md)).
