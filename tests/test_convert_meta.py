@@ -320,9 +320,11 @@ def test_documents_convert_with_pandoc(media_dir):
 
     (media_dir / "notes.md").write_text("# Notes\n\nSome *text*.\n\n![remote](https://example.com/x.png)\n")
     s = Settings(output_mode="beside", convert_inputs=True)
+    from compressor import office
+
     for target in convert.DOCUMENT_TARGETS:
-        if target == "md":
-            continue
+        if target == "md" or (target == "pdf" and not office.converter_for(".md")):
+            continue          # (PDF needs Microsoft Word or LibreOffice: test_office_documents_to_pdf covers it)
         results, _ = _convert_all(media_dir, convert.ConvertOptions(document_target=target), s)
         r = next(r for r in results if r.entry.path.name == "notes.md")
         assert r.status == DONE, (target, r.message)
