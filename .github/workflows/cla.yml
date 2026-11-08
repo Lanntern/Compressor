@@ -33,5 +33,6 @@ jobs:
           path-to-document: https://github.com/Lanntern/Compressor/blob/main/CLA.md
           path-to-signatures: signatures/cla.json
           branch: cla-signatures
-          # The copyright holder doesn't sign their own agreement; bots don't contribute copyrightable work.
-          allowlist: Lanntern,dependabot[bot],github-actions[bot]
+          # The copyright holder doesn't sign their own agreement, and neither do changes made for them by Claude
+          # (commits authored "Claude <noreply@anthropic.com>"); bots don't contribute copyrightable work.
+          allowlist: Lanntern,Claude,claude,dependabot[bot],github-actions[bot]
