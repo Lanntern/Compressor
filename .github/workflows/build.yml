@@ -236,7 +236,7 @@ jobs:
           # 1. Every option ticked: each one takes effect, and uninstalling takes each one away again.
           Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir", `
-            "/TASKS=startmenu,contextmenu,autostart,updatecheck"
+            "/TASKS=startmenu,contextmenu,autostart", "/UPDATES=monthly"
           if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed" }
           if (-not (Test-Path $menu)) { throw "No Start menu entry" }
           $uninst = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
@@ -244,7 +244,7 @@ jobs:
           if (-not $uninst) { throw "Not listed in Apps & features" }
           python -c "from compressor.gui import integration; assert integration.context_menu_installed(), 'no context menu'"
           if (-not (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue)) { throw "Not started at sign-in" }
-          python -c "from PySide6.QtCore import QSettings; assert QSettings('Compressor', 'Compressor').value('updates/auto') in (True, 'true'), 'update check not saved'"
+          python -c "from PySide6.QtCore import QSettings; assert QSettings('Compressor', 'Compressor').value('updates/frequency') == 'monthly', 'update check frequency not saved'"
           Uninstall
           if (Test-Path $menu) { throw "Uninstall left the Start menu entry" }
           python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu left behind'"

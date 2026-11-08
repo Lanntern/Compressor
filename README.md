@@ -33,7 +33,7 @@ Also: **resize** (long edge, fit box, or percent, never enlarging), **metadata c
 * **Music for your phone** (Watch Folders): a smaller Opus/AAC/MP3 copy of your music library that keeps tags and album art, copies lossy songs as they are, only redoes what changed and removes copies of songs you deleted (never other files).
 * **Video options**: maximum resolution (short side, never upscaled; portrait videos handled), frame-rate cap, and audio re-encoding at a set bitrate. Even HEVC/AV1 files are converted when one of these applies. **Preview** a video to compare a frame from a short sample encode, with the estimated final size and quality score.
 
-It's private by design: no accounts, no telemetry, and your files never leave your computer. It goes online only for a weekly check for a newer version (one anonymous request to GitHub's release list; turn it off in Settings → About) and, when you ask for it, to download Pandoc for converting documents (a pinned version, checked against its SHA-256). Nothing is downloaded or installed by itself.
+It's private by design: no accounts, no telemetry, and your files never leave your computer. It goes online only to check for a newer version (weekly by default, or whenever you open it, monthly or never: Settings → About; one anonymous request to GitHub's release list) and, when you ask for it, to download Pandoc for converting documents (a pinned version, checked against its SHA-256). Nothing is downloaded or installed by itself.
 
 ## Home, Convert and Metadata
 
@@ -191,7 +191,7 @@ qpdf). Those get security fixes, so:
 * **You hear about new versions.** Dependabot opens pull requests for new library versions, and a weekly job
   (`scripts/check_updates.py`) opens an issue when FFmpeg, libjxl or gifsicle has a newer release or a library
   has a new advisory.
-* **Installed copies check weekly** for a newer Compressor (Settings → About; on by default, one anonymous
+* **Installed copies check weekly** for a newer Compressor by default (Settings → About: whenever you open it, weekly, monthly or never; one anonymous
   request to GitHub's release list, nothing downloaded or installed by itself). Settings → About → About
   Compressor lists every component's version (Copy Versions for bug reports).
 
@@ -200,8 +200,9 @@ qpdf). Those get security fixes, so:
 Compressor works entirely on your computer. It has no accounts, no telemetry and no ads, and it never sends your
 files or anything about them anywhere. It goes online only to:
 
-* **check for a newer version**, once a week: one anonymous request to GitHub's list of releases (GitHub sees
-  your IP address, like any website). Turn it off in Settings → About, or in the installer.
+* **check for a newer version**, weekly by default: one anonymous request to GitHub's list of releases (GitHub
+  sees your IP address, like any website). Choose how often (whenever you open it, weekly, monthly or never) in
+  Settings → About, or in the installer.
 * **download Pandoc**, only when you convert a document and only after you agree, from Pandoc's own release page.
 
 ## Support Compressor

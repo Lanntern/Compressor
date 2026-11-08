@@ -247,13 +247,16 @@ def cmd_tools(a: argparse.Namespace) -> int:
 
 
 def _installer_setup(args: list[str]) -> int:
-    """``context=1 autostart=0 updates=1 upgrade=0``: what was ticked in the installer. Ticked integrations are
-    added; unticked ones are left as they are (on an upgrade they may have been turned on in Settings since).
-    The update check is only set on a first install, so a choice made in Settings later is kept."""
+    """``context=1 autostart=0 updates=weekly upgrade=0``: what was chosen in the installer. Ticked integrations
+    are added; unticked ones are left as they are (on an upgrade they may have been turned on in Settings since).
+    ``updates`` is how often to check (launch, weekly, monthly or never; older installers sent 1 or 0). It's only
+    set on a first install, so a choice made in Settings later is kept."""
     from PySide6.QtCore import QSettings
 
     from . import APP_NAME
     from .gui import integration
+
+    from . import updates
 
     opts = dict(a.split("=", 1) for a in args if "=" in a)
     on = {k: v == "1" for k, v in opts.items()}
@@ -265,8 +268,10 @@ def _installer_setup(args: list[str]) -> int:
                 pass
     path = os.environ.get("COMPRESSOR_SETTINGS_FILE")
     qs = QSettings(path, QSettings.IniFormat) if path else QSettings(APP_NAME, APP_NAME)
-    if "updates" in on and not on.get("upgrade") and not qs.contains("updates/auto"):
-        qs.setValue("updates/auto", on["updates"])
+    freq = {"1": updates.DEFAULT_FREQUENCY, "0": "never"}.get(opts.get("updates", ""), opts.get("updates", ""))
+    chosen_before = qs.contains("updates/frequency") or qs.contains("updates/auto")
+    if freq in updates.FREQUENCIES and not on.get("upgrade") and not chosen_before:
+        qs.setValue("updates/frequency", freq)
     qs.sync()
     return 0
 

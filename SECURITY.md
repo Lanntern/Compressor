@@ -16,8 +16,8 @@ disclosing it publicly; you'll be credited in the release notes unless you'd rat
 
 ## Supported versions
 
-Only the newest release gets security fixes. Installed copies check weekly for a newer version (unless you
-turned that off), and a release that fixes a security problem says so.
+Only the newest release gets security fixes. Installed copies check for a newer version (weekly by default; the
+interval can be changed in Settings), and a release that fixes a security problem says so.
 
 ## Bundled components
 

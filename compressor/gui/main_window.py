@@ -552,7 +552,7 @@ class MainWindow(QMainWindow):
         return bool(self.on_battery) and self.qsettings.value("pause_on_battery", False, bool)
 
     def _setup_updates(self) -> None:
-        """Show an update found earlier, and check again once a week (in the background)."""
+        """Show an update found earlier, and check again when Settings' frequency says so (in the background)."""
         self._update_check: QThread | None = None
         self._release = None
         self.sidebar.update_btn.clicked.connect(self._show_update)
@@ -562,7 +562,7 @@ class MainWindow(QMainWindow):
         if cached and updates.newer(cached):     # remembered from an earlier check: no network needed
             self.sidebar.set_update(cached, self.qsettings.value("updates/security", False, bool))
         last = self.qsettings.value("updates/last_check", 0.0, float)
-        if self.qsettings.value("updates/auto", True, bool) and time.time() - last > updates.EVERY_DAYS * 86400 \
+        if updates.due(updates.frequency(self.qsettings), last, time.time()) \
                 and os.environ.get("COMPRESSOR_NO_NETWORK") != "1":       # tests and offline builds
             QTimer.singleShot(30 * 1000, self.check_for_updates)   # once start-up has settled
 

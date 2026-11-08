@@ -1,9 +1,11 @@
 ; Compressor's Windows installer (Inno Setup 6). Built by CI from the PyInstaller folder:
 ;   iscc /DAppVersion=0.1.0 /DSourceDir=..\dist\Compressor /DIconFile=..\dist\Compressor.ico packaging\installer.iss
 ; Installs for everyone (recommended: Program Files is protected from other programs), or only for the current
-; user without administrator rights. Optional, all off except the update check: a Start menu entry, a desktop shortcut, the Explorer context menu, starting at
-; sign-in, and (Windows 11 24H2+) Microsoft's JPEG XL Image Extension from the Store. Uninstalls cleanly: the
-; context menu and start-at-sign-in are removed, and the user is asked whether to keep settings and History.
+; user without administrator rights. Optional, all off: a Start menu shortcut, a desktop shortcut, the Explorer
+; right-click menu, starting at sign-in, and (Windows 11 24H2+) Microsoft's JPEG XL Image Extension from the Store.
+; How often to check for updates is a list on the same page (weekly by default; /UPDATES=launch|weekly|monthly|never
+; for silent installs). Uninstalls cleanly: the right-click menu and start-at-sign-in are removed, and the user is
+; asked whether to keep settings and History.
 
 #define AppName "Compressor"
 #ifndef AppVersion
@@ -37,8 +39,9 @@ OutputBaseFilename=Compressor-setup-x64
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-; The licence page: GPL-3.0 (no warranty), shown before installing.
-LicenseFile=..\LICENSE
+; The licence, shown before installing. An information page rather than "I accept the agreement": the GPL asks
+; nothing of people who just use the app (it covers sharing and changing it).
+InfoBeforeFile=..\LICENSE
 UninstallDisplayIcon={app}\Compressor.exe
 UninstallDisplayName={#AppName}
 CloseApplications=yes
@@ -51,14 +54,20 @@ SetupIconFile={#IconFile}
 ; The page's title says it all: no subtitle, no instructions.
 SelectTasksDesc=
 SelectTasksLabel2=
+; The licence page: one line above the text instead of two "please read" lines.
+WizardInfoBefore=License
+InfoBeforeLabel=Compressor is free, open-source software.
+InfoBeforeClickLabel=You don't need to accept anything to use it. The GNU General Public License below covers sharing and changing Compressor, and explains that it comes with no warranty.
+; Shortcuts are optional (off by default), so don't send people looking for them.
+FinishedLabel=Setup has finished installing [name] on your computer.
+FinishedLabelNoIcons=Setup has finished installing [name] on your computer.
 
 [Tasks]
-Name: "startmenu"; Description: "Add to Start menu"; Flags: unchecked
-Name: "desktopicon"; Description: "Add to desktop"; Flags: unchecked
-Name: "contextmenu"; Description: "Add Compressor to the File Explorer context menu"; Flags: unchecked
-Name: "autostart"; Description: "Start when I sign in"; Flags: unchecked
-Name: "updatecheck"; Description: "Check for updates weekly"
-Name: "jxlext"; Description: "Open the Microsoft Store to get the JPEG XL Image Extension"; Flags: unchecked; Check: HasJxlExtensionSupport
+Name: "startmenu"; Description: "Add a shortcut to the Start menu"; Flags: unchecked
+Name: "desktopicon"; Description: "Add a shortcut to the desktop"; Flags: unchecked
+Name: "contextmenu"; Description: "Add Compressor to the right-click menu in File Explorer"; Flags: unchecked
+Name: "autostart"; Description: "Start Compressor when I sign in"; Flags: unchecked
+Name: "jxlext"; Description: "Get the JPEG XL Image Extension from the Microsoft Store"; Flags: unchecked; Check: HasJxlExtensionSupport
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -68,7 +77,7 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\Compressor.exe"; Tasks: star
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Compressor.exe"; Tasks: desktopicon
 
 [Run]
-; The choices above that the app keeps itself (context menu, sign-in, update check).
+; The choices above that the app keeps itself (right-click menu, sign-in, update check).
 ; (As the signed-in user, not the administrator account that approved the install: these are their settings.)
 Filename: "{app}\Compressor.exe"; Parameters: "--installer-setup {code:SetupArgs}"; Flags: runhidden waituntilterminated runasoriginaluser; StatusMsg: "Applying your choices…"
 Filename: "ms-windows-store://pdp/?ProductId=9MZPRTH5C0TB"; Flags: shellexec nowait skipifsilent runasoriginaluser; Tasks: jxlext
@@ -83,6 +92,8 @@ Filename: "{app}\Compressor.exe"; Parameters: "--uninstall-cleanup"; Flags: runh
 [Code]
 var
   Upgrading: Boolean;
+  UpdatesLabel: TNewStaticText;
+  UpdatesCombo: TNewComboBox;
 
 function InitializeSetup(): Boolean;
 begin
@@ -101,6 +112,70 @@ begin
   Result := Version.Build >= 26100;
 end;
 
+// "Check for updates": a list below the tasks, the same choices as the app's Settings (compressor/updates.py).
+function UpdateKey(Index: Integer): String;
+begin
+  case Index of
+    0: Result := 'launch';
+    2: Result := 'monthly';
+    3: Result := 'never';
+  else
+    Result := 'weekly';
+  end;
+end;
+
+procedure InitializeWizard();
+var
+  Gap: Integer;
+begin
+  UpdatesCombo := TNewComboBox.Create(WizardForm);
+  UpdatesCombo.Parent := WizardForm.SelectTasksPage;
+  UpdatesCombo.Style := csDropDownList;
+  UpdatesCombo.Items.Add('Whenever I open Compressor');
+  UpdatesCombo.Items.Add('Weekly (recommended)');
+  UpdatesCombo.Items.Add('Monthly');
+  UpdatesCombo.Items.Add('Never');
+  UpdatesCombo.ItemIndex := 1;
+  UpdatesCombo.Width := ScaleX(200);
+
+  UpdatesLabel := TNewStaticText.Create(WizardForm);
+  UpdatesLabel.Parent := WizardForm.SelectTasksPage;
+  UpdatesLabel.AutoSize := True;
+  UpdatesLabel.Caption := 'Check for &updates:';
+  UpdatesLabel.FocusControl := UpdatesCombo;
+
+  // On an upgrade the choice made in Settings stays, so there's nothing to ask.
+  UpdatesLabel.Visible := not Upgrading;
+  UpdatesCombo.Visible := not Upgrading;
+  if not Upgrading then
+  begin
+    Gap := ScaleY(12);
+    WizardForm.TasksList.Height := WizardForm.TasksList.Height - UpdatesCombo.Height - Gap;
+    UpdatesCombo.Top := WizardForm.TasksList.Top + WizardForm.TasksList.Height + Gap;
+    UpdatesLabel.Left := WizardForm.TasksList.Left;
+    UpdatesLabel.Top := UpdatesCombo.Top + (UpdatesCombo.Height - UpdatesLabel.Height) div 2;
+    UpdatesCombo.Left := UpdatesLabel.Left + UpdatesLabel.Width + ScaleX(8);
+    UpdatesLabel.Anchors := [akLeft, akBottom];
+    UpdatesCombo.Anchors := [akLeft, akBottom];
+  end;
+end;
+
+function UpdatesChoice(): String;
+begin
+  // Silent installs: /UPDATES=launch|weekly|monthly|never.
+  Result := Lowercase(ExpandConstant('{param:UPDATES|}'));
+  if (Result <> 'launch') and (Result <> 'weekly') and (Result <> 'monthly') and (Result <> 'never') then
+    Result := UpdateKey(UpdatesCombo.ItemIndex);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  // The last page has no Cancel: put Finish where the main button sits on every other page (bottom right),
+  // not in the middle.
+  if CurPageID = wpFinished then
+    WizardForm.NextButton.Left := WizardForm.CancelButton.Left;
+end;
+
 function Flag(const Task: String): String;
 begin
   if WizardIsTaskSelected(Task) then Result := '1' else Result := '0';
@@ -112,7 +187,7 @@ var
 begin
   if Upgrading then Up := '1' else Up := '0';
   Result := 'context=' + Flag('contextmenu') + ' autostart=' + Flag('autostart') +
-            ' updates=' + Flag('updatecheck') + ' upgrade=' + Up;
+            ' updates=' + UpdatesChoice() + ' upgrade=' + Up;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

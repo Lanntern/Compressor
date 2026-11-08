@@ -807,7 +807,12 @@ def test_update_check_setting_and_notice(win):
     from compressor.gui.widgets import HelpTip
 
     page = win.app_settings
-    assert page.auto_updates.isChecked()                    # on by default
+    assert page.update_frequency.currentData() == "weekly"  # the default
+    page.update_frequency.setCurrentIndex(page.update_frequency.findData("monthly"))
+    page.update_frequency.activated.emit(page.update_frequency.currentIndex())
+    assert updates.frequency(page.qs) == "monthly"            # saved as soon as it's chosen
+    page.update_frequency.setCurrentIndex(page.update_frequency.findData("weekly"))
+    page.update_frequency.activated.emit(page.update_frequency.currentIndex())
     tips = [t for t in page.findChildren(HelpTip) if t.help_text == updates.HELP]
     assert tips and tips[0].accessibleDescription() == updates.HELP
     win.go_to(page)

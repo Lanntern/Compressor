@@ -18,9 +18,20 @@ from . import __version__
 REPO = "Lanntern/Compressor"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 PAGE = f"https://github.com/{REPO}/releases/latest"
-EVERY_DAYS = 7
+EVERY_DAYS = 7      # (the default: weekly)
+
+# How often to check: the choice in Settings and in the installer ("updates/frequency"). Days between checks;
+# 0 = every time the app opens, None = never.
+FREQUENCIES: dict[str, tuple[str, int | None]] = {
+    "launch": ("Whenever I open Compressor", 0),
+    "weekly": ("Weekly (recommended)", 7),
+    "monthly": ("Monthly", 30),
+    "never": ("Never", None),
+}
+DEFAULT_FREQUENCY = "weekly"
 HELP = ("Compressor opens your files with bundled decoders (ffmpeg, image and PDF libraries) that regularly get "
-        "security fixes. Once a week it asks GitHub whether a newer Compressor exists, so you hear about them. "
+        "security fixes. It asks GitHub whether a newer Compressor exists (weekly unless you choose otherwise), so "
+        "you hear about them. "
         "Only the version number is fetched: nothing about you or your files is sent (GitHub sees your IP "
         "address, like any website). Nothing is downloaded or installed by itself.")
 
@@ -79,4 +90,24 @@ def check(timeout: float = 15) -> Release | None:
     return rel if newer(rel.version) else None
 
 
-__all__ = ["check", "latest", "newer", "parse", "Release", "CheckFailed", "HELP", "PAGE", "EVERY_DAYS"]
+def frequency(qs) -> str:
+    """The chosen check frequency, from QSettings ``qs``. Settings written before the choice existed kept only an
+    on/off switch ("updates/auto"): off means never, on means the weekly default."""
+    value = str(qs.value("updates/frequency", "") or "")
+    if value in FREQUENCIES:
+        return value
+    if qs.contains("updates/auto"):
+        return DEFAULT_FREQUENCY if qs.value("updates/auto", True, bool) else "never"
+    return DEFAULT_FREQUENCY
+
+
+def due(freq: str, last_check: float, now: float) -> bool:
+    """Whether an automatic check should run now (``last_check``: unix time of the last successful one, 0 if none)."""
+    days = FREQUENCIES.get(freq, FREQUENCIES[DEFAULT_FREQUENCY])[1]
+    if days is None:
+        return False
+    return days == 0 or now - last_check > days * 86400
+
+
+__all__ = ["check", "latest", "newer", "parse", "Release", "CheckFailed", "HELP", "PAGE", "EVERY_DAYS",
+           "FREQUENCIES", "DEFAULT_FREQUENCY", "frequency", "due"]

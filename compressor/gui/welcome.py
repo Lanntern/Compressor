@@ -12,8 +12,8 @@ from .widgets import button, text
 
 PROMISES = (
     ("lock", "Your files stay on this computer",
-     "No account, no uploads, no tracking. The only connection is a weekly check for a newer version, which "
-     "Settings can turn off."),
+     "No account, no uploads, no tracking. The only connection is a check for a newer version (weekly unless "
+     "you choose otherwise in Settings)."),
     ("eye", "Nothing changes until you say so",
      "Scans only look. Every result is checked against its original before anything is replaced."),
     ("undo", "Everything can be undone",
