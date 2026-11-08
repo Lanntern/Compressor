@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77"]   # (77: SPDX licence expressions)
+requires = ["setuptools>=84.2.1"]   # (77: SPDX licence expressions)
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -33,7 +33,7 @@ Issues = "https://github.com/Lanntern/Compressor/issues"
 Funding = "https://ko-fi.com/lanntern"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pyinstaller>=6"]
+dev = ["pytest>=9.2.0", "pyinstaller>=6.22.3"]
 
 [project.scripts]
 compressor = "compressor.cli:main"
