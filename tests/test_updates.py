@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from compressor import updates
+from wick import updates
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 
@@ -38,7 +38,7 @@ def test_check_reads_github_release(monkeypatch):
     monkeypatch.setattr(updates.urllib.request, "urlopen", fake)
     rel = updates.check()
     assert rel.version == "99.0.0" and rel.security and rel.url == "https://example.invalid/r"
-    assert sent["ua"].startswith("Compressor/")          # no other identifying information
+    assert sent["ua"].startswith("Wick/")          # no other identifying information
     monkeypatch.setattr(updates.urllib.request, "urlopen",
                         lambda req, timeout: _Answer(json.dumps({"tag_name": "v0.0.1", "body": ""}).encode()))
     assert updates.check() is None                         # already newer than that
@@ -61,11 +61,11 @@ def test_check_failures_are_explained(monkeypatch):
 
 
 def test_component_versions():
-    from compressor import components
+    from wick import components
 
     v = components.versions()
     assert v["Pillow"].split(".")[0].isdigit() and "Qt" in v
-    assert components.report().startswith("Compressor ")
+    assert components.report().startswith("Wick ")
 
 
 def test_tool_downloads_are_checked(monkeypatch):

@@ -1,4 +1,4 @@
-"""Download the command-line encoders Compressor uses into ./tools: exact versions, checked by SHA-256.
+"""Download the command-line encoders Wick uses into ./tools: exact versions, checked by SHA-256.
 
 Windows (default on Windows):
     ffmpeg/ffprobe  Gyan.dev "full" shared build of an FFmpeg release (NVENC, SVT-AV1, x265, VMAF)
@@ -74,7 +74,7 @@ LINUX_LIBJXL = Download(
      "butteraugli_main": "?butteraugli_main"},
     held="libjxl publishes no static Linux builds after 0.11.1 (Linux users get libjxl from their distribution)")
 
-# Pandoc (documents): on Windows the app downloads it when first needed (compressor/addons.py pins the same
+# Pandoc (documents): on Windows the app downloads it when first needed (wick/addons.py pins the same
 # version); this is for Linux CI and builds. Distribution packages may be too old to run --sandbox.
 LINUX_PANDOC = Download(
     "pandoc", "3.12.1",
@@ -92,7 +92,7 @@ class ChecksumMismatch(Exception):
 
 def download(url: str) -> bytes:
     print(f"Downloading {url}")
-    req = urllib.request.Request(url, headers={"User-Agent": "compressor-fetch-tools"})
+    req = urllib.request.Request(url, headers={"User-Agent": "wick-fetch-tools"})
     with urllib.request.urlopen(req, timeout=300) as r:
         total = int(r.headers.get("Content-Length") or 0)
         buf = io.BytesIO()

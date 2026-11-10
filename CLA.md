@@ -1,7 +1,7 @@
 # Contributor License Agreement
 
-Thank you for contributing to Compressor. This agreement is between you and **Lanntern**, the maintainer and
-copyright holder of Compressor ("the Project"). It applies to everything you submit to the Project.
+Thank you for contributing to Wick. This agreement is between you and **Lanntern**, the maintainer and
+copyright holder of Wick ("the Project"). It applies to everything you submit to the Project.
 
 You sign it once, by commenting on your first pull request with the sentence the CLA bot asks for. It then
 covers all your past and future contributions to the Project.

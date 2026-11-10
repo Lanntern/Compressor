@@ -1,16 +1,16 @@
 # Third-party notices
 
-Compressor is © Lanntern and licensed under the GNU General Public License, version 3 only (see `LICENSE`).
+Wick is © Lanntern and licensed under the GNU General Public License, version 3 only (see `LICENSE`).
 It is built from, and ships with, the components below. Each keeps its own licence; licence texts for the
-command-line tools are in the `tools` folder next to `Compressor.exe` (`LICENSE-*.txt`).
+command-line tools are in the `tools` folder next to `Wick.exe` (`LICENSE-*.txt`).
 
 The exact versions in a release are pinned in that release's source: `scripts/fetch_tools.py` (command-line
 tools, each checked by SHA-256) and `requirements.txt` (Python libraries, each checked by hash). In the app,
-Settings → About → About Compressor → **Copy Versions** lists the versions actually installed.
+Settings → About → About Wick → **Copy Versions** lists the versions actually installed.
 
 ## Command-line tools (separate, unmodified programs in `tools/`)
 
-Compressor runs these as separate programs; it does not link to them.
+Wick runs these as separate programs; it does not link to them.
 
 | Tool | Licence | Binary from | Source code |
 |---|---|---|---|
@@ -43,7 +43,7 @@ own build of the same Qt version.
 
 ## Adapted code
 
-`compressor/_ssimulacra2.py` is adapted from the `ssimulacra2` Python package (its one SciPy call replaced by
+`wick/_ssimulacra2.py` is adapted from the `ssimulacra2` Python package (its one SciPy call replaced by
 NumPy). Its licence:
 
 ```text
@@ -80,10 +80,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Getting the source code
 
-Compressor's own source for every release is in this repository, at that release's tag.
+Wick's own source for every release is in this repository, at that release's tag.
 
 For the GPL and LGPL components above, use the source links in the tables (pick the version your release lists).
 If a link no longer works, or you would like the source sent to you, email **lanntern@proton.me** with the
-Compressor version you have: for at least three years after a release, Lanntern will provide the complete
+Wick version you have: for at least three years after a release, Lanntern will provide the complete
 corresponding source code of the GPL and LGPL components shipped with it, for no more than the cost of
 sending it.

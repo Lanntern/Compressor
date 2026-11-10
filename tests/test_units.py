@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from compressor import trash_restore
-from compressor.fileops import final_path
-from compressor.formats import GIF, JPEG, PNG, VIDEO, ImageInfo, classify, read_png_info, video_output_ext
-from compressor.plan import plan_entry
-from compressor.probe import StreamInfo, VideoInfo
-from compressor.scanner import FileEntry, scan
-from compressor.settings import Settings
+from wick import trash_restore
+from wick.fileops import final_path
+from wick.formats import GIF, JPEG, PNG, VIDEO, ImageInfo, classify, read_png_info, video_output_ext
+from wick.plan import plan_entry
+from wick.probe import StreamInfo, VideoInfo
+from wick.scanner import FileEntry, scan
+from wick.settings import Settings
 
 
 def _png(path: Path, depth: int = 8, animated: bool = False, w: int = 4, h: int = 4) -> Path:
@@ -111,8 +111,8 @@ def test_resize_target():
 
 
 def test_output_paths(tmp_path):
-    from compressor.engine import output_path
-    from compressor.plan import Plan
+    from wick.engine import output_path
+    from wick.plan import Plan
 
     root = tmp_path / "Photos"
     (root / "2024").mkdir(parents=True)
@@ -200,7 +200,7 @@ def test_jpeg_metadata_rewrite_is_lossless():
 
     from PIL import Image
 
-    from compressor import metadata as md
+    from wick import metadata as md
 
     ex = Image.Exif()
     ex[0x010F] = "Cam"
@@ -220,7 +220,7 @@ def test_jpeg_metadata_rewrite_is_lossless():
 
 
 def test_jxl_meta_boxes():
-    from compressor import metadata as md
+    from wick import metadata as md
 
     bare = b"\xff\x0a" + b"codestream"
     out = md.jxl_write_meta(bare, md.Meta(exif=b"II*\x00tiff", xmp=b"<x/>"))
@@ -231,7 +231,7 @@ def test_jxl_meta_boxes():
 
 
 def test_watcher_waits_for_stable_new_files(tmp_path):
-    from compressor.gui import watcher as w
+    from wick.gui import watcher as w
 
     (tmp_path / "old.jpg").write_bytes(b"x" * 10)
     fw = w.FolderWatcher.__new__(w.FolderWatcher)  # no Qt needed for the polling logic
@@ -261,17 +261,17 @@ def test_watcher_waits_for_stable_new_files(tmp_path):
 def test_desktop_integration_files(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    from compressor.gui import integration as it
+    from wick.gui import integration as it
 
     assert not it.context_menu_installed()
     it.install_context_menu()
     assert it.context_menu_installed()
-    text = (tmp_path / "data" / "applications" / "compressor.desktop").read_text()
+    text = (tmp_path / "data" / "applications" / "wick.desktop").read_text()
     assert "Exec=" in text and "%F" in text and "image/heic" in text
     it.uninstall_context_menu()
     assert not it.context_menu_installed()
     it.set_autostart(True)
-    assert it.autostart_enabled() and "--background" in (tmp_path / "config" / "autostart" / "compressor.desktop").read_text()
+    assert it.autostart_enabled() and "--background" in (tmp_path / "config" / "autostart" / "wick.desktop").read_text()
     it.set_autostart(False)
     assert not it.autostart_enabled()
 
@@ -280,7 +280,7 @@ def test_desktop_integration_files(tmp_path, monkeypatch):
 def test_explorer_menus_compress_and_convert():
     import winreg
 
-    from compressor.gui import integration as it
+    from wick.gui import integration as it
 
     had = it.context_menu_installed()
     try:
@@ -290,7 +290,7 @@ def test_explorer_menus_compress_and_convert():
             command = winreg.QueryValueEx(k, None)[0]
         assert "--convert" in command and "mp4_h264" in command and command.endswith('"%1"')
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, it._CONVERT_KEY.format(kind="image")) as k:
-            assert winreg.QueryValueEx(k, "MUIVerb")[0] == "Convert with Compressor"
+            assert winreg.QueryValueEx(k, "MUIVerb")[0] == "Convert with Wick"
         it.uninstall_context_menu()
         for kind in it.CONVERT_MENUS:
             with pytest.raises(OSError):
@@ -311,7 +311,7 @@ def _files(folder, n):
 
 def test_recycle_bin_speed_one_by_one(tmp_path):
     """Timing reference (see CI's --durations list): 40 files sent to the Recycle Bin/Trash one at a time."""
-    from compressor.fileops import move_to_trash
+    from wick.fileops import move_to_trash
 
     for p in _files(tmp_path / "one", 40):
         move_to_trash(p)
@@ -331,14 +331,14 @@ def test_installer_choices_are_applied_once(tmp_path, monkeypatch):
     install (a later choice in Settings is kept on upgrades)."""
     from PySide6.QtCore import QSettings
 
-    from compressor import cli
-    from compressor.gui import integration
+    from wick import cli
+    from wick.gui import integration
 
-    monkeypatch.setenv("COMPRESSOR_SETTINGS_FILE", str(tmp_path / "s.ini"))
+    monkeypatch.setenv("WICK_SETTINGS_FILE", str(tmp_path / "s.ini"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     if integration.IS_WINDOWS:
         pytest.skip("touches the real registry")
-    from compressor import updates
+    from wick import updates
 
     assert cli.main(["--installer-setup", "context=0", "autostart=1", "updates=monthly", "upgrade=0"]) == 0
     assert integration.autostart_enabled()
@@ -357,7 +357,7 @@ def test_update_check_frequency(tmp_path):
     it should be."""
     from PySide6.QtCore import QSettings
 
-    from compressor import updates
+    from wick import updates
 
     qs = QSettings(str(tmp_path / "u.ini"), QSettings.IniFormat)
     assert updates.frequency(qs) == "weekly"                         # nothing chosen yet: the default
@@ -380,11 +380,11 @@ def test_update_check_frequency(tmp_path):
 def test_stored_data_survives_damage(tmp_path, monkeypatch):
     """Presets and learned estimates are replaced in one step (never half-written); a damaged presets file is
     kept aside rather than written over; a damaged index rebuilds itself."""
-    from compressor import index, presets
-    from compressor.fileops import atomic_write_text
-    from compressor.settings import Settings
+    from wick import index, presets
+    from wick.fileops import atomic_write_text
+    from wick.settings import Settings
 
-    monkeypatch.setenv("COMPRESSOR_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("WICK_DATA_DIR", str(tmp_path))
     f = tmp_path / "x.json"
     atomic_write_text(f, '{"a": 1}')
     assert f.read_text("utf-8") == '{"a": 1}' and [p.name for p in tmp_path.iterdir()] == ["x.json"]
@@ -408,7 +408,7 @@ def test_stored_data_survives_damage(tmp_path, monkeypatch):
 def test_output_names_from_a_pattern(tmp_path):
     import time
 
-    from compressor.engine import output_name
+    from wick.engine import output_name
 
     src = tmp_path / "Holiday.jpg"
     src.write_bytes(b"x")
@@ -424,8 +424,8 @@ def test_jump_list_tasks():
     """The taskbar / Start / Search tasks: each opens a page the app knows; on Windows the list is really built."""
     import sys
 
-    from compressor.gui import jumplist
-    from compressor.gui.main_window import MainWindow
+    from wick.gui import jumplist
+    from wick.gui.main_window import MainWindow
 
     for title, target, description in jumplist.TASKS:
         page = target.removesuffix("-files")
@@ -441,7 +441,7 @@ def test_support_prompt_rules(tmp_path):
     """Asked once: only after a day and 10 GB saved; the most ever saved counts (History can be pruned later)."""
     from PySide6.QtCore import QSettings
 
-    from compressor.gui import support
+    from wick.gui import support
 
     qs = QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat)
     day, gb = 86400, 1024 ** 3
@@ -462,7 +462,7 @@ def test_support_prompt_rules(tmp_path):
 
 def test_downloaded_mark_is_kept(tmp_path):
     """Windows: a converted download keeps the "from the internet" mark (Zone.Identifier) of its original."""
-    from compressor import fileops
+    from wick import fileops
 
     a, b = tmp_path / "a.png", tmp_path / "b.webp"
     a.write_bytes(b"x")
@@ -486,7 +486,7 @@ def test_encoders_run_in_a_job_that_closes_with_the_app():
     import subprocess
     import sys
 
-    from compressor import tools
+    from wick import tools
 
     out = tools.run([sys.executable, "-c", "print('hi')"])
     assert out.returncode == 0 and out.stdout.strip() == "hi"
@@ -513,7 +513,7 @@ def test_encoders_run_in_a_job_that_closes_with_the_app():
 
 def test_quiet_when_full_screen_and_restart_after_updates():
     """Off Windows both are harmless no-ops; on Windows they answer without raising."""
-    from compressor import power
+    from wick import power
 
     assert power.user_busy() in (True, False)
     assert power.set_restart_after_update(True) is (os.name == "nt")
@@ -521,23 +521,23 @@ def test_quiet_when_full_screen_and_restart_after_updates():
 
 
 def test_windows_notifications():
-    """Toast XML is escaped and carries the buttons; their compressor: links reach the right page; on Windows the
+    """Toast XML is escaped and carries the buttons; their wick: links reach the right page; on Windows the
     app registers its name and icon for notifications (and the uninstaller's clean-up removes it)."""
     import xml.dom.minidom
 
-    from compressor.gui import toasts
-    from compressor.gui.app import open_target, parse_args
+    from wick.gui import toasts
+    from wick.gui.app import open_target, parse_args
 
-    x = toasts.toast_xml("Compressor", "Saved 3 GB <& more>", [("Show in History", "history")], launch="compress")
+    x = toasts.toast_xml("Wick", "Saved 3 GB <& more>", [("Show in History", "history")], launch="compress")
     doc = xml.dom.minidom.parseString(x)                      # well-formed
     texts = [t.firstChild.data for t in doc.getElementsByTagName("text")]
-    assert texts == ["Compressor", "Saved 3 GB <& more>"]
+    assert texts == ["Wick", "Saved 3 GB <& more>"]
     action = doc.getElementsByTagName("action")[0]
-    assert action.getAttribute("arguments") == "compressor:open/history"
-    assert doc.documentElement.getAttribute("launch") == "compressor:open/compress"
-    assert toasts.target_from_link('"compressor:open/history/"') == "history" and toasts.target_from_link("http://x") == ""
-    assert open_target(["--url", "compressor:open/cleanup"]) == "cleanup"
-    assert parse_args(["--url", "compressor:open/cleanup"])[3] == []     # not taken for a file
+    assert action.getAttribute("arguments") == "wick:open/history"
+    assert doc.documentElement.getAttribute("launch") == "wick:open/compress"
+    assert toasts.target_from_link('"wick:open/history/"') == "history" and toasts.target_from_link("http://x") == ""
+    assert open_target(["--url", "wick:open/cleanup"]) == "cleanup"
+    assert parse_args(["--url", "wick:open/cleanup"])[3] == []     # not taken for a file
     if os.name != "nt":
         assert toasts.show("t", "m") is False
         return
@@ -547,11 +547,11 @@ def test_windows_notifications():
 
     QApplication.instance() or QApplication([])               # (the icon file is drawn with Qt)
     assert toasts.register()
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\AppUserModelId\Lanntern.Compressor") as key:
-        assert winreg.QueryValueEx(key, "DisplayName")[0] == "Compressor"
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\AppUserModelId\Lanntern.Wick") as key:
+        assert winreg.QueryValueEx(key, "DisplayName")[0] == "Wick"
     toasts.unregister()
     with pytest.raises(OSError):
-        winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\AppUserModelId\Lanntern.Compressor")
+        winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\AppUserModelId\Lanntern.Wick")
     toasts._registered = False
 
 
@@ -566,14 +566,14 @@ def test_windows11_menu_package_matches_the_dll():
     sys.path.insert(0, str(root / "packaging"))
     import make_shell_package as pkg
 
-    from compressor.gui import integration
+    from wick.gui import integration
 
     doc = xml.dom.minidom.parseString(pkg.manifest("1.2.3"))
     identity = doc.getElementsByTagName("Identity")[0]
     assert identity.getAttribute("Name") == integration.MODERN_PACKAGE
     assert identity.getAttribute("Version") == "1.2.3.0"
     assert "OID.2.25.311729368913984317654407730594956997722=1" in identity.getAttribute("Publisher")
-    cpp = (root / "packaging" / "shell" / "CompressorShell.cpp").read_text()
+    cpp = (root / "packaging" / "shell" / "WickShell.cpp").read_text()
     ids = {m.lower() for m in re.findall(r"// \{([0-9a-f-]{36})\}", cpp)}
     assert ids == {pkg.CLSID_COMPRESS, pkg.CLSID_CONVERT}
     classes = {c.getAttribute("Id") for c in doc.getElementsByTagName("com:Class")}
@@ -582,47 +582,47 @@ def test_windows11_menu_package_matches_the_dll():
 
 
 def test_default_apps_and_open_with():
-    """Windows: Compressor is listed in Default apps and Open with for its file types (never made the default),
-    and unregistering removes it. Skipped where a real Compressor is registered, so a real install isn't touched."""
-    from compressor.gui import integration
+    """Windows: Wick is listed in Default apps and Open with for its file types (never made the default),
+    and unregistering removes it. Skipped where a real Wick is registered, so a real install isn't touched."""
+    from wick.gui import integration
 
     if os.name != "nt":
         integration.register_file_types()                 # no-op elsewhere
         assert not integration.file_types_registered()
         return
     if integration.file_types_registered():
-        pytest.skip("a real Compressor is registered on this computer")
+        pytest.skip("a real Wick is registered on this computer")
     import winreg
 
-    exe = r"C:\CompressorTest\CompressorTest.exe"
+    exe = r"C:\WickTest\WickTest.exe"
     integration.register_file_types(exe)
     try:
         assert integration.file_types_registered()
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.mp4\OpenWithProgids") as k:
-            winreg.QueryValueEx(k, "Compressor.Video")
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\Compressor.Picture\shell\open\command") as k:
+            winreg.QueryValueEx(k, "Wick.Video")
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\Wick.Picture\shell\open\command") as k:
             assert winreg.QueryValueEx(k, "")[0] == f'"{exe}" "%1"'
     finally:
-        integration.unregister_file_types("CompressorTest.exe")
+        integration.unregister_file_types("WickTest.exe")
     assert not integration.file_types_registered()
 
 
 def test_a_link_cannot_smuggle_in_files_or_options():
-    """compressor: links come from notifications but could come from any web page: they open a page, nothing more."""
-    from compressor.gui.app import open_target, parse_args
+    """wick: links come from notifications but could come from any web page: they open a page, nothing more."""
+    from wick.gui.app import open_target, parse_args
 
-    crafted = ["--url", 'compressor:open/history" "C:\\Users\\me\\Pictures', "--preset", "Maximum savings",
+    crafted = ["--url", 'wick:open/history" "C:\\Users\\me\\Pictures', "--preset", "Maximum savings",
                "C:\\Users\\me\\Videos"]
     assert parse_args(crafted) == (False, "", "", [])
     assert open_target(crafted) == ""                     # not a well-formed page name: ignored
-    assert open_target(["--url", "compressor:open/compress-files"]) == "compress-files"
+    assert open_target(["--url", "wick:open/compress-files"]) == "compress-files"
 
 
 def test_gpu_encoders_nvidia_intel_amd(monkeypatch):
     """Auto tries NVIDIA, then Intel, then AMD (whichever passes its test encode), else the CPU; each gets its
     own quality settings, and AMD's AV1 scale (0-255) is four times the others'."""
-    from compressor import video
-    from compressor.settings import Settings
+    from wick import video
+    from wick.settings import Settings
 
     for works, expect in (({"hevc_nvenc"}, "hevc_nvenc"), ({"hevc_qsv", "hevc_amf"}, "hevc_qsv"),
                           ({"hevc_amf"}, "hevc_amf"), (set(), "libx265")):
@@ -643,9 +643,9 @@ def test_gpu_encoders_nvidia_intel_amd(monkeypatch):
 def test_hardware_decoding_is_asked_for_before_the_input():
     """Encodes ask ffmpeg to decode on the GPU (before -i, so it applies to the source); samples and the CPU retry
     don't. (The real round trips in test_engine run with it, which on a computer without a GPU decodes normally.)"""
-    from compressor import video
-    from compressor.probe import StreamInfo, VideoInfo
-    from compressor.settings import Settings
+    from wick import video
+    from wick.probe import StreamInfo, VideoInfo
+    from wick.settings import Settings
 
     info = VideoInfo("h264", 1920, 1080, "yuv420p", 30, 60, 6_000_000, 0, [StreamInfo(0, "video", "h264")])
     args = video.build_args(Path("a.mp4"), Path("b.mp4"), info, Settings(), "libx265", 24, hw_decode=True)
@@ -659,8 +659,8 @@ def test_thumbnails_from_windows(tmp_path):
     from PIL import Image
     from PySide6.QtWidgets import QApplication
 
-    from compressor.formats import PNG
-    from compressor.gui import thumbs, winthumbs
+    from wick.formats import PNG
+    from wick.gui import thumbs, winthumbs
 
     QApplication.instance() or QApplication([])
     src = tmp_path / "photo.png"
@@ -685,7 +685,7 @@ def test_limits_against_bombs(tmp_path, monkeypatch):
     per-process memory limit of 3/4 of the computer's memory (at least 2 GB), and on Windows the job carries it."""
     import zipfile
 
-    from compressor import convert, tools
+    from wick import convert, tools
 
     cbz = tmp_path / "bomb.cbz"
     with zipfile.ZipFile(cbz, "w", zipfile.ZIP_DEFLATED) as z:
@@ -704,7 +704,7 @@ def test_winrt_notifications_and_accent():
     UISettings; elsewhere neither exists."""
     import re
 
-    from compressor.gui import toasts, winrt
+    from wick.gui import toasts, winrt
 
     if os.name != "nt":
         assert winrt.accent_color() is None and toasts.show("t", "m") is False
@@ -730,3 +730,36 @@ def test_installer_script_has_no_line_inno_would_read_as_a_section():
     bad = [f"{start + n + 2}: {line}" for n, line in enumerate(lines[start + 1:])
            if line.lstrip().startswith("[") and not line.startswith("[")]
     assert not bad, "\n".join(bad)
+
+
+def test_renamed_from_compressor_carries_history_and_settings_over(tmp_path, monkeypatch):
+    """Renamed from Compressor: its data folder (History, log, presets) moves to Wick's once, and its settings are
+    copied once; nothing that already exists under the new name is ever overwritten."""
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    from wick import journal
+    from wick.gui import main_window
+
+    QApplication.instance() or QApplication([])
+    old, new = tmp_path / "Compressor", tmp_path / "Wick"
+    (old / "runs").mkdir(parents=True)
+    (old / "runs" / "r1.jsonl").write_text("{}", "utf-8")
+    journal._carry_over(new, [old])
+    assert (new / "runs" / "r1.jsonl").exists() and not old.exists()
+
+    monkeypatch.delenv("WICK_SETTINGS_FILE", raising=False)
+    QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, str(tmp_path / "settings"))   # (not the real ones)
+    legacy = QSettings(QSettings.IniFormat, QSettings.UserScope, "Compressor", "Compressor")
+    legacy.setValue("theme", "dark")
+    legacy.setValue("updates/frequency", "monthly")
+    legacy.sync()
+    monkeypatch.setattr(main_window, "QSettings", lambda *a, **k: QSettings(QSettings.IniFormat,
+                                                                          QSettings.UserScope, *a))
+    assert main_window.carry_over_settings() == 2
+    wick_settings = QSettings(QSettings.IniFormat, QSettings.UserScope, "Wick", "Wick")
+    assert wick_settings.value("theme") == "dark" and wick_settings.value("updates/frequency") == "monthly"
+    legacy.setValue("theme", "light")
+    legacy.sync()
+    assert main_window.carry_over_settings() == 0                # once only: Wick's own settings stay
+    assert QSettings(QSettings.IniFormat, QSettings.UserScope, "Wick", "Wick").value("theme") == "dark"

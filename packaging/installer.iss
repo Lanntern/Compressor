@@ -1,5 +1,5 @@
-; Compressor's Windows installer (Inno Setup 6). Built by CI from the PyInstaller folder:
-;   iscc /DAppVersion=0.1.0 /DSourceDir=..\dist\Compressor /DIconFile=..\dist\Compressor.ico packaging\installer.iss
+; Wick's Windows installer (Inno Setup 6). Built by CI from the PyInstaller folder:
+;   iscc /DAppVersion=0.1.0 /DSourceDir=..\dist\Wick /DIconFile=..\dist\Wick.ico packaging\installer.iss
 ; Installs for everyone (recommended: Program Files is protected from other programs), or only for the current
 ; user without administrator rights. Optional: a Start menu shortcut (on by default: without one, Windows Search
 ; can't find the app or show its actions), and, off by default, a desktop shortcut, the Explorer right-click menu,
@@ -8,27 +8,27 @@
 ; for silent installs). Uninstalls cleanly: the right-click menu and start-at-sign-in are removed, and the user is
 ; asked whether to keep settings and History.
 
-#define AppName "Compressor"
+#define AppName "Wick"
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
 #ifndef SourceDir
-  #define SourceDir "..\dist\Compressor"
+  #define SourceDir "..\dist\Wick"
 #endif
 
 [Setup]
-AppId={{8A6F2C1E-5B7D-4C2A-9E3F-6D1B2C3A4F50}
+AppId={{49ABA96C-4A22-4472-A899-293EBE89FF34}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=Lanntern
 AppCopyright=Copyright (C) 2026 Lanntern. GNU GPL version 3.
 ; What Settings → Apps, Control Panel and uninstallers (Revo and others) show for the installed app.
-AppPublisherURL=https://github.com/Lanntern/Compressor
-AppSupportURL=https://github.com/Lanntern/Compressor/issues
-AppUpdatesURL=https://github.com/Lanntern/Compressor/releases/latest
+AppPublisherURL=https://github.com/Lanntern/Wick
+AppSupportURL=https://github.com/Lanntern/Wick/issues
+AppUpdatesURL=https://github.com/Lanntern/Wick/releases/latest
 AppComments=Shrink photos, videos and music safely: every result verified, every change undoable.
-AppContact=https://github.com/Lanntern/Compressor/issues
+AppContact=https://github.com/Lanntern/Wick/issues
 ; The setup .exe's own details (file Properties → Details).
 VersionInfoVersion={#AppVersion}
 VersionInfoProductVersion={#AppVersion}
@@ -40,7 +40,7 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 ; For everyone (recommended): Program Files can only be changed by an administrator, so other programs can't
-; replace Compressor or the encoders it runs. "Only for me" stays available on the same page (no admin needed).
+; replace Wick or the encoders it runs. "Only for me" stays available on the same page (no admin needed).
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline dialog
 ArchitecturesAllowed=x64compatible
@@ -48,13 +48,13 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ; Windows 10 version 1809 or later (Qt 6's minimum): older versions get a clear message instead of a broken app.
 MinVersion=10.0.17763
 OutputDir=..\dist
-OutputBaseFilename=Compressor-setup
+OutputBaseFilename=Wick-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 ; The licence, accepted before installing.
 LicenseFile=..\LICENSE
-UninstallDisplayIcon={app}\Compressor.exe
+UninstallDisplayIcon={app}\Wick.exe
 UninstallDisplayName={#AppName}
 CloseApplications=yes
 RestartApplications=no
@@ -67,7 +67,7 @@ SetupIconFile={#IconFile}
 SelectTasksDesc=
 SelectTasksLabel2=
 ; The licence page: a subtitle and one instruction, instead of two "please read" lines saying the same thing.
-LicenseLabel=Compressor is free, open-source software.
+LicenseLabel=Wick is free, open-source software.
 LicenseLabel3=Please read the license below. You must accept its terms to continue with the installation.
 ; Shortcuts are optional (off by default), so don't send people looking for them.
 FinishedLabel=Setup has finished installing [name] on your computer.
@@ -76,8 +76,8 @@ FinishedLabelNoIcons=Setup has finished installing [name] on your computer.
 [Tasks]
 Name: "startmenu"; Description: "Add a shortcut to the Start menu"
 Name: "desktopicon"; Description: "Add a shortcut to the desktop"; Flags: unchecked
-Name: "contextmenu"; Description: "Add Compressor to the right-click menu in File Explorer"; Flags: unchecked
-Name: "autostart"; Description: "Start Compressor when I sign in"; Flags: unchecked
+Name: "contextmenu"; Description: "Add Wick to the right-click menu in File Explorer"; Flags: unchecked
+Name: "autostart"; Description: "Start Wick when I sign in"; Flags: unchecked
 Name: "jxlext"; Description: "Get the JPEG XL Image Extension from the Microsoft Store"; Flags: unchecked; Check: HasJxlExtensionSupport
 
 [Files]
@@ -85,30 +85,30 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 
 [Registry]
 ; (An earlier uninstall's clean-up for other users must not run on this new install: see RegisterCleanupForOtherUsers.)
-Root: HKLM; Subkey: "Software\Microsoft\Active Setup\Installed Components\{{6E3B5C1A-2F44-4C1E-9B8A-0C6D2E7F4A31}"; ValueType: none; Flags: deletekey; Check: IsAdminInstallMode
-; App Paths: typing "compressor" in Win+R (and launchers that use it) starts the app.
-Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\Compressor.exe"; Flags: uninsdeletekey
-Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
+Root: HKLM; Subkey: "Software\Microsoft\Active Setup\Installed Components\{{221A5C66-2C65-4E55-B016-44533EACAE8C}"; ValueType: none; Flags: deletekey; Check: IsAdminInstallMode
+; App Paths: typing "wick" in Win+R (and launchers that use it) starts the app.
+Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Wick.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\Wick.exe"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Wick.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
 
 [Icons]
-; AppUserModelID: the same as the app's (compressor/gui/jumplist.py), so the shortcut, the running window and the
+; AppUserModelID: the same as the app's (wick/gui/jumplist.py), so the shortcut, the running window and the
 ; jump list (taskbar right-click, Start, Windows Search actions) are one app.
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\Compressor.exe"; Comment: "Shrink photos, videos and music safely"; AppUserModelID: "Lanntern.Compressor"; Tasks: startmenu
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Compressor.exe"; Comment: "Shrink photos, videos and music safely"; AppUserModelID: "Lanntern.Compressor"; Tasks: desktopicon
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\Wick.exe"; Comment: "Shrink photos, videos and music safely"; AppUserModelID: "Lanntern.Wick"; Tasks: startmenu
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\Wick.exe"; Comment: "Shrink photos, videos and music safely"; AppUserModelID: "Lanntern.Wick"; Tasks: desktopicon
 
 [Run]
 ; The choices above that the app keeps itself (right-click menu, sign-in, update check).
 ; (As the signed-in user, not the administrator account that approved the install: these are their settings.)
-Filename: "{app}\Compressor.exe"; Parameters: "--installer-setup {code:SetupArgs}"; Flags: runhidden waituntilterminated runasoriginaluser; StatusMsg: "Applying your choices…"
+Filename: "{app}\Wick.exe"; Parameters: "--installer-setup {code:SetupArgs}"; Flags: runhidden waituntilterminated runasoriginaluser; StatusMsg: "Applying your choices…"
 Filename: "ms-windows-store://pdp/?ProductId=9MZPRTH5C0TB"; Flags: shellexec nowait skipifsilent runasoriginaluser; Tasks: jxlext
-Filename: "{app}\Compressor.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Wick.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 ; The downloaded installer isn't needed any more (removed a few seconds after Setup closes).
 ; (Also the folder it was unzipped into, and that .zip, when both are named after the installer: see CleanupCommand.)
 Filename: "{cmd}"; Parameters: "{code:CleanupCommand}"; WorkingDir: "{sys}"; Description: "Delete the installer"; Flags: postinstall runhidden nowait skipifsilent runasoriginaluser
 
 [UninstallRun]
 ; Remove the Explorer context menu and start-at-sign-in (both point at this copy of the app).
-Filename: "{app}\Compressor.exe"; Parameters: "--uninstall-cleanup"; Flags: runhidden waituntilterminated; RunOnceId: "Cleanup"
+Filename: "{app}\Wick.exe"; Parameters: "--uninstall-cleanup"; Flags: runhidden waituntilterminated; RunOnceId: "Cleanup"
 
 [Code]
 var
@@ -120,8 +120,8 @@ var
 function InitializeSetup(): Boolean;
 begin
   // Installed before? Then the update-check choice made in Settings since is kept.
-  Upgrading := RegKeyExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8A6F2C1E-5B7D-4C2A-9E3F-6D1B2C3A4F50}_is1') or
-               RegKeyExists(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8A6F2C1E-5B7D-4C2A-9E3F-6D1B2C3A4F50}_is1');
+  Upgrading := RegKeyExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{49ABA96C-4A22-4472-A899-293EBE89FF34}_is1') or
+               RegKeyExists(HKLM, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{49ABA96C-4A22-4472-A899-293EBE89FF34}_is1');
   Result := True;
 end;
 
@@ -134,7 +134,7 @@ begin
   Result := Version.Build >= 26100;
 end;
 
-// "Check for updates": a list below the tasks, the same choices as the app's Settings (compressor/updates.py).
+// "Check for updates": a list below the tasks, the same choices as the app's Settings (wick/updates.py).
 function UpdateKey(Index: Integer): String;
 begin
   case Index of
@@ -153,7 +153,7 @@ begin
   UpdatesCombo := TNewComboBox.Create(WizardForm);
   UpdatesCombo.Parent := WizardForm.SelectTasksPage;
   UpdatesCombo.Style := csDropDownList;
-  UpdatesCombo.Items.Add('Whenever I open Compressor');
+  UpdatesCombo.Items.Add('Whenever I open Wick');
   UpdatesCombo.Items.Add('Weekly (recommended)');
   UpdatesCombo.Items.Add('Monthly');
   UpdatesCombo.Items.Add('Never');
@@ -228,8 +228,8 @@ begin
 end;
 
 // "Delete the installer": the setup .exe, a few seconds after Setup closes. When it was unzipped from a download
-// (e.g. Compressor-setup.zip extracted to a Compressor-setup folder), that folder goes too if nothing else is in
-// it (rmdir refuses otherwise), and so does the .zip beside it. Only names starting with "Compressor-setup", so a
+// (e.g. Wick-setup.zip extracted to a Wick-setup folder), that folder goes too if nothing else is in
+// it (rmdir refuses otherwise), and so does the .zip beside it. Only names starting with "Wick-setup", so a
 // Downloads or Desktop folder is never touched.
 function CleanupCommand(Param: String): String;
 var
@@ -239,7 +239,7 @@ begin
   Dir := ExtractFileDir(Exe);
   Name := ExtractFileName(Dir);
   Result := '/c ping -n 4 127.0.0.1 >nul & del /f /q "' + Exe + '"';
-  if Pos('compressor-setup', Lowercase(Name)) = 1 then
+  if Pos('wick-setup', Lowercase(Name)) = 1 then
   begin
     Result := Result + ' & rmdir "' + Dir + '"';
     Zip := ExtractFileDir(Dir) + '\' + Name + '.zip';
@@ -262,7 +262,7 @@ begin
             ' updates=' + UpdatesChoice() + ' upgrade=' + Up;
 end;
 
-// Settings › Apps › Installed apps › … › Modify: opens Compressor's Settings (menus, start at sign-in,
+// Settings › Apps › Installed apps › … › Modify: opens Wick's Settings (menus, start at sign-in,
 // notifications), the closest thing a classic app has to "Advanced options". (Inno marks it NoModify otherwise.)
 procedure CurStepChanged(CurStep: TSetupStep);
 var
@@ -272,9 +272,9 @@ begin
   if CurStep = ssPostInstall then
   begin
     if IsAdminInstallMode then Root := HKLM else Root := HKCU;
-    Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8A6F2C1E-5B7D-4C2A-9E3F-6D1B2C3A4F50}_is1';
+    Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{49ABA96C-4A22-4472-A899-293EBE89FF34}_is1';
     RegWriteDWordValue(Root, Key, 'NoModify', 0);
-    RegWriteStringValue(Root, Key, 'ModifyPath', '"' + ExpandConstant('{app}\Compressor.exe') + '" --open=settings');
+    RegWriteStringValue(Root, Key, 'ModifyPath', '"' + ExpandConstant('{app}\Wick.exe') + '" --open=settings');
   end;
 end;
 
@@ -283,31 +283,31 @@ end;
 // Windows' Active Setup runs a command once for each user at their next sign-in: this one removes those entries
 // (never anyone's files, settings or History). A later install removes the Active Setup entry again ([Registry]).
 const
-  CleanupKey = 'Software\Microsoft\Active Setup\Installed Components\{6E3B5C1A-2F44-4C1E-9B8A-0C6D2E7F4A31}';
+  CleanupKey = 'Software\Microsoft\Active Setup\Installed Components\{221A5C66-2C65-4E55-B016-44533EACAE8C}';
 
 function CleanupScript(): String;
 begin
   Result :=
     '$c=''HKCU:\Software\Classes''; ' +
-    'foreach($k in ''Compressor.Picture'',''Compressor.Video'',''Compressor.Audio'',''compressor'',' +
-    '''*\shell\Compressor'',''Directory\shell\Compressor'',' +
-    '''SystemFileAssociations\image\shell\CompressorConvert'',''SystemFileAssociations\video\shell\CompressorConvert'',' +
-    '''SystemFileAssociations\audio\shell\CompressorConvert'',''Applications\Compressor.exe'',' +
-    '''AppUserModelId\Lanntern.Compressor''){Remove-Item -LiteralPath ($c+''\''+$k) -Recurse -Force -EA 0}; ' +
+    'foreach($k in ''Wick.Picture'',''Wick.Video'',''Wick.Audio'',''wick'',' +
+    '''*\shell\Wick'',''Directory\shell\Wick'',' +
+    '''SystemFileAssociations\image\shell\WickConvert'',''SystemFileAssociations\video\shell\WickConvert'',' +
+    '''SystemFileAssociations\audio\shell\WickConvert'',''Applications\Wick.exe'',' +
+    '''AppUserModelId\Lanntern.Wick''){Remove-Item -LiteralPath ($c+''\''+$k) -Recurse -Force -EA 0}; ' +
     'Get-ChildItem $c -EA 0 | Where-Object {$_.PSChildName -like ''.*''} | ForEach-Object {' +
     'Remove-ItemProperty -LiteralPath ($_.PSPath+''\OpenWithProgids'') ' +
-    '-Name ''Compressor.Picture'',''Compressor.Video'',''Compressor.Audio'' -EA 0}; ' +
-    'Remove-ItemProperty -LiteralPath ''HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'' -Name ''Compressor'' -EA 0; ' +
-    'Remove-ItemProperty -LiteralPath ''HKCU:\Software\RegisteredApplications'' -Name ''Compressor'' -EA 0; ' +
-    'Remove-Item -LiteralPath ''HKCU:\Software\Lanntern\Compressor'',' +
-    '''HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\Lanntern.Compressor'',' +
-    '''HKCU:\Software\Compressor\Shell'' -Recurse -Force -EA 0; ' +
-    'Get-AppxPackage -Name ''Lanntern.Compressor.ContextMenu'' | Remove-AppxPackage -EA 0';
+    '-Name ''Wick.Picture'',''Wick.Video'',''Wick.Audio'' -EA 0}; ' +
+    'Remove-ItemProperty -LiteralPath ''HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'' -Name ''Wick'' -EA 0; ' +
+    'Remove-ItemProperty -LiteralPath ''HKCU:\Software\RegisteredApplications'' -Name ''Wick'' -EA 0; ' +
+    'Remove-Item -LiteralPath ''HKCU:\Software\Lanntern\Wick'',' +
+    '''HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\Lanntern.Wick'',' +
+    '''HKCU:\Software\Wick\Shell'' -Recurse -Force -EA 0; ' +
+    'Get-AppxPackage -Name ''Lanntern.Wick.ContextMenu'' | Remove-AppxPackage -EA 0';
 end;
 
 procedure RegisterCleanupForOtherUsers();
 begin
-  RegWriteStringValue(HKLM, CleanupKey, '', 'Compressor clean-up after uninstalling');
+  RegWriteStringValue(HKLM, CleanupKey, '', 'Wick clean-up after uninstalling');
   RegWriteStringValue(HKLM, CleanupKey, 'StubPath',
     ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe') +
     ' -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "' + CleanupScript() + '"');
@@ -327,16 +327,16 @@ begin
     // Command links: each choice says what it does. Keeping is the default, and the safe answer.
     // (Built here, not inline: Inno Setup reads any line starting with a bracket as a new section.)
     SetArrayLength(Choices, 2);
-    Choices[0] := 'Keep them' + #13#10 + 'If you install Compressor again, it carries on where you left off, ' +
+    Choices[0] := 'Keep them' + #13#10 + 'If you install Wick again, it carries on where you left off, ' +
       'and you can still undo past compressions from History.';
-    Choices[1] := 'Remove them' + #13#10 + 'Deletes Compressor''s settings, History and log. Your files ' +
+    Choices[1] := 'Remove them' + #13#10 + 'Deletes Wick''s settings, History and log. Your files ' +
       'aren''t touched, but compressions can no longer be undone from History.';
     if TaskDialogMsgBox('Keep your settings and History?',
-         'Compressor has been removed. Your settings and History are still on this PC.',
+         'Wick has been removed. Your settings and History are still on this PC.',
          mbConfirmation, MB_YESNO, Choices, 0) = IDNO then
     begin
-      DelTree(ExpandConstant('{localappdata}\Compressor'), True, True, True);
-      RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Compressor');
+      DelTree(ExpandConstant('{localappdata}\Wick'), True, True, True);
+      RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Wick');
     end;
   end;
 end;

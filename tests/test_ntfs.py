@@ -1,4 +1,4 @@
-"""Fast drive scanning: reading NTFS's file table directly (compressor/ntfs.py).
+"""Fast drive scanning: reading NTFS's file table directly (wick/ntfs.py).
 
 tests/data/ntfs.img.gz is a small real NTFS volume (see make_ntfs_image.sh); on Windows the real C: drive is
 read as well (CI runs as administrator).
@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from compressor import ntfs
-from compressor.scanner import ScanResult, walk_listing
-from compressor.settings import Settings
+from wick import ntfs
+from wick.scanner import ScanResult, walk_listing
+from wick.settings import Settings
 
 IMAGE = Path(__file__).with_name("data") / "ntfs.img.gz"
 EXPECTED = {   # path below the volume root -> size (as made by make_ntfs_image.sh)

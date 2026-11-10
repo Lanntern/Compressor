@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from compressor import index, journal, presets
-from compressor.settings import Settings
+from wick import index, journal, presets
+from wick.settings import Settings
 
 from .conftest import ffmpeg, needs_ffmpeg
 
 
 def test_index_round_trip_and_invalidation(tmp_path):
-    from compressor.scanner import scan
+    from wick.scanner import scan
 
     Image.new("RGB", (64, 48), "teal").save(tmp_path / "a.png")
     s = Settings(min_image_kb=0)
@@ -64,7 +64,7 @@ def test_history_retention():
 
 
 def test_log_and_diagnostics():
-    from compressor import log
+    from wick import log
 
     log.setup()
     log.log.warning("test line %d", 42)
@@ -72,11 +72,11 @@ def test_log_and_diagnostics():
         h.flush()
     assert any("test line 42" in line for line in log.tail())
     text = log.diagnostics()
-    assert text.startswith("Compressor ") and "ffmpeg" in text
+    assert text.startswith("Wick ") and "ffmpeg" in text
 
 
 def test_gui_command_line_parsing():
-    from compressor.gui.app import parse_args
+    from wick.gui.app import parse_args
 
     bg, preset, convert_to, paths = parse_args(["--preset", "For sharing", "x.jpg", "--background"])
     assert bg and preset == "For sharing" and not convert_to and paths == [os.path.abspath("x.jpg")]
@@ -86,7 +86,7 @@ def test_gui_command_line_parsing():
     _bg, _p, convert_to, paths = parse_args(["--convert=mp4_h264", "clip.mov"])
     assert convert_to == "mp4_h264" and paths == [os.path.abspath("clip.mov")]
 
-    from compressor.gui.app import open_target
+    from wick.gui.app import open_target
 
     assert open_target(["--open=history"]) == "history" and open_target(["--open", "cleanup"]) == "cleanup"
     assert open_target(["a.jpg"]) == "" and parse_args(["--open", "cleanup"])[3] == []   # not taken for a path
@@ -102,9 +102,9 @@ def test_video_target_size_rules():
 
 @needs_ffmpeg
 def test_video_preview_and_options(tmp_path):
-    from compressor.plan import plan_entry
-    from compressor.scanner import scan
-    from compressor.video import preview_video
+    from wick.plan import plan_entry
+    from wick.scanner import scan
+    from wick.video import preview_video
 
     ffmpeg("-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=3", "-f", "lavfi", "-i", "sine=f=440:d=3",
            "-c:v", "libx264", "-crf", "16", "-c:a", "aac", "clip.mp4", cwd=tmp_path)
@@ -120,7 +120,7 @@ def test_video_preview_and_options(tmp_path):
 
 
 def test_smart_quality_search_and_thresholds():
-    from compressor import quality
+    from wick import quality
 
     # Values ordered from best quality to most compression; passes while v <= 70.
     chosen = quality.search([90, 80, 70, 60, 50], lambda v: (v >= 70, f"q{v}"))
@@ -132,10 +132,10 @@ def test_smart_quality_search_and_thresholds():
 
 
 def test_smart_quality_image_reports_choice(tmp_path):
-    from compressor.engine import preview_file
-    from compressor.fileops import remove_quietly
-    from compressor.plan import plan_entry
-    from compressor.scanner import scan
+    from wick.engine import preview_file
+    from wick.fileops import remove_quietly
+    from wick.plan import plan_entry
+    from wick.scanner import scan
 
     Image.radial_gradient("L").resize((300, 300)).convert("RGB").save(tmp_path / "g.png")
     s = Settings(image_format="webp", png_mode="lossy", smart_quality=True, smart_target="good", min_image_kb=0)
@@ -153,12 +153,12 @@ def test_smart_quality_unreached_target_keeps_the_best_quality_attempt(tmp_path,
     whichever attempt came first, labelled as the best)."""
     import dataclasses
 
-    from compressor import quality
-    from compressor.engine import preview_file
-    from compressor.fileops import remove_quietly
-    from compressor.images import SMART_QUALITIES
-    from compressor.plan import plan_entry
-    from compressor.scanner import scan
+    from wick import quality
+    from wick.engine import preview_file
+    from wick.fileops import remove_quietly
+    from wick.images import SMART_QUALITIES
+    from wick.plan import plan_entry
+    from wick.scanner import scan
 
     Image.effect_noise((240, 180), 50).convert("RGB").save(tmp_path / "n.png")
     monkeypatch.setattr(quality, "score_images", lambda *a, **k: quality.Score("SSIMULACRA2", 1.0))
@@ -177,7 +177,7 @@ def test_smart_quality_unreached_target_keeps_the_best_quality_attempt(tmp_path,
 
 
 def test_custom_video_quality_value():
-    from compressor.video import encoder_quality, measures_quality
+    from wick.video import encoder_quality, measures_quality
 
     s = Settings(video_quality="custom", video_crf=30, smart_quality=True)
     assert encoder_quality(s, "libx265") == 30 and not measures_quality(s)
@@ -189,11 +189,11 @@ def test_custom_video_quality_value():
 
 @needs_ffmpeg
 def test_repeated_frames_detected_and_removed(tmp_path):
-    from compressor import mediainfo
-    from compressor.engine import DONE, run_job
-    from compressor.plan import plan_entry
-    from compressor.probe import detect_cadence, probe_video
-    from compressor.scanner import scan
+    from wick import mediainfo
+    from wick.engine import DONE, run_job
+    from wick.plan import plan_entry
+    from wick.probe import detect_cadence, probe_video
+    from wick.scanner import scan
 
     ffmpeg("-f", "lavfi", "-i", "testsrc2=s=640x360:r=24:d=8", "-vf", "fps=30", "-c:v", "libx264", "-crf", "20",
            "padded.mp4", cwd=tmp_path)
@@ -214,10 +214,10 @@ def test_repeated_frames_detected_and_removed(tmp_path):
 
 
 def test_media_details_text():
-    from compressor import mediainfo
-    from compressor.formats import AUDIO, VIDEO
-    from compressor.probe import AudioInfo, VideoInfo
-    from compressor.scanner import FileEntry
+    from wick import mediainfo
+    from wick.formats import AUDIO, VIDEO
+    from wick.probe import AudioInfo, VideoInfo
+    from wick.scanner import FileEntry
 
     v = FileEntry(Path("a.mp4"), 1, VIDEO, 0, video=VideoInfo("h264", 1920, 1080, "yuv420p", 29.97, 201.0,
                                                                8_200_000, 0))
@@ -227,7 +227,7 @@ def test_media_details_text():
 
 
 def test_parallelism_rules(monkeypatch):
-    from compressor import tools, video
+    from wick import tools, video
 
     monkeypatch.setattr("os.cpu_count", lambda: 16)
     tools.total_memory_gb.cache_clear()
@@ -244,14 +244,14 @@ def test_parallelism_rules(monkeypatch):
 
 
 def test_camera_originals_skip_repeat_detection():
-    from compressor.probe import VideoInfo, detect_cadence, is_camera_original
+    from wick.probe import VideoInfo, detect_cadence, is_camera_original
 
     v = VideoInfo("hevc", 1920, 1080, "yuv420p", 30.0, 10.0, 1, 0, tags={"com.apple.quicktime.make": "Apple"})
     assert is_camera_original(v) and detect_cadence(Path("missing.mov"), v) == 0
 
 
 def test_history_reads_only_changed_files():
-    from compressor import journal
+    from wick import journal
 
     w = journal.RunWriter(Path("."), {})
     w.add(journal.FileRecord("/a.jpg", "/a.jxl", 100, 80, "jpeg", "m", True, 0.0))
@@ -265,7 +265,7 @@ def test_history_reads_only_changed_files():
 
 
 def test_languages_from_the_system(monkeypatch):
-    from compressor import languages
+    from wick import languages
 
     assert languages.normalise("sv_SE.UTF-8") == "sv" and languages.normalise("ger") == "de"
     assert languages.normalise("deu") == "de" and languages.normalise("en-GB") == "en"
@@ -277,14 +277,14 @@ def test_languages_from_the_system(monkeypatch):
         monkeypatch.setenv("LANG", "sv_SE.UTF-8")
         assert languages.detect()[:2] == ["sv", "en"]
     s = Settings(languages="fr")
-    from compressor.settings import my_languages
+    from wick.settings import my_languages
 
     assert my_languages(s) == ["fr"]
 
 
 def test_camera_videos_get_hevc_by_default():
-    from compressor.probe import VideoInfo
-    from compressor.video import codec_for
+    from wick.probe import VideoInfo
+    from wick.video import codec_for
 
     phone = VideoInfo("h264", 1920, 1080, "yuv420p", 30, 10, 20_000_000, 0, tags={"com.apple.quicktime.make": "Apple"})
     download = VideoInfo("h264", 1920, 1080, "yuv420p", 30, 10, 5_000_000, 0)
@@ -298,10 +298,10 @@ def test_camera_videos_get_hevc_by_default():
 def test_only_my_languages_and_measured_quality(tmp_path):
     """Dubs in other languages are left out (the main soundtrack stays); an already-efficient video is only
     remuxed; every encoded video reports how close it is to the original."""
-    from compressor.engine import run_job
-    from compressor.plan import plan_entry
-    from compressor.probe import probe_video
-    from compressor.scanner import scan
+    from wick.engine import run_job
+    from wick.plan import plan_entry
+    from wick.probe import probe_video
+    from wick.scanner import scan
 
     src = ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25", "-f", "lavfi", "-i", "sine=frequency=440",
            "-f", "lavfi", "-i", "sine=frequency=660", "-f", "lavfi", "-i", "sine=frequency=880", "-t", "4",
@@ -331,10 +331,10 @@ def test_only_my_languages_and_measured_quality(tmp_path):
 
 
 def test_recordings_and_watch_suggestions(tmp_path, monkeypatch):
-    from compressor import suggest
-    from compressor.overview import confidence, is_recording
-    from compressor.probe import VideoInfo
-    from compressor.scanner import FileEntry
+    from wick import suggest
+    from wick.overview import confidence, is_recording
+    from wick.probe import VideoInfo
+    from wick.scanner import FileEntry
 
     rec = FileEntry(tmp_path / "Videos" / "Captures" / "game.mp4", 1, "video", 0)
     rec.video = VideoInfo("h264", 1920, 1080, "yuv420p", 60, 60, 50_000_000, 0)     # ~0.4 bits per pixel
@@ -348,7 +348,7 @@ def test_recordings_and_watch_suggestions(tmp_path, monkeypatch):
     obs.mkdir(parents=True)
     (obs / "basic.ini").write_text(f"[SimpleOutput]\nFilePath={tmp_path / 'OBS out'}\n")
     (tmp_path / "OBS out").mkdir()
-    import compressor.cleanup.common as common
+    import wick.cleanup.common as common
 
     monkeypatch.setattr(common, "known_folder", lambda n: tmp_path / n)
     monkeypatch.setattr(suggest, "_obs_folders", lambda: [tmp_path / "OBS out"])
@@ -362,9 +362,9 @@ def test_undo_knows_when_the_original_left_the_bin(tmp_path):
     import os
     import time as _time
 
-    from compressor import journal, trash_restore
-    from compressor.engine import cannot_undo
-    from compressor.fileops import move_to_trash
+    from wick import journal, trash_restore
+    from wick.engine import cannot_undo
+    from wick.fileops import move_to_trash
 
     if os.name == "nt":
         pytest.skip("the real Recycle Bin is covered by the Windows integration tests")

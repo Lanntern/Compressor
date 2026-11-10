@@ -2,7 +2,7 @@
 
 import pytest
 
-from compressor import cutjoin
+from wick import cutjoin
 
 from .conftest import ffmpeg, needs_ffmpeg
 
@@ -33,7 +33,7 @@ def test_joining(tmp_path):
     assert abs(cutjoin.join([tmp_path / "a.mp4", tmp_path / "b.mp4"], tmp_path / "ab.mp4") - 5) < 0.3
     assert "differ" in cutjoin.join_problem([tmp_path / "a.mp4", tmp_path / "c.mp4"])
     assert abs(cutjoin.join([tmp_path / "a.mp4", tmp_path / "c.mp4"], tmp_path / "ac.mp4", reencode=True) - 5) < 0.3
-    from compressor.probe import probe_video
+    from wick.probe import probe_video
 
     v = probe_video(tmp_path / "ac.mp4")
     assert (v.width, v.height) == (320, 240)                      # fitted into the first one's picture

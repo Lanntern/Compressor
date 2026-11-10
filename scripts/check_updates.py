@@ -1,4 +1,4 @@
-"""Is anything Compressor bundles out of date, or known to be vulnerable?
+"""Is anything Wick bundles out of date, or known to be vulnerable?
 
 * The command-line tools pinned in scripts/fetch_tools.py, against each upstream project's newest release.
 * The Python libraries pinned in requirements.txt, against known vulnerabilities (pip-audit / OSV).
@@ -30,7 +30,7 @@ UPSTREAM = {
     "ffmpeg": ("https://github.com/FFmpeg/FFmpeg", r"^n(\d+\.\d+(?:\.\d+)?)$"),
     "libjxl": ("https://github.com/libjxl/libjxl", r"^v(\d+\.\d+\.\d+)$"),
     "gifsicle": ("https://github.com/kohler/gifsicle", r"^v(\d+\.\d+(?:\.\d+)?)$"),
-    "pandoc": ("https://github.com/jgm/pandoc", r"^(\d+\.\d+(?:\.\d+)*)$"),   # (also pinned in compressor/addons.py)
+    "pandoc": ("https://github.com/jgm/pandoc", r"^(\d+\.\d+(?:\.\d+)*)$"),   # (also pinned in wick/addons.py)
 }
 TITLE = "Bundled components: updates or security fixes available"
 

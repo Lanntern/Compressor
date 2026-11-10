@@ -4,11 +4,11 @@ import pikepdf
 import pytest
 from PIL import Image
 
-from compressor import convert, pdftools
-from compressor.engine import DONE, process_convert, run_job, undo_run
-from compressor.plan import Plan
-from compressor.scanner import scan
-from compressor.settings import Settings
+from wick import convert, pdftools
+from wick.engine import DONE, process_convert, run_job, undo_run
+from wick.plan import Plan
+from wick.scanner import scan
+from wick.settings import Settings
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -97,9 +97,9 @@ def test_undo_of_pages_made_in_replace_mode_removes_the_folder(tmp_path):
     """PDF → page images with Replace: undoing brings the PDF back from the bin and removes the page folder."""
     import time
 
-    from compressor import journal
-    from compressor.engine import undo_record
-    from compressor.fileops import move_to_trash
+    from wick import journal
+    from wick.engine import undo_record
+    from wick.fileops import move_to_trash
 
     pdf = tmp_path / "report.pdf"
     pdf.write_bytes(b"%PDF-1.4 stand-in")

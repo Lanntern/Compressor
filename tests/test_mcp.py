@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from compressor import mcp_server
-from compressor.journal import data_dir
-from compressor.mcp_server import Server, clean
+from wick import mcp_server
+from wick.journal import data_dir
+from wick.mcp_server import Server, clean
 
 
 def _pngs(folder: Path, n: int = 3) -> list[Path]:
@@ -63,8 +63,8 @@ def test_protocol_over_stdio(tmp_path):
     directory requires, ping, unknown method and tool errors, and nothing but JSON-RPC on stdout."""
     allowed = _outside_appdata(tmp_path) / "allowed"
     allowed.mkdir()
-    env = {**os.environ, "COMPRESSOR_SETTINGS_FILE": str(tmp_path / "s.ini")}
-    proc = subprocess.Popen([sys.executable, "-c", "from compressor.cli import main; raise SystemExit(main())",
+    env = {**os.environ, "WICK_SETTINGS_FILE": str(tmp_path / "s.ini")}
+    proc = subprocess.Popen([sys.executable, "-c", "from wick.cli import main; raise SystemExit(main())",
                              "mcp", str(allowed)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, env=env, cwd=Path(__file__).parent.parent)
     msgs = [
@@ -83,7 +83,7 @@ def test_protocol_over_stdio(tmp_path):
     by_id = {m["id"]: m for m in lines if "id" in m}
     init = by_id[1]["result"]
     assert init["protocolVersion"] == "2025-06-18" and init["capabilities"]["tools"] == {"listChanged": False}
-    assert init["serverInfo"]["name"] == "compressor"
+    assert init["serverInfo"]["name"] == "wick"
     tools = by_id[2]["result"]["tools"]
     assert {t["name"] for t in tools} == {"list_allowed_folders", "plan_compression", "compress_planned_files",
                                           "list_history", "undo_run"}

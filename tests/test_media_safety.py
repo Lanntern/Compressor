@@ -4,9 +4,9 @@ from pathlib import Path
 
 from PIL import Image, ImageChops
 
-from compressor.plan import plan_entry
-from compressor.scanner import scan
-from compressor.settings import Settings
+from wick.plan import plan_entry
+from wick.scanner import scan
+from wick.settings import Settings
 
 from .conftest import ffmpeg, needs_ffmpeg
 
@@ -34,8 +34,8 @@ def test_motion_photos_and_live_photos_are_left_alone(tmp_path):
 
 @needs_ffmpeg
 def test_hdr10_metadata_and_interlacing(tmp_path):
-    from compressor.engine import DONE, run_job
-    from compressor.probe import _mastering, probe_video
+    from wick.engine import DONE, run_job
+    from wick.probe import _mastering, probe_video
 
     ffmpeg("-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=2", "-pix_fmt", "yuv420p10le", "-c:v", "libx265",
            "-x265-params", "log-level=error:crf=4:hdr10=1:repeat-headers=1:colorprim=bt2020:transfer=smpte2084:"
@@ -59,9 +59,9 @@ def test_hdr10_metadata_and_interlacing(tmp_path):
 
 
 def test_estimates_learn_from_results(tmp_path):
-    from compressor import calibration
-    from compressor.plan import Plan
-    from compressor.scanner import FileEntry
+    from wick import calibration
+    from wick.plan import Plan
+    from wick.scanner import FileEntry
 
     calibration.reset()
     e = FileEntry(tmp_path / "x.png", 1000, "png", 0)
@@ -77,7 +77,7 @@ def test_estimates_learn_from_results(tmp_path):
 
 
 def test_similar_photos(tmp_path):
-    from compressor.cleanup.similar import find_similar
+    from wick.cleanup.similar import find_similar
 
     base = Image.effect_mandelbrot((1200, 900), (-2, -1.2, 1, 1.2), 80).convert("RGB")
     base.save(tmp_path / "original.jpg", quality=95)
@@ -106,7 +106,7 @@ def test_similar_groups_do_not_chain():
     import os
     from pathlib import Path
 
-    from compressor.cleanup.similar import _star_groups
+    from wick.cleanup.similar import _star_groups
 
     st = os.stat(__file__)
     files = {i: (Path(f"{i}.jpg"), st) for i in range(3)}
@@ -120,10 +120,10 @@ def test_similar_photo_pairs_and_live_photos(tmp_path):
     import os
     import time
 
-    from compressor.cleanup import actions
-    from compressor.cleanup.similar import find_similar
-    from compressor.engine import undo_run
-    from compressor.formats import register_heif
+    from wick.cleanup import actions
+    from wick.cleanup.similar import find_similar
+    from wick.engine import undo_run
+    from wick.formats import register_heif
 
     register_heif()
     base = Image.effect_mandelbrot((1200, 900), (-2, -1.2, 1, 1.2), 80).convert("RGB")

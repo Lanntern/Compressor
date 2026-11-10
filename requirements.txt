@@ -239,7 +239,7 @@ brotli==1.2.1 \
     --hash=sha256:fb6a4d400aa531c73a718b337116fad77ba8dc6df34fa615c808bfc55ffb19ca \
     --hash=sha256:ff02e697d947f518e9e99f2b25698045a5ddffa95049c4d95b5a8cf3618d9008
     # via
-    #   compressor (pyproject.toml)
+    #   wick (pyproject.toml)
     #   py7zr
 brotlicffi==1.2.1.0 ; platform_python_implementation == 'PyPy' \
     --hash=sha256:00a6e8df24c2f48744bbdca8694a2b50bb26d1d0b6360c3a7c5caeaf4ad83373 \
@@ -433,7 +433,7 @@ fonttools==4.68.0 \
     --hash=sha256:fde43b9785c7f105aa563b6b5481edabea4ab6be7d9ef14ff4d76225950923e8 \
     --hash=sha256:fe80d05dd85e6ac58d0cd4fa10ddb96252a6f1046ee0fd00cd1d48f0c25921ac \
     --hash=sha256:fedc183bdbc3fdbfbdca26e0e04566d089cbb404712509a4e824608e9304cc77
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 imagequant==1.1.5 \
     --hash=sha256:0052e9d844c754df013eaca207f96a52cfa0b6d2c3be352ed9a0b61a5d3af714 \
     --hash=sha256:0101d4e9589ad64701599233cf205a6684b7991d4da892e89170bf196d6a2338 \
@@ -527,7 +527,7 @@ imagequant==1.1.5 \
     --hash=sha256:f446401d393c4e31f173b342adc458ed9f93621aa009e24e24d7b644d575ab2a \
     --hash=sha256:f4cc564f54f0550bf2592a5fcdee1e771a181d48707205add2df13c2df34ef45 \
     --hash=sha256:f8afe63e6ced5876d1dadb75f0babc18f0c26061e5c2d1a2146fa5c5ac277d9b
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 inflate64==1.0.4 \
     --hash=sha256:067af498c34a8b69b2957d20dbce4d72affda23aed37ea231b1ea5ad9aab5731 \
     --hash=sha256:0d173a7a0e865bb7d19685c5b1ad2994712b8361b24136d7e94abeff58505647 \
@@ -865,7 +865,7 @@ mozjpeg-lossless-optimization==1.3.2 \
     --hash=sha256:fbd9c9030a3ef6f2681b7352608ef199e3481b239a4600cfc5b923a97cb165c0 \
     --hash=sha256:fe1523e7c64cc0db478cad0a3341832051e905a7262b5fd11706a5602ebbc300 \
     --hash=sha256:fed275ff18d36ac76ec5ea5b6f0fc7abd90ba27db592854ab61a62706b3e6194
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 multivolumefile==0.2.3 \
     --hash=sha256:237f4353b60af1703087cf7725755a1f6fcaeeea48421e1896940cd1c920d678 \
     --hash=sha256:a0648d0aafbc96e59198d5c17e9acad7eb531abea51035d08ce8060dcad709d6
@@ -944,7 +944,7 @@ numpy==2.4.6 ; python_full_version < '3.12' \
     --hash=sha256:f407cb6b8e9d6d8c626bc73c945db1706035af8fd632295547bf1c9e46d092d6 \
     --hash=sha256:f74a575920ab21fe304421a3fc28793d82e299cae9eccb37084e9fc7f3617c20
     # via
-    #   compressor (pyproject.toml)
+    #   wick (pyproject.toml)
     #   rawpy
 numpy==2.5.4 ; python_full_version >= '3.12' \
     --hash=sha256:067374eb538c34c745436365cf7b0112595c1d326f21ce4ff340f61230239fbb \
@@ -1014,7 +1014,7 @@ numpy==2.5.4 ; python_full_version >= '3.12' \
     --hash=sha256:fe4d21ab149f15e4e6043dfb0de87e6e5f34ac176cde83060e9802981fca2ac2 \
     --hash=sha256:ffa6ce09a1c6a08e9667dd9c97aa0b14184e8d18f2a14b78b2a2328c9147f076
     # via
-    #   compressor (pyproject.toml)
+    #   wick (pyproject.toml)
     #   rawpy
 packaging==26.3 \
     --hash=sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79 \
@@ -1064,7 +1064,7 @@ pikepdf==10.17.0 \
     --hash=sha256:f76e2ac6777b2d2a74a71eb73fa2438734ad453177c66f5a5a246b5e2660336b \
     --hash=sha256:fc795b9190e236309d7ab59bcbea897af4a1a92344a22b2c5b87d50f56f11f81 \
     --hash=sha256:ff192cda8d7e368547f382d10ecb48696049057c57a37365a7621b415fdd9ec3
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 pillow==13.0.0 \
     --hash=sha256:02464da86f561f410e13b061ec37c3068a9cb557a095494157742d07b3c24a27 \
     --hash=sha256:04a63720f79e22fd54d897c233a68314c50ca0603360f54ce2bd5db8f0f43782 \
@@ -1150,7 +1150,7 @@ pillow==13.0.0 \
     --hash=sha256:ff3fe9eb621fbb9db4c4be33ab946f6bac5f98ab50ca8d3260503653656c961b \
     --hash=sha256:ffea6b2986a797c84b6d1d27d4f43e0b83c73fc16281a930891cd237cf0d08fe
     # via
-    #   compressor (pyproject.toml)
+    #   wick (pyproject.toml)
     #   pikepdf
     #   pillow-heif
 pillow-heif==1.8.1 \
@@ -1224,7 +1224,7 @@ pillow-heif==1.8.1 \
     --hash=sha256:fc13fede809f1ec28348b2803dd23808e5e518cc6ef44de8093c461f27e98396 \
     --hash=sha256:fc8f3b859611cb0397d79c91d4b0c27c4288026c381d6302b53c2b4da61aaee1 \
     --hash=sha256:fd17029b8d7583011b1c16d932407145f26639b015878d5c4ee1093444530452
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 psutil==7.2.2 ; sys_platform != 'cygwin' \
     --hash=sha256:0746f5f8d406af344fd547f1c8daa5f5c33dbc293bb8d6a16d80b4bb88f59372 \
     --hash=sha256:076a2d2f923fd4821644f5ba89f059523da90dc9014e85f8e45a5774ca5bc6f9 \
@@ -1251,7 +1251,7 @@ psutil==7.2.2 ; sys_platform != 'cygwin' \
 py7zr==1.1.4 \
     --hash=sha256:7674697559bd06b697bf6e8249985cee6dc704a4b07b8e11f24d0b1695707c3e \
     --hash=sha256:f6f868a457a6bd485b78d26e619045718bcd0b7720a6bf97d5fe86a1523423e8
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 pybcj==1.0.8 \
     --hash=sha256:0074af187b1acce9e31717fc9aa42bc36b67f1a44088a8b44f4f4792af688ee6 \
     --hash=sha256:0657c9534d480a43b11743cad4209d140d09d417adaf19213ff395686ed08812 \
@@ -1414,7 +1414,7 @@ pyoxipng==9.1.1 \
     --hash=sha256:f7b29240fac6be4e3b1d9db2398d251ddf127030faffdfff639d910695b68537 \
     --hash=sha256:f9b0873d56217b793b069453b6376c7dbe550e683488d825b750c7f4f5659e2f \
     --hash=sha256:fbc4d5cca8d0d453090618cd3f250dbc98212a3693055cc48922485c210826de
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 pyppmd==1.3.1 \
     --hash=sha256:011f845de195d60fe973a635a1f4be981b7d80f357a8acb1b2d83bdf5087c808 \
     --hash=sha256:017a1e2903f1c3147a1046db486990d401e8a25eb52c320b1fc2fb3e7b83cbeb \
@@ -1484,7 +1484,7 @@ pyside6==6.12.0 \
     --hash=sha256:8920e163f60493e18822d20f1e01c7c4bcf9c1c5cfbc68284788896f692594f8 \
     --hash=sha256:d13ed4d0053cc20f3e4e0fdbf12790a9b7f958d7e22c0843411ecfa8c799e2a9 \
     --hash=sha256:efea4c2f2aa54403c45de825865a902a1960a1cc9d5aaa92d4ebb8f4c4cd0708
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 pyside6-addons==6.12.0 \
     --hash=sha256:1d9bcd294ce1c9829194c7d13b01f771a2254b86cb3462cc3399321d2797fdac \
     --hash=sha256:3c079cbaad2ad28bc5bfa92fd6bac4ba28d622b825825e3b4220f0682599b2db \
@@ -1545,11 +1545,11 @@ rawpy==0.28.0 \
     --hash=sha256:d0a0cfc3a53ae937bb64363f6f3781af0d159e87f77386dbf348ece68a744dbc \
     --hash=sha256:d7e51273bbce4d7580be809fab4ad1242ac9f3d1cf0484d610b93d49c682ac32 \
     --hash=sha256:f5f988bb6eb610c08b43521861ae788574fe1b475884f86b78f1c3c580276066
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 send2trash==2.1.0 \
     --hash=sha256:0da2f112e6d6bb22de6aa6daa7e144831a4febf2a87261451c4ad849fe9a873c \
     --hash=sha256:1c72b39f09457db3c05ce1d19158c2cbef4c32b8bedd02c155e49282b7ea7459
-    # via compressor (pyproject.toml)
+    # via wick (pyproject.toml)
 shiboken6==6.12.0 \
     --hash=sha256:3bde565bb0890044b5c7f63808adddede5abc241e9395a2bfed61919884d6240 \
     --hash=sha256:47105e05baf57d35453e07d240bbe59cb4b8d9565377ea5134ff9fb37d4f5c02 \

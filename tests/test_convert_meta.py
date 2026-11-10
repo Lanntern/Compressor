@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from compressor import convert, metaclean, overview
-from compressor.engine import DONE, process_convert, process_metadata, run_job, undo_run
-from compressor.plan import Plan
-from compressor.scanner import scan
-from compressor.settings import Settings
+from wick import convert, metaclean, overview
+from wick.engine import DONE, process_convert, process_metadata, run_job, undo_run
+from wick.plan import Plan
+from wick.scanner import scan
+from wick.settings import Settings
 
 from .conftest import ffmpeg, needs_ffmpeg, needs_image_tools, needs_pandoc
 
@@ -71,7 +71,7 @@ def test_convert_video_to_h264_and_vp9(media_dir):
         results, _ = _convert_all(media_dir, convert.ConvertOptions(image_target="none", video_target=target), s)
         r = next(r for r in results if r.entry.path.name == "clip.avi")
         assert r.status == DONE, r.message
-        from compressor.probe import probe_video
+        from wick.probe import probe_video
 
         assert probe_video(r.output).codec == codec
 
@@ -120,14 +120,14 @@ def test_metadata_cleanup_video(media_dir):
 
 
 def test_overview_ranks_by_confidence(tmp_path):
-    from compressor.formats import ImageInfo
-    from compressor.probe import StreamInfo, VideoInfo
-    from compressor.scanner import FileEntry
+    from wick.formats import ImageInfo
+    from wick.probe import StreamInfo, VideoInfo
+    from wick.scanner import FileEntry
 
     s = Settings()
     big_jpeg = FileEntry(tmp_path / "a.jpg", 10_000_000, "jpeg", 0, image=ImageInfo(4000, 3000, 1, 8, 1, False))
     heic = FileEntry(tmp_path / "b.heic", 12_000_000, "heic", 0, image=ImageInfo(4000, 3000, 1, 8, 1, False))
-    p1, p2 = __import__("compressor.plan", fromlist=["plan_entry"]).plan_entry(big_jpeg, s), None
+    p1, p2 = __import__("wick.plan", fromlist=["plan_entry"]).plan_entry(big_jpeg, s), None
     assert overview.confidence(big_jpeg, p1)[0] == overview.HIGH
     p2 = Plan(True, "x", ".jxl", 6_000_000, route="jxl")
     assert overview.confidence(heic, p2)[0] == overview.LOW
@@ -142,8 +142,8 @@ def test_jpeg_xl_is_an_input_for_convert(media_dir):
     losslessly from a JPEG turns back into that exact JPEG."""
     import subprocess
 
-    from compressor import tools
-    from compressor.formats import JXL, read_jxl_info
+    from wick import tools
+    from wick.formats import JXL, read_jxl_info
 
     cjxl = tools.require("cjxl")
     src = _gps_jpeg(media_dir / "orig.jpg")
@@ -155,7 +155,7 @@ def test_jpeg_xl_is_an_input_for_convert(media_dir):
     subprocess.run([cjxl, str(media_dir / "turned.jpg"), str(media_dir / "turned.jxl"), "--lossless_jpeg=0", "-q", "85",
                     "--quiet"], check=True)
     (media_dir / "turned.jpg").unlink()
-    from compressor import metadata as md
+    from wick import metadata as md
 
     turned_path = media_dir / "turned.jxl"         # (cjxl drops EXIF when encoding lossily: added the way we write it)
     turned_path.write_bytes(md.jxl_write_meta(turned_path.read_bytes(), md.Meta(ex.tobytes()[6:], None, None)))
@@ -205,7 +205,7 @@ def test_convert_with_a_size_limit(media_dir):
 
 @needs_ffmpeg
 def test_convert_video_resolution_and_frame_rate(media_dir):
-    from compressor.probe import probe_video
+    from wick.probe import probe_video
 
     ffmpeg("-f", "lavfi", "-i", "testsrc2=s=640x360:r=50:d=2", "-c:v", "mpeg4", "clip.avi", cwd=media_dir)
     opts = convert.ConvertOptions(image_target="none", video_target="mp4_h264", video_height=180, video_fps=25)
@@ -219,7 +219,7 @@ def test_convert_video_resolution_and_frame_rate(media_dir):
 
 @needs_ffmpeg
 def test_convert_audio_bitrate_rate_and_channels(media_dir):
-    from compressor.probe import probe_audio
+    from wick.probe import probe_audio
 
     ffmpeg("-f", "lavfi", "-i", "sine=f=440:d=3", "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", "tone.wav",
            cwd=media_dir)
@@ -295,7 +295,7 @@ def test_convert_reads_raw_psd_svg_and_icons(media_dir, monkeypatch):
 
 @needs_ffmpeg
 def test_videos_become_animations_and_back(media_dir):
-    from compressor.probe import probe_video
+    from wick.probe import probe_video
 
     ffmpeg("-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=2", "-c:v", "libx264", "clip.mp4", cwd=media_dir)
     s = Settings(output_mode="beside", min_video_mb=0, min_image_kb=0)
@@ -320,7 +320,7 @@ def test_documents_convert_with_pandoc(media_dir):
 
     (media_dir / "notes.md").write_text("# Notes\n\nSome *text*.\n\n![remote](https://example.com/x.png)\n")
     s = Settings(output_mode="beside", convert_inputs=True)
-    from compressor import office
+    from wick import office
 
     for target in convert.DOCUMENT_TARGETS:
         if target == "md" or (target == "pdf" and not office.converter_for(".md")):
@@ -339,9 +339,9 @@ def test_addons_are_checked_before_use(tmp_path, monkeypatch):
     import hashlib
     import zipfile
 
-    from compressor import addons
+    from wick import addons
 
-    monkeypatch.setenv("COMPRESSOR_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("WICK_DATA_DIR", str(tmp_path / "data"))
     archive = tmp_path / "tool.zip"
     with zipfile.ZipFile(archive, "w") as z:
         z.writestr("tool-1.0/tool.exe", b"MZ fake program")
@@ -359,7 +359,7 @@ def test_addons_are_checked_before_use(tmp_path, monkeypatch):
 
 @needs_ffmpeg
 def test_the_sound_of_a_video(media_dir):
-    from compressor.probe import probe_audio
+    from wick.probe import probe_audio
 
     ffmpeg("-f", "lavfi", "-i", "testsrc2=s=160x120:r=25:d=3", "-f", "lavfi", "-i", "sine=f=440:d=3",
            "-c:v", "libx264", "-c:a", "aac", "-shortest", "clip.mp4", cwd=media_dir)
@@ -378,7 +378,7 @@ def test_the_sound_of_a_video(media_dir):
 
 
 def test_turning_pictures_without_losing_quality(media_dir):
-    from compressor import metadata as md
+    from wick import metadata as md
 
     img = Image.radial_gradient("L").convert("RGB").resize((64, 32))
     img.save(media_dir / "photo.jpg", quality=90)
@@ -415,12 +415,12 @@ def test_turning_a_video_without_re_encoding(media_dir):
     assert abs(r.output.stat().st_size - entry.size) < 4096            # copied, not re-encoded
 
 
-@pytest.mark.skipif(not __import__("compressor.office", fromlist=["libreoffice"]).libreoffice(),
+@pytest.mark.skipif(not __import__("wick.office", fromlist=["libreoffice"]).libreoffice(),
                     reason="LibreOffice not installed")
 def test_office_documents_to_pdf(media_dir, tmp_path):
     import subprocess
 
-    from compressor import office, pdftools
+    from wick import office, pdftools
 
     (tmp_path / "letter.txt").write_text("Dear reader,\n\nHello.\n")
     soffice = office.libreoffice()

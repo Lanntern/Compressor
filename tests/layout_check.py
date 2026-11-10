@@ -12,8 +12,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 HOME = tempfile.mkdtemp(prefix="layout-check-")
-os.environ.update(COMPRESSOR_NO_NETWORK="1", COMPRESSOR_SETTINGS_FILE=os.path.join(HOME, "s.ini"),
-                  COMPRESSOR_DATA_DIR=os.path.join(HOME, "appdata"))
+os.environ.update(WICK_NO_NETWORK="1", WICK_SETTINGS_FILE=os.path.join(HOME, "s.ini"),
+                  WICK_DATA_DIR=os.path.join(HOME, "appdata"))
 if os.name != "nt":
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -37,27 +37,27 @@ for i in range(3):
     Image.effect_noise((200, 150), 40).convert("RGB").save(media / f"a_rather_long_photo_name_from_a_camera_{i}.png")
 Image.effect_noise((200, 150), 40).convert("RGB").save(
     media / ("PXL_20240612_183512345.PORTRAIT.ORIGINAL_with_some_extra_words_from_an_export_" * 2 + ".png"))
-from compressor import tools  # noqa: E402
+from wick import tools  # noqa: E402
 
 if tools.find_tool("ffmpeg"):
     tools.run([tools.find_tool("ffmpeg"), "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30",
                "-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(media / "clip.mp4")], timeout=120)
 
-qs = QSettings(os.environ["COMPRESSOR_SETTINGS_FILE"], QSettings.IniFormat)
+qs = QSettings(os.environ["WICK_SETTINGS_FILE"], QSettings.IniFormat)
 qs.setValue("home/auto_analyze", False)
 qs.setValue("welcome_done", True)
 qs.sync()
 del qs
 
-from compressor.gui.about_dialog import AboutDialog  # noqa: E402
-from compressor.gui.language_dialog import LanguageDialog  # noqa: E402
-from compressor.gui.main_window import MainWindow, ShortcutsDialog  # noqa: E402
-from compressor.gui.preview import PreviewDialog  # noqa: E402
-from compressor.gui.theme import apply_theme  # noqa: E402
-from compressor.gui.welcome import WelcomeDialog  # noqa: E402
-from compressor.gui.widgets import _BodyScroll  # noqa: E402
-from compressor.scanner import scan  # noqa: E402
-from compressor.settings import Settings  # noqa: E402
+from wick.gui.about_dialog import AboutDialog  # noqa: E402
+from wick.gui.language_dialog import LanguageDialog  # noqa: E402
+from wick.gui.main_window import MainWindow, ShortcutsDialog  # noqa: E402
+from wick.gui.preview import PreviewDialog  # noqa: E402
+from wick.gui.theme import apply_theme  # noqa: E402
+from wick.gui.welcome import WelcomeDialog  # noqa: E402
+from wick.gui.widgets import _BodyScroll  # noqa: E402
+from wick.scanner import scan  # noqa: E402
+from wick.settings import Settings  # noqa: E402
 
 class _StrayWindows(QObject):
     """A widget shown before it has a parent becomes a window of its own for a moment (a flash on screen)."""
@@ -150,7 +150,7 @@ def check(root: QWidget, where: str) -> None:
     # Accessibility: every control a screen reader lands on has a name, and the keyboard can reach it.
     from PySide6.QtWidgets import QAbstractSlider, QAbstractSpinBox, QLineEdit
 
-    from compressor.gui.header import Header
+    from wick.gui.header import Header
 
     for x in root.findChildren(QWidget):
         if (not x.isVisible() or not isinstance(x, (QAbstractButton, QComboBox, QAbstractSpinBox, QLineEdit,

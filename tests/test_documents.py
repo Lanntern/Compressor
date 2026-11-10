@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageChops
 
-from compressor import documents
-from compressor.settings import Settings
+from wick import documents
+from wick.settings import Settings
 
 
 def _photo(size=(1600, 1200)) -> Image.Image:
@@ -120,9 +120,9 @@ def test_signed_pdfs_are_left_alone(tmp_path):
 
 def test_documents_through_the_compress_job(tmp_path):
     """Planned, compressed, replaced (original in the Recycle Bin/Trash) and undoable like any file."""
-    from compressor.engine import DONE, run_job, undo_run
-    from compressor.plan import plan_entry
-    from compressor.scanner import scan
+    from wick.engine import DONE, run_job, undo_run
+    from wick.plan import plan_entry
+    from wick.scanner import scan
 
     _docx(tmp_path / "report.docx")
     _pdf(tmp_path / "scan.pdf")

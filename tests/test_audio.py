@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from compressor.engine import DONE, run_job, undo_record
-from compressor.plan import plan_entry
-from compressor.scanner import scan
-from compressor.settings import Settings
+from wick.engine import DONE, run_job, undo_record
+from wick.plan import plan_entry
+from wick.scanner import scan
+from wick.settings import Settings
 
 from .conftest import ffmpeg, needs_ffmpeg
 
@@ -27,7 +27,7 @@ def _run(folder: Path, s: Settings):
 
 
 def _probe(path: Path):
-    from compressor.probe import probe_audio
+    from wick.probe import probe_audio
 
     info = probe_audio(path)
     assert info is not None
@@ -48,7 +48,7 @@ def test_wav_to_flac_is_lossless_and_identical_stereo_becomes_mono(media_dir):
     assert _probe(stereo.output).channels == 2
     assert _probe(voice.output).channels == 1 and "mono" in voice.message
 
-    from compressor.audio import pcm_md5
+    from wick.audio import pcm_md5
 
     assert pcm_md5(media_dir / "Låt.wav", "0:a:0") == pcm_md5(stereo.output, "0:a:0")
 
@@ -109,7 +109,7 @@ def test_audio_replace_and_undo(media_dir):
     r = results["take.wav"]
     assert r.status == DONE and not (media_dir / "take.wav").exists() and (media_dir / "take.flac").exists()
 
-    from compressor import journal
+    from wick import journal
 
     for rec in journal.get_run(run_id).files:
         ok, msg = undo_record(run_id, rec)
@@ -118,15 +118,15 @@ def test_audio_replace_and_undo(media_dir):
 
 
 def test_convert_page_audio_targets(media_dir):
-    from compressor import convert
-    from compressor.engine import process_convert
+    from wick import convert
+    from wick.engine import process_convert
 
     ffmpeg("-f", "lavfi", "-i", "sine=f=440:d=3", "-c:a", "libmp3lame", "-b:a", "192k", "tune.mp3", cwd=media_dir)
     entry = scan([media_dir], _settings()).entries[0]
     opts = convert.ConvertOptions(audio_target="wav")
     t = opts.target_for(entry.kind)
     assert t == ("wav", ".wav")
-    from compressor.plan import Plan
+    from wick.plan import Plan
 
     s = _settings(output_mode="beside")
     r = process_convert(entry, Plan(True, convert.describe(entry.kind, opts), t[1], route=t[0]), s, None, opts=opts)
@@ -134,7 +134,7 @@ def test_convert_page_audio_targets(media_dir):
 
 
 def test_home_ranks_uncompressed_audio_high(media_dir):
-    from compressor import overview
+    from wick import overview
 
     ffmpeg("-f", "lavfi", "-i", "anoisesrc=d=8:c=pink:a=0.3", "-ac", "2", "-c:a", "pcm_s16le", "big.wav",
            cwd=media_dir)
@@ -150,8 +150,8 @@ def test_music_copy_stays_in_sync(tmp_path):
 
     from PIL import Image as _Image
 
-    from compressor import mirror
-    from compressor.probe import probe_audio, probe_raw
+    from wick import mirror
+    from wick.probe import probe_audio, probe_raw
 
     lib, phone = tmp_path / "Music", tmp_path / "Phone"
     album = lib / "Artist" / "Album"

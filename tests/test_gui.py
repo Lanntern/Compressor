@@ -55,7 +55,7 @@ def _widest(widget) -> str:
 @pytest.fixture(scope="module")
 def win(tmp_path_factory):
     ini = tmp_path_factory.mktemp("qsettings") / "settings.ini"
-    os.environ["COMPRESSOR_SETTINGS_FILE"] = str(ini)
+    os.environ["WICK_SETTINGS_FILE"] = str(ini)
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
@@ -66,8 +66,8 @@ def win(tmp_path_factory):
     qs.sync()
     del qs
 
-    from compressor.gui.main_window import MainWindow
-    from compressor.gui.theme import apply_theme
+    from wick.gui.main_window import MainWindow
+    from wick.gui.theme import apply_theme
 
     apply_theme("light")  # as the app does: sets the UI font and stylesheet, which drive the layout
     w = MainWindow()
@@ -77,7 +77,7 @@ def win(tmp_path_factory):
     w._quitting = True
     w.close()
     app.processEvents()
-    os.environ.pop("COMPRESSOR_SETTINGS_FILE", None)
+    os.environ.pop("WICK_SETTINGS_FILE", None)
 
 
 @pytest.fixture
@@ -87,7 +87,7 @@ def no_dialogs(monkeypatch):
     import importlib
     import pkgutil
 
-    import compressor.gui as gui
+    import wick.gui as gui
 
     def fake_inform(_parent, text, info=""):
         shown.append(text)
@@ -97,7 +97,7 @@ def no_dialogs(monkeypatch):
         return True
 
     # Every page module that imported the helpers (not only the ones a test happens to use).
-    mods = [importlib.import_module(f"compressor.gui.{m.name}") for m in pkgutil.iter_modules(gui.__path__)]
+    mods = [importlib.import_module(f"wick.gui.{m.name}") for m in pkgutil.iter_modules(gui.__path__)]
     for mod in mods:
         for name, fn in (("inform", fake_inform), ("ask", fake_ask), ("warn", fake_inform)):
             if hasattr(mod, name):
@@ -108,7 +108,7 @@ def no_dialogs(monkeypatch):
 def test_every_page_opens_at_any_size(win):
     from PySide6.QtWidgets import QApplication
 
-    from compressor.gui.style import text_scale
+    from wick.gui.style import text_scale
 
     k = text_scale()  # with larger system text, the same layout needs a proportionally larger window
     for width, height in ((int(1320 * k), int(840 * k)), (int(900 * k), int(640 * k)), (int(1920 * k), 1200)):
@@ -124,7 +124,7 @@ def test_every_page_opens_at_any_size(win):
             # given (it adapts: rows wrap, toolbars compact) instead of needing to scroll sideways.
             assert page.minimumSizeHint().width() <= max(width, win.minimumWidth()), \
                 f"text scale {k:.2f}: {_widest(page)}"
-            from compressor.gui.widgets import _BodyScroll
+            from wick.gui.widgets import _BodyScroll
 
             for sc in page.findChildren(_BodyScroll):
                 if sc.isVisible():
@@ -133,7 +133,7 @@ def test_every_page_opens_at_any_size(win):
 
 
 def test_compress_job_end_to_end(win, tmp_path, no_dialogs):
-    from compressor.settings import Settings
+    from wick.settings import Settings
 
     folder = tmp_path / "Bilder åäö"
     folder.mkdir()
@@ -167,7 +167,7 @@ def test_compress_job_end_to_end(win, tmp_path, no_dialogs):
 
 def test_one_file_next_to_original_says_what_happened(win, tmp_path, no_dialogs):
     """"Next to originals" used to make the Compress button do nothing (an error inside its handler)."""
-    from compressor.settings import Settings
+    from wick.settings import Settings
 
     Image.effect_noise((320, 240), 40).convert("RGB").save(tmp_path / "one.png")
     win.compress.panel.load(Settings(image_format="webp", png_mode="lossy", output_mode="beside", min_image_kb=0,
@@ -188,8 +188,8 @@ def test_one_file_next_to_original_says_what_happened(win, tmp_path, no_dialogs)
 
 
 def test_a_failure_says_at_which_step(win, tmp_path, no_dialogs, monkeypatch):
-    from compressor import engine, steps
-    from compressor.settings import Settings
+    from wick import engine, steps
+    from wick.settings import Settings
 
     def broken(*_a, **_k):
         steps.report("Encoding WebP")
@@ -238,7 +238,7 @@ def test_jump_list_and_tray_open_pages(win):
 
 
 def test_support_link_and_one_time_prompt(win):
-    from compressor.gui import support
+    from wick.gui import support
 
     win.sidebar.support_btn.click()                                         # any time, from the sidebar
     dlg = win._support_dialog
@@ -265,8 +265,8 @@ def test_taskbar_mirrors_the_job(win):
     from pathlib import Path
     from types import SimpleNamespace
 
-    from compressor.engine import DONE, FAILED
-    from compressor.gui import taskbar as tbmod
+    from wick.engine import DONE, FAILED
+    from wick.gui import taskbar as tbmod
 
     tb, panel = win.taskbar, win.compress.job_status
     panel.start(2, 2000)
@@ -295,9 +295,9 @@ def test_tray_menu(win):
     if win.tray is None:
         pytest.skip("no system tray here")
     actions = {a.text(): a for a in win._tray_menu.actions() if a.text()}
-    assert win._tray_menu.defaultAction() is actions["Open Compressor"]
+    assert win._tray_menu.defaultAction() is actions["Open Wick"]
     assert {"Compress Files…", "Convert Files…", "Clean Up", "History", "Watch Folders", "Check for Updates",
-            "About Compressor", "Quit"} <= set(actions)
+            "About Wick", "Quit"} <= set(actions)
     actions["History"].trigger()
     assert win.pages.currentWidget() is win.history
 
@@ -330,9 +330,9 @@ def test_watch_folder_uses_its_preset(win, tmp_path):
 
 
 def test_image_preview_dialog(win, tmp_path):
-    from compressor.gui.preview import PreviewDialog
-    from compressor.scanner import scan
-    from compressor.settings import Settings
+    from wick.gui.preview import PreviewDialog
+    from wick.scanner import scan
+    from wick.settings import Settings
 
     Image.effect_noise((320, 240), 30).convert("RGB").save(tmp_path / "p.png")
     s = Settings(image_format="webp", png_mode="lossy", image_quality=80, min_image_kb=0)
@@ -358,9 +358,9 @@ def test_image_preview_dialog(win, tmp_path):
 
 def test_preview_quality_can_always_be_chosen(win, tmp_path):
     """Smart quality used to lock the preview's quality. Now: its targets, or a Custom value."""
-    from compressor.gui.preview import PreviewDialog
-    from compressor.scanner import scan
-    from compressor.settings import Settings
+    from wick.gui.preview import PreviewDialog
+    from wick.scanner import scan
+    from wick.settings import Settings
 
     Image.effect_noise((200, 150), 30).convert("RGB").save(tmp_path / "p.png")
     s = Settings(image_format="webp", png_mode="lossy", smart_quality=True, smart_target="high", min_image_kb=0)
@@ -384,9 +384,9 @@ def test_preview_quality_can_always_be_chosen(win, tmp_path):
 
 
 def test_preview_says_lossless_instead_of_a_quality(win, tmp_path):
-    from compressor.gui.preview import PreviewDialog
-    from compressor.scanner import scan
-    from compressor.settings import Settings
+    from wick.gui.preview import PreviewDialog
+    from wick.scanner import scan
+    from wick.settings import Settings
 
     Image.effect_noise((200, 150), 30).convert("RGB").save(tmp_path / "p.jpg", quality=95)
     s = Settings(image_format="jxl", jpeg_mode="lossless", min_image_kb=0)
@@ -400,8 +400,8 @@ def test_preview_says_lossless_instead_of_a_quality(win, tmp_path):
 def test_preview_save_as_keeps_the_original(win, tmp_path, no_dialogs, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
 
-    from compressor.gui.preview import PreviewDialog
-    from compressor.settings import Settings
+    from wick.gui.preview import PreviewDialog
+    from wick.settings import Settings
 
     Image.effect_noise((320, 240), 30).convert("RGB").save(tmp_path / "p.png")
     s = Settings(image_format="webp", png_mode="lossy", image_quality=80, min_image_kb=0, output_mode="replace",
@@ -429,8 +429,8 @@ def test_preview_offers_compress_only_when_the_result_would_be_kept(win, tmp_pat
     nothing), but Save As still saves it: the person chose that file."""
     from PySide6.QtWidgets import QFileDialog
 
-    from compressor.gui.preview import PreviewDialog
-    from compressor.settings import Settings
+    from wick.gui.preview import PreviewDialog
+    from wick.settings import Settings
 
     Image.effect_noise((320, 240), 30).convert("RGB").save(tmp_path / "p.png")
     s = Settings(image_format="webp", png_mode="lossy", image_quality=80, min_image_kb=0, output_mode="beside",
@@ -458,7 +458,7 @@ def test_preview_offers_compress_only_when_the_result_would_be_kept(win, tmp_pat
 def test_settings_page_data_and_diagnostics(win, no_dialogs):
     from PySide6.QtWidgets import QApplication
 
-    from compressor import index
+    from wick import index
 
     page = win.app_settings
     win.go_to(page)
@@ -474,7 +474,7 @@ def test_settings_page_data_and_diagnostics(win, no_dialogs):
 
     page._copy_diagnostics()
     text = QApplication.clipboard().text()
-    assert text.startswith("Compressor ") and "Tools:" in text
+    assert text.startswith("Wick ") and "Tools:" in text
 
 
 def test_options_panel_fits_its_column(win):
@@ -507,7 +507,7 @@ def test_lists_sort_select_all_and_menu(win, tmp_path):
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QTreeWidget
 
-    from compressor.gui.filelist import SortItem, add_header_checkbox, file_menu, make_sortable, set_sort_keys
+    from wick.gui.filelist import SortItem, add_header_checkbox, file_menu, make_sortable, set_sort_keys
 
     tree = QTreeWidget()
     tree.setHeaderLabels(["Name", "Size"])
@@ -556,8 +556,8 @@ def test_saved_so_far_hidden_until_something_saved(win):
 def test_cleanup_keeps_unticked_items_and_switches_kept_copy(win, tmp_path, monkeypatch):
     from PySide6.QtCore import Qt
 
-    import compressor.gui.cleanup_section as ct
-    from compressor.cleanup.actions import Outcome
+    import wick.gui.cleanup_section as ct
+    from wick.cleanup.actions import Outcome
 
     monkeypatch.setattr(ct, "inform", lambda *a, **k: None)
     for folder in ("a", "b", "c", "d"):
@@ -591,7 +591,7 @@ def test_cleanup_keeps_unticked_items_and_switches_kept_copy(win, tmp_path, monk
 def test_columns_fit_long_names_when_there_is_room(win):
     from PySide6.QtWidgets import QApplication, QTreeWidget
 
-    from compressor.gui.filelist import SortItem, filling, make_sortable
+    from wick.gui.filelist import SortItem, filling, make_sortable
 
     tree = QTreeWidget()
     tree.setHeaderLabels(["Name", "Folder", "Size"])
@@ -628,7 +628,7 @@ def test_options_only_for_the_kinds_of_files_listed(win):
 
 
 def test_after_column_says_size_and_change():
-    from compressor.gui.file_model import _pct
+    from wick.gui.file_model import _pct
 
     assert _pct(231, 149) == "−35%" and _pct(100, 110) == "+10%"
 
@@ -684,8 +684,8 @@ def test_keyboard_basics(win, tmp_path):
 def test_about_dialog(win):
     from PySide6.QtCore import Qt
 
-    from compressor.about import CREDITS
-    from compressor.gui.about_dialog import AboutDialog
+    from wick.about import CREDITS
+    from wick.gui.about_dialog import AboutDialog
 
     d = AboutDialog(win)
     d.show()
@@ -724,8 +724,8 @@ def test_title_bar_areas():
     """The app's own title bar: which part of the window drags, resizes, maximizes or is ordinary content."""
     from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget
 
-    from compressor.gui import winframe as wf
-    from compressor.gui.style import Size
+    from wick.gui import winframe as wf
+    from wick.gui.style import Size
 
     QApplication.instance() or QApplication([])
     w = QMainWindow()
@@ -753,7 +753,7 @@ def test_title_bar_areas():
 
 def test_title_bar_on_windows(win):
     """Windows only (real desktop on CI): the whole window is client area, Windows hit-tests our strip and
-    buttons, maximizing fills the work area exactly. Screenshots go to COMPRESSOR_SHOTS_DIR if set."""
+    buttons, maximizing fills the work area exactly. Screenshots go to WICK_SHOTS_DIR if set."""
     if win.frame is None or not win.frame.native:
         pytest.skip("the app's own title bar is used on Windows")
     import ctypes
@@ -762,15 +762,15 @@ def test_title_bar_on_windows(win):
 
     from PySide6.QtWidgets import QApplication
 
-    from compressor.gui import winframe as wf
-    from compressor.gui.style import Size
-    from compressor.gui.theme import apply_theme
+    from wick.gui import winframe as wf
+    from wick.gui.style import Size
+    from wick.gui.theme import apply_theme
 
     user32 = ctypes.windll.user32
     user32.SendMessageW.restype = ctypes.c_ssize_t
     user32.SendMessageW.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
     hwnd = int(win.winId())
-    shots = os.environ.get("COMPRESSOR_SHOTS_DIR")
+    shots = os.environ.get("WICK_SHOTS_DIR")
 
     def rects():
         wr, cr = wintypes.RECT(), wintypes.RECT()
@@ -845,7 +845,7 @@ def test_columns_keep_a_minimum_width():
     """Dragging a column narrow stops where its heading still fits, and short values (sizes) stay whole."""
     from PySide6.QtWidgets import QApplication, QTreeWidget, QTreeWidgetItem
 
-    from compressor.gui.filelist import make_sortable
+    from wick.gui.filelist import make_sortable
 
     QApplication.instance() or QApplication([])
     tree = QTreeWidget()
@@ -878,8 +878,8 @@ def test_language_choice_shows_with_only_my_languages(win):
 
 
 def test_update_check_setting_and_notice(win):
-    from compressor import updates
-    from compressor.gui.widgets import HelpTip
+    from wick import updates
+    from wick.gui.widgets import HelpTip
 
     page = win.app_settings
     assert page.update_frequency.currentData() == "weekly"  # the default
@@ -922,7 +922,7 @@ def test_update_check_setting_and_notice(win):
 
 
 def test_about_lists_versions(win):
-    from compressor.gui.about_dialog import AboutDialog
+    from wick.gui.about_dialog import AboutDialog
 
     dlg = AboutDialog(win)
     rows = {dlg.tree.topLevelItem(i).text(0): dlg.tree.topLevelItem(i).text(1)
@@ -938,7 +938,7 @@ def test_dragging_a_column_edge_moves_that_edge(win, tmp_path):
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
 
-    from compressor.gui.file_model import C_NAME, C_STATUS
+    from wick.gui.file_model import C_NAME, C_STATUS
 
     for i in range(3):
         Image.effect_noise((120, 90), 40).convert("RGB").save(tmp_path / f"p{i}.png")
@@ -982,7 +982,7 @@ def test_dragging_a_column_edge_moves_that_edge(win, tmp_path):
 
 
 def test_pause_button_and_battery_pause(win, tmp_path, no_dialogs):
-    from compressor.settings import Settings
+    from wick.settings import Settings
 
     for i in range(4):
         Image.effect_noise((200, 150), 40).convert("RGB").save(tmp_path / f"p{i}.png")
@@ -1010,8 +1010,8 @@ def test_pause_button_and_battery_pause(win, tmp_path, no_dialogs):
 
 
 def test_an_unfinished_job_can_be_resumed(win, tmp_path, no_dialogs):
-    from compressor import pending
-    from compressor.settings import Settings
+    from wick import pending
+    from wick.settings import Settings
 
     files = []
     for i in range(3):
@@ -1035,7 +1035,7 @@ def test_an_unfinished_job_can_be_resumed(win, tmp_path, no_dialogs):
 def test_history_marks_what_cant_be_undone(win, tmp_path, no_dialogs):
     import time as _time
 
-    from compressor import journal
+    from wick import journal
 
     w = journal.RunWriter(tmp_path, {"tool": "compress"})
     gone = tmp_path / "gone.png"                      # never in the bin: as if it had been emptied
@@ -1061,8 +1061,8 @@ def test_reports_from_a_job_and_from_history(win, tmp_path, no_dialogs, monkeypa
 
     from PySide6.QtWidgets import QFileDialog
 
-    import compressor.gui.file_model as fm
-    from compressor.settings import Settings
+    import wick.gui.file_model as fm
+    from wick.settings import Settings
 
     for i in range(2):
         Image.effect_noise((200, 150), 40).convert("RGB").save(tmp_path / f"q{i}.png")
@@ -1098,7 +1098,7 @@ def test_reports_from_a_job_and_from_history(win, tmp_path, no_dialogs, monkeypa
 def test_welcome_once_then_a_first_look(win, monkeypatch):
     from PySide6.QtWidgets import QApplication
 
-    from compressor.gui.welcome import WelcomeDialog
+    from wick.gui.welcome import WelcomeDialog
 
     looked = []
     monkeypatch.setattr(win.home, "analyze", lambda background=False: looked.append(True))
@@ -1115,8 +1115,8 @@ def test_welcome_once_then_a_first_look(win, monkeypatch):
 
 
 def test_where_your_space_goes(win, tmp_path):
-    from compressor import space
-    from compressor.gui.space_card import SpaceCard
+    from wick import space
+    from wick.gui.space_card import SpaceCard
 
     b = space.Breakdown("C:", total=1000, free=300, sizes={space.PHOTOS: 200, space.VIDEOS: 100, space.CACHES: 50})
     assert b.used == 700 and b.other == 350
@@ -1133,7 +1133,7 @@ def test_where_your_space_goes(win, tmp_path):
 def test_monthly_check_only_when_on_and_due(win, monkeypatch):
     import time as _time
 
-    from compressor import overview, space
+    from wick import overview, space
 
     calls, messages = [], []
     monkeypatch.setattr(win.home, "analyze", lambda background=False: calls.append(1))
@@ -1161,9 +1161,9 @@ def test_history_can_be_deleted_and_turned_off(win, tmp_path, no_dialogs):
     import time as _time
     from pathlib import Path
 
-    from compressor import journal
-    from compressor import log as applog
-    from compressor import pending
+    from wick import journal
+    from wick import log as applog
+    from wick import pending
 
     def run(names):
         w = journal.RunWriter(tmp_path, {"tool": "compress"})
@@ -1225,7 +1225,7 @@ def test_history_can_be_deleted_and_turned_off(win, tmp_path, no_dialogs):
 
 
 def test_cleanup_hides_what_isnt_suggested(win, tmp_path):
-    from compressor.cleanup.common import Candidate, ScanResult
+    from wick.cleanup.common import Candidate, ScanResult
 
     win.go_to(win.cleanup)
     sec = win.cleanup.sections[0]
@@ -1245,8 +1245,8 @@ def test_clicking_a_row_ticks_it_and_type_selection(win, tmp_path, no_dialogs):
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
 
-    from compressor.gui.file_model import C_CHECK, C_NAME
-    from compressor.settings import Settings
+    from wick.gui.file_model import C_CHECK, C_NAME
+    from wick.settings import Settings
 
     for i in range(2):
         Image.effect_noise((200, 150), 30).convert("RGB").save(tmp_path / f"p{i}.png")
@@ -1268,7 +1268,7 @@ def test_clicking_a_row_ticks_it_and_type_selection(win, tmp_path, no_dialogs):
     QTest.mouseClick(c.table.viewport(), Qt.LeftButton, Qt.ControlModifier, rect.center())   # Ctrl: select only
     assert Qt.CheckState(c.proxy.index(0, C_CHECK).data(Qt.CheckStateRole)) == Qt.CheckState(after)
     # Right-click "Deselect All PNG Files": every PNG, and only PNGs.
-    from compressor.formats import type_label
+    from wick.formats import type_label
 
     for r in c.model.rows:
         r.checked = True
@@ -1279,8 +1279,8 @@ def test_clicking_a_row_ticks_it_and_type_selection(win, tmp_path, no_dialogs):
 
 
 def test_date_columns_can_be_shown_and_are_remembered(win, tmp_path):
-    from compressor.gui.file_model import C_CREATED, C_MODIFIED
-    from compressor.gui.main_window import open_qsettings
+    from wick.gui.file_model import C_CREATED, C_MODIFIED
+    from wick.gui.main_window import open_qsettings
 
     c = win.compress
     h = c.table.horizontalHeader()
@@ -1301,9 +1301,9 @@ def test_date_columns_can_be_shown_and_are_remembered(win, tmp_path):
 def test_folder_sizes_open_level_by_level(win, tmp_path, no_dialogs, monkeypatch):
     from PySide6.QtCore import Qt
 
-    from compressor.cleanup.folders import find_folder_sizes
-    from compressor.gui import cleanup_section
-    from compressor.gui.cleanup_section import ROLE_ITEM
+    from wick.cleanup.folders import find_folder_sizes
+    from wick.gui import cleanup_section
+    from wick.gui.cleanup_section import ROLE_ITEM
 
     monkeypatch.setattr(cleanup_section, "choose", lambda *a, **k: False)
 
@@ -1348,7 +1348,7 @@ def test_folder_sizes_open_level_by_level(win, tmp_path, no_dialogs, monkeypatch
 def test_convert_files_can_have_their_own_format(win, tmp_path, monkeypatch):
     from PySide6.QtCore import Qt
 
-    from compressor.gui import convert_settings
+    from wick.gui import convert_settings
 
     for name in ("a.png", "b.png"):
         Image.new("RGB", (64, 48), "teal").save(tmp_path / name)
@@ -1384,7 +1384,7 @@ def test_convert_files_can_have_their_own_format(win, tmp_path, monkeypatch):
 
 
 def test_convert_lists_documents_and_offers_pandoc(win, tmp_path, monkeypatch):
-    from compressor import tools
+    from wick import tools
 
     (tmp_path / "notes.md").write_text("# Notes\n")
     (tmp_path / "sheet.xlsx").write_bytes(b"PK")                      # (only an office app reads it: to PDF)
@@ -1407,8 +1407,8 @@ def test_convert_lists_documents_and_offers_pandoc(win, tmp_path, monkeypatch):
 
 
 def test_icon_sizes_and_website_icons_from_convert(win, tmp_path, monkeypatch):
-    from compressor import convert, icons
-    from compressor.gui.convert_settings import IMAGE, ConvertSettingsDialog
+    from wick import convert, icons
+    from wick.gui.convert_settings import IMAGE, ConvertSettingsDialog
 
     dlg = ConvertSettingsDialog(convert.ConvertOptions(image_target="ico"), {IMAGE}, "Settings", parent=win)
     assert dlg.ico_preset.currentData() == "web" and dlg.ico_preset.isVisibleTo(dlg)
@@ -1427,7 +1427,7 @@ def test_icon_sizes_and_website_icons_from_convert(win, tmp_path, monkeypatch):
     conv.add_paths([str(tmp_path)])
     assert _wait(lambda: not conv.busy() and conv.tree.topLevelItemCount() == 1, 30)
     shown = []
-    from compressor.gui import dialogs
+    from wick.gui import dialogs
     monkeypatch.setattr(dialogs, "choose", lambda _p, text, info, *a: shown.append((text, info)) or False)
     menu = dict((x[0], x[1]) for x in conv.menu_entries(conv.entries) if x)
     menu["Make Website Icons…"]()
@@ -1441,9 +1441,9 @@ def test_icon_sizes_and_website_icons_from_convert(win, tmp_path, monkeypatch):
 
 
 def test_convert_from_the_context_menu(win, tmp_path):
-    """Explorer's Convert with Compressor ▸ JPEG: one launch per selected file, collected, converted next to
+    """Explorer's Convert with Wick ▸ JPEG: one launch per selected file, collected, converted next to
     the originals and started without asking; files already listed are left as they were."""
-    from compressor.gui import integration
+    from wick.gui import integration
 
     for name in ("a.png", "b.png", "keep.png"):
         Image.new("RGB", (64, 48), "teal").save(tmp_path / name)
@@ -1482,8 +1482,8 @@ def test_rows_that_become_convertible_are_ticked(win, tmp_path):
 def test_convert_pdf_actions_and_combining(win, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
 
-    from compressor import pdftools
-    from compressor.gui import convert_tab, dialogs
+    from wick import pdftools
+    from wick.gui import convert_tab, dialogs
 
     Image.new("RGB", (64, 48), "teal").save(tmp_path / "a.png")
     Image.new("RGB", (48, 64), "red").save(tmp_path / "b.jpg", quality=90)
@@ -1538,8 +1538,8 @@ def test_turning_from_the_convert_menu_adds_up(win, tmp_path):
 
 
 def test_trim_from_convert(win, tmp_path, monkeypatch):
-    from compressor.gui import dialogs
-    from compressor.gui.trim_dialog import TrimDialog, clock, parse_clock
+    from wick.gui import dialogs
+    from wick.gui.trim_dialog import TrimDialog, clock, parse_clock
 
     from .conftest import ffmpeg, have
 
@@ -1566,7 +1566,7 @@ def test_trim_from_convert(win, tmp_path, monkeypatch):
     menu["Trim…"]()
     out = tmp_path / "song (trimmed).mp3"
     assert _wait(lambda: out.exists() and not conv.busy(), 30)
-    from compressor.cutjoin import duration_of
+    from wick.cutjoin import duration_of
 
     assert abs(duration_of(out) - 2.0) < 0.1
     conv.clear()
@@ -1575,8 +1575,8 @@ def test_trim_from_convert(win, tmp_path, monkeypatch):
 def test_convert_presets_from_the_page_and_the_context_menu(win, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QInputDialog
 
-    from compressor import engine, journal
-    from compressor.gui import convert_presets, integration
+    from wick import engine, journal
+    from wick.gui import convert_presets, integration
 
     conv = win.converter
     conv.clear()
@@ -1615,7 +1615,7 @@ def test_icons_drawn_at_display_scale(win):
     from PySide6.QtCore import QSize
     from PySide6.QtGui import QIcon
 
-    from compressor.gui import style
+    from wick.gui import style
 
     ic = style.icon("home")
     for scale in (1.0, 1.25, 2.5):
@@ -1630,11 +1630,11 @@ def test_developer_settings_hidden_until_switched_on(win, monkeypatch):
     from PySide6.QtGui import QMouseEvent
     from PySide6.QtWidgets import QApplication
 
-    from compressor.gui import style
-    from compressor.gui.about_dialog import AboutDialog
-    from compressor.gui.devmode import CLICKS
+    from wick.gui import style
+    from wick.gui.about_dialog import AboutDialog
+    from wick.gui.devmode import CLICKS
 
-    monkeypatch.delenv("COMPRESSOR_DEV", raising=False)
+    monkeypatch.delenv("WICK_DEV", raising=False)
     win.qsettings.remove("dev/enabled")
     page = win.app_settings
     page.update_dev_section()
@@ -1662,8 +1662,8 @@ def test_every_control_has_a_name_for_screen_readers(win):
     from PySide6.QtWidgets import (QAbstractButton, QAbstractSpinBox, QApplication, QComboBox, QScrollArea, QScrollBar,
                                    QWidget)
 
-    from compressor.gui.about_dialog import AboutDialog
-    from compressor.gui.main_window import LAZY_PAGES
+    from wick.gui.about_dialog import AboutDialog
+    from wick.gui.main_window import LAZY_PAGES
 
     for name in LAZY_PAGES:
         getattr(win, name)

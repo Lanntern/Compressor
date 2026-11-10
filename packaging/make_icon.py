@@ -1,4 +1,4 @@
-"""Write the app icon (compressor.gui.main_window.app_icon, drawn in code) as a multi-size .ico for the .exe and
+"""Write the app icon (wick.gui.main_window.app_icon, drawn in code) as a multi-size .ico for the .exe and
 the installer. Usage: python packaging/make_icon.py OUT.ico"""
 
 import io
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 def main(out: str) -> int:
     app = QApplication([])  # noqa: F841 - the icon is drawn with Qt
-    from compressor.gui.main_window import app_icon
+    from wick.gui.main_window import app_icon
 
     icon = app_icon()
     sizes = (16, 20, 24, 32, 40, 48, 64, 128, 256)
@@ -30,4 +30,4 @@ def main(out: str) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "Compressor.ico"))
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "Wick.ico"))

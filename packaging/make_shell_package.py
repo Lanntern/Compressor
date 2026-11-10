@@ -1,11 +1,11 @@
-"""Lay out the sparse package that puts Compressor in Windows 11's main right-click menu (not only under "Show
+"""Lay out the sparse package that puts Wick in Windows 11's main right-click menu (not only under "Show
 more options"): an AppxManifest.xml plus the logos Windows asks for. CI packs it with makeappx into
-shell/CompressorShell.msix next to shell/CompressorShell.dll (packaging/shell/CompressorShell.cpp).
+shell/WickShell.msix next to shell/WickShell.dll (packaging/shell/WickShell.cpp).
 
 "Sparse" means the package holds no app files: it gives the installed app (its folder is the package's external
 location) an identity, which is what lets Explorer load the menu handler. It's unsigned: Windows 11 accepts
 that for packages whose publisher carries the "unsigned" OID below, installed with Add-AppxPackage
--AllowUnsigned (compressor/gui/integration.py does it per user). Nothing here is needed on Windows 10, whose
+-AllowUnsigned (wick/gui/integration.py does it per user). Nothing here is needed on Windows 10, whose
 menu has no such split.
 
 Usage: python packaging/make_shell_package.py OUT_DIR
@@ -20,13 +20,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from compressor import APP_NAME, DESCRIPTION, __version__  # noqa: E402
+from wick import APP_NAME, DESCRIPTION, __version__  # noqa: E402
 
-PACKAGE_NAME = "Lanntern.Compressor.ContextMenu"        # (also compressor/gui/integration.py)
+PACKAGE_NAME = "Lanntern.Wick.ContextMenu"        # (also wick/gui/integration.py)
 # The publisher of an unsigned package must include this OID (Microsoft's rule for -AllowUnsigned).
 PUBLISHER = "CN=Lanntern, OID.2.25.311729368913984317654407730594956997722=1"
-CLSID_COMPRESS = "c0dc2a7f-2eb1-46b8-8cd3-549d97989547"  # (also CompressorShell.cpp)
-CLSID_CONVERT = "ab141279-6699-40e3-9afc-ae9f9f4373dc"
+CLSID_COMPRESS = "1d665955-37b6-4802-8cd4-d4b9024f0109"  # (also WickShell.cpp)
+CLSID_CONVERT = "36e690c8-a96c-4c6d-ab35-eb80038888aa"
 
 
 def package_version(version: str = __version__) -> str:
@@ -72,19 +72,19 @@ def manifest(version: str = __version__) -> str:
         <desktop4:Extension Category="windows.fileExplorerContextMenus">
           <desktop4:FileExplorerContextMenus>
             <desktop5:ItemType Type="*">
-              <desktop5:Verb Id="CompressorCompress" Clsid="{CLSID_COMPRESS}"/>
-              <desktop5:Verb Id="CompressorConvert" Clsid="{CLSID_CONVERT}"/>
+              <desktop5:Verb Id="WickCompress" Clsid="{CLSID_COMPRESS}"/>
+              <desktop5:Verb Id="WickConvert" Clsid="{CLSID_CONVERT}"/>
             </desktop5:ItemType>
             <desktop5:ItemType Type="Directory">
-              <desktop5:Verb Id="CompressorCompressFolder" Clsid="{CLSID_COMPRESS}"/>
+              <desktop5:Verb Id="WickCompressFolder" Clsid="{CLSID_COMPRESS}"/>
             </desktop5:ItemType>
           </desktop4:FileExplorerContextMenus>
         </desktop4:Extension>
         <com:Extension Category="windows.comServer">
           <com:ComServer>
             <com:SurrogateServer DisplayName="{APP_NAME} menu">
-              <com:Class Id="{CLSID_COMPRESS}" Path="shell\\CompressorShell.dll" ThreadingModel="STA"/>
-              <com:Class Id="{CLSID_CONVERT}" Path="shell\\CompressorShell.dll" ThreadingModel="STA"/>
+              <com:Class Id="{CLSID_COMPRESS}" Path="shell\\WickShell.dll" ThreadingModel="STA"/>
+              <com:Class Id="{CLSID_CONVERT}" Path="shell\\WickShell.dll" ThreadingModel="STA"/>
             </com:SurrogateServer>
           </com:ComServer>
         </com:Extension>
@@ -99,7 +99,7 @@ def main(out: Path) -> int:
     from PySide6.QtWidgets import QApplication
 
     app = QApplication([])  # noqa: F841 - the icon is drawn with Qt
-    from compressor.gui.main_window import app_icon
+    from wick.gui.main_window import app_icon
 
     (out / "Assets").mkdir(parents=True, exist_ok=True)
     (out / "AppxManifest.xml").write_text(manifest(), encoding="utf-8")

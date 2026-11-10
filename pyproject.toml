@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]   # (77: SPDX licence expressions)
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "compressor"
+name = "wick"
 version = "0.1.0"
 description = "One-click, verified, undoable image and video compression (JPEG XL, WebP, AV1, HEVC)."
 readme = "README.md"
@@ -28,18 +28,18 @@ dependencies = [
 ]
 
 [project.urls]
-Source = "https://github.com/Lanntern/Compressor"
-Issues = "https://github.com/Lanntern/Compressor/issues"
+Source = "https://github.com/Lanntern/Wick"
+Issues = "https://github.com/Lanntern/Wick/issues"
 Funding = "https://ko-fi.com/lanntern"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyinstaller>=6"]
 
 [project.scripts]
-compressor = "compressor.cli:main"
+wick = "wick.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["compressor*"]
+include = ["wick*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -48,15 +48,15 @@ faulthandler_timeout = 300   # a hung test dumps every thread's stack instead of
 [tool.ruff]
 line-length = 130
 target-version = "py311"
-extend-exclude = ["compressor/_ssimulacra2.py"]   # vendored (BSD), kept as published
+extend-exclude = ["wick/_ssimulacra2.py"]   # vendored (BSD), kept as published
 
 [tool.ruff.lint]
 # Bugs first: pyflakes, pycodestyle errors, bugbear, pylint errors.
 select = ["E4", "E7", "E9", "E501", "F", "B", "PLE", "W6"]
 
 [tool.ruff.lint.per-file-ignores]
-"compressor/gui/style.py" = ["E501"]                # icon paths and stylesheet text
-"compressor/gui/file_model.py" = ["B008"]           # Qt's own QModelIndex() default argument idiom
+"wick/gui/style.py" = ["E501"]                # icon paths and stylesheet text
+"wick/gui/file_model.py" = ["B008"]           # Qt's own QModelIndex() default argument idiom
 
 [tool.mypy]
 python_version = "3.12"     # (CI's Python; numpy's own type stubs need 3.12 syntax)

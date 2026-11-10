@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from compressor import chunked, quality, tools, video
-from compressor.plan import Plan
-from compressor.probe import probe_video
-from compressor.settings import Settings
+from wick import chunked, quality, tools, video
+from wick.plan import Plan
+from wick.probe import probe_video
+from wick.settings import Settings
 from tests.conftest import have
 
 pytestmark = pytest.mark.skipif(not have("ffmpeg", "ffprobe"), reason="needs ffmpeg")
@@ -102,7 +102,7 @@ def test_scene_by_scene_is_frame_exact_and_carries_on(scenes, small_parts, monke
 
 
 def test_parts_folders_are_never_scanned(tmp_path):
-    from compressor.scanner import scan
+    from wick.scanner import scan
 
     folder = tmp_path / (chunked.PARTS_PREFIX + "abc")
     folder.mkdir()
