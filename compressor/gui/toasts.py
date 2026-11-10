@@ -3,15 +3,13 @@ Disturb, and can have buttons ("Show in History").
 
 No new dependency: the app registers itself once under HKCU (an AppUserModelId entry with its name and icon,
 which also works for the portable zip) and a ``compressor:`` link that the buttons open (handled by
-app.open_target). Each toast is shown by a short, hidden Windows PowerShell call to the WinRT notification API.
+app.open_target). Each toast goes straight to Windows' notification API (WinRT, through ctypes: see winrt.py).
 Off in Settings, off Windows, or if anything fails, the caller falls back to the tray balloon.
 """
 
 from __future__ import annotations
 
-import base64
 import os
-import subprocess
 import sys
 from pathlib import Path
 from xml.sax.saxutils import escape, quoteattr
@@ -101,35 +99,63 @@ def unregister() -> None:
             pass
 
 
-_SCRIPT = """
-$ErrorActionPreference = 'Stop'
-[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
-[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null
-$doc = New-Object Windows.Data.Xml.Dom.XmlDocument
-$doc.LoadXml(@'
-{xml}
-'@)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('{app_id}').Show(
-    [Windows.UI.Notifications.ToastNotification]::new($doc))
-"""
+IID_IToastNotificationManagerStatics = "50ac103f-d235-4598-bbef-98fe4d1a3ad4"
+IID_IToastNotificationFactory = "04124b20-82c6-4229-b109-fd9ed4662b53"
+IID_IXmlDocument = "f7f3a506-1e87-42d6-bcfb-b8c809fa5494"
+IID_IXmlDocumentIO = "6cd0e74e-ee65-4489-9ebf-ca43e87ba637"
+
+
+def _build(xml: str):
+    """The notifier for this app and the toast to show (WinRT objects; the caller releases both)."""
+    import ctypes
+
+    from . import winrt
+
+    made = []
+    try:
+        statics = winrt.factory("Windows.UI.Notifications.ToastNotificationManager",
+                                IID_IToastNotificationManagerStatics)
+        made.append(statics)
+        with winrt.hstring(APP_ID) as app_id:
+            notifier = winrt.call_out(statics, 7, (ctypes.c_void_p,), app_id)        # CreateToastNotifierWithId
+        made.append(notifier)
+        doc = winrt.activate("Windows.Data.Xml.Dom.XmlDocument")
+        made.append(doc)
+        io = doc.query(IID_IXmlDocumentIO)
+        made.append(io)
+        with winrt.hstring(xml) as text:
+            io.call(6, (ctypes.c_void_p,), text)                                       # LoadXml
+        xml_doc = doc.query(IID_IXmlDocument)
+        made.append(xml_doc)
+        toast_factory = winrt.factory("Windows.UI.Notifications.ToastNotification", IID_IToastNotificationFactory)
+        made.append(toast_factory)
+        toast = winrt.call_out(toast_factory, 6, (ctypes.c_void_p,), xml_doc.ptr)     # CreateToastNotification
+        made.remove(notifier)                    # (handed to the caller)
+        return notifier, toast
+    finally:
+        for com in made:
+            com.release()
 
 
 def show(title: str, message: str, actions=(), launch: str = "") -> bool:
-    """Show a toast (returns at once: PowerShell does the work in the background). False when it can't be shown
-    this way, so the caller uses the tray balloon instead."""
+    """Show a toast through Windows' own notification API. False when it can't be shown this way, so the
+    caller uses the tray balloon instead."""
     if not IS_WINDOWS or not register():
         return False
+    import ctypes
+
+    notifier = toast = None
     try:
-        script = _SCRIPT.format(xml=toast_xml(title, message, actions, launch), app_id=APP_ID)
-        encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-        powershell = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-        subprocess.Popen([str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                          "-EncodedCommand", encoded], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        notifier, toast = _build(toast_xml(title, message, actions, launch))
+        notifier.call(6, (ctypes.c_void_p,), toast.ptr)                                 # Show
         return True
     except OSError as e:
         log.info("Toast not shown: %s", e)
         return False
+    finally:
+        for com in (toast, notifier):
+            if com is not None:
+                com.release()
 
 
 __all__ = ["show", "register", "unregister", "toast_xml", "link", "target_from_link", "SCHEME"]

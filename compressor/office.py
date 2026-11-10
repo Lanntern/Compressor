@@ -97,8 +97,8 @@ def to_pdf(src: Path, dest: Path, cancel: threading.Event | None = None, timeout
     app = OFFICE_EXTS.get(src.suffix.lower(), "word")
     if _ms_office(app):
         env = {**os.environ, "CMP_SRC": str(src.resolve()), "CMP_OUT": str(dest.resolve())}
-        proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                               "-Command", _SCRIPTS[app]], env=env, capture_output=True, text=True, timeout=timeout,
+        proc = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _SCRIPTS[app]], env=env,
+                              capture_output=True, text=True, timeout=timeout,
                               stdin=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if proc.returncode != 0 or not dest.exists():
             raise RuntimeError(f"{converter_for(src.suffix)} couldn't make the PDF: "

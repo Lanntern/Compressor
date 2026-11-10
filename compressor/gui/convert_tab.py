@@ -113,6 +113,7 @@ class ConvertTab(FileJobPage):
         self.suffix.setAccessibleName("New name")
         self.folder = QLineEdit(qs.value("convert/folder", "", str))
         self.folder.setPlaceholderText("Output folder")
+        self.folder.setAccessibleName("Output folder")
         pick = button("…", "", None, "Choose the output folder")
         pick.clicked.connect(self._pick_folder)
         self.metadata = _combo(METADATA_CHOICES, qs.value("convert/metadata", "keep", str))
