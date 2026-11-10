@@ -125,7 +125,8 @@ def _plan(a: argparse.Namespace):
     missing = [str(p) for p in a.paths if not p.exists()]
     if missing:
         sys.exit("Not found: " + ", ".join(missing))
-    result = scan(a.paths, s, progress=lambda m, d, t: print(f"\r{m[:100]:<100}", end="", file=sys.stderr))
+    result = scan(a.paths, s, progress=lambda m, d, t: print(f"\r{m[:100]:<100}", end="", file=sys.stderr),
+                  picked=True)              # (files named on the command line were chosen: no size minimums)
     print("\r" + " " * 100 + "\r", end="", file=sys.stderr)
     items = [(e, plan_entry(e, s)) for e in result.entries]
     return s, result, items
