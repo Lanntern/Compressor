@@ -616,3 +616,60 @@ def test_a_link_cannot_smuggle_in_files_or_options():
     assert parse_args(crafted) == (False, "", "", [])
     assert open_target(crafted) == ""                     # not a well-formed page name: ignored
     assert open_target(["--url", "compressor:open/compress-files"]) == "compress-files"
+
+
+def test_gpu_encoders_nvidia_intel_amd(monkeypatch):
+    """Auto tries NVIDIA, then Intel, then AMD (whichever passes its test encode), else the CPU; each gets its
+    own quality settings, and AMD's AV1 scale (0-255) is four times the others'."""
+    from compressor import video
+    from compressor.settings import Settings
+
+    for works, expect in (({"hevc_nvenc"}, "hevc_nvenc"), ({"hevc_qsv", "hevc_amf"}, "hevc_qsv"),
+                          ({"hevc_amf"}, "hevc_amf"), (set(), "libx265")):
+        monkeypatch.setattr(video, "encoder_works", lambda e, w=works: e in w)
+        assert video.choose_encoder("hevc", "auto") == expect
+    monkeypatch.setattr(video, "encoder_works", lambda e: False)
+    with pytest.raises(RuntimeError, match="NVIDIA.*Intel.*AMD"):
+        video.choose_encoder("av1", "gpu")
+    assert "-global_quality" in video._gpu_quality_args("hevc_qsv", 26)
+    assert video._gpu_quality_args("av1_amf", 124)[-4:] == ["-qp_i", "124", "-qp_p", "124"]
+    s = Settings(video_quality="custom", video_crf=30)
+    assert video.encoder_quality(s, "av1_amf") == 120 and video.encoder_quality(s, "hevc_amf") == 30
+    assert [video.quality_label(e) for e in ("hevc_nvenc", "av1_qsv", "av1_amf", "libx265")] == ["CQ", "ICQ", "QP", "CRF"]
+    for encoder in (*video.GPU_ENCODERS["av1"], *video.GPU_ENCODERS["hevc"]):
+        assert encoder in video._QUALITY and encoder in video.SMART_STEPS and encoder in video.CRF_MAX
+
+
+def test_hardware_decoding_is_asked_for_before_the_input():
+    """Encodes ask ffmpeg to decode on the GPU (before -i, so it applies to the source); samples and the CPU retry
+    don't. (The real round trips in test_engine run with it, which on a computer without a GPU decodes normally.)"""
+    from compressor import video
+    from compressor.probe import StreamInfo, VideoInfo
+    from compressor.settings import Settings
+
+    info = VideoInfo("h264", 1920, 1080, "yuv420p", 30, 60, 6_000_000, 0, [StreamInfo(0, "video", "h264")])
+    args = video.build_args(Path("a.mp4"), Path("b.mp4"), info, Settings(), "libx265", 24, hw_decode=True)
+    assert args.index("-hwaccel") < args.index("-i")
+    assert "-hwaccel" not in video.build_args(Path("a.mp4"), Path("b.mp4"), info, Settings(), "libx265", 24)
+
+
+def test_thumbnails_from_windows(tmp_path):
+    """Windows: its own thumbnail (made on request here, since the test file is new) comes back as a picture of the
+    right size; elsewhere there's none and our own decoders are used."""
+    from PIL import Image
+    from PySide6.QtWidgets import QApplication
+
+    from compressor.formats import PNG
+    from compressor.gui import thumbs, winthumbs
+
+    QApplication.instance() or QApplication([])
+    src = tmp_path / "photo.png"
+    Image.new("RGB", (800, 400), (200, 30, 30)).save(src)
+    if os.name != "nt":
+        assert winthumbs.thumbnail(src, 160) is None
+    else:
+        img = winthumbs.thumbnail(src, 160, cache_only=False)
+        assert img is not None and 0 < max(img.width(), img.height()) <= 160
+        assert img.pixelColor(img.width() // 2, img.height() // 2).red() > 150      # the red picture, not black
+    data = thumbs.make_thumbnail(src, PNG, 160)
+    assert data and data[:8] == b"\x89PNG\r\n\x1a\n"

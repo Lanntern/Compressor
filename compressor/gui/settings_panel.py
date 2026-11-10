@@ -715,10 +715,19 @@ class SettingsPanel(QWidget):
             self.presets_changed.emit()
 
     def show_encoders(self, enc: dict) -> None:
-        if enc.get("av1_nvenc"):
-            text = "NVIDIA GPU found: AV1 and HEVC encode on the GPU (fast)."
-        elif enc.get("hevc_nvenc"):
-            text = "NVIDIA GPU found: HEVC on the GPU; AV1 needs RTX 40+ so it uses the CPU (slow)."
+        from ..video import GPU_ENCODERS
+
+        def maker(encoder: str) -> str:
+            return {"nvenc": "NVIDIA", "qsv": "Intel", "amf": "AMD"}[encoder.rsplit("_", 1)[1]]
+
+        av1 = next((e for e in GPU_ENCODERS["av1"] if enc.get(e)), None)
+        hevc = next((e for e in GPU_ENCODERS["hevc"] if enc.get(e)), None)
+        if av1 and hevc:
+            text = f"{maker(av1)} GPU found: AV1 and HEVC encode on the GPU (fast)."
+        elif av1:
+            text = f"{maker(av1)} GPU found: AV1 on the GPU (fast); HEVC uses the CPU."
+        elif hevc:
+            text = f"{maker(hevc)} GPU found: HEVC on the GPU; AV1 needs a newer GPU, so it uses the CPU (slow)."
         elif enc:
             text = "No supported GPU encoder found: videos encode on the CPU (slow)."
         else:

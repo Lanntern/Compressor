@@ -15,16 +15,51 @@ from .plan import Plan
 from .probe import VideoInfo, probe_video
 from .settings import Settings
 
-GPU_ENCODERS = {"av1": "av1_nvenc", "hevc": "hevc_nvenc"}
+# GPU encoders, tried in this order: NVIDIA (NVENC), Intel (Quick Sync), AMD (AMF). Each is used only if a short
+# test encode with its real settings works on this computer (encoder_works); otherwise the next, then the CPU.
+GPU_ENCODERS = {"av1": ("av1_nvenc", "av1_qsv", "av1_amf"), "hevc": ("hevc_nvenc", "hevc_qsv", "hevc_amf")}
 CPU_ENCODERS = {"av1": "libsvtav1", "hevc": "libx265"}
 
-# Constant-quality values per encoder for high / balanced / small.
+# Constant-quality values per encoder for high / balanced / small. NVENC: CQ; Quick Sync: ICQ (1-51); AMF: a
+# constant QP (HEVC 0-51; AV1 0-255, so about four times the others' numbers); CPU: CRF.
 _QUALITY = {
     "av1_nvenc": {"high": 26, "balanced": 32, "small": 38},
     "hevc_nvenc": {"high": 22, "balanced": 27, "small": 32},
+    "av1_qsv": {"high": 24, "balanced": 30, "small": 36},
+    "hevc_qsv": {"high": 22, "balanced": 26, "small": 30},
+    "av1_amf": {"high": 100, "balanced": 124, "small": 148},
+    "hevc_amf": {"high": 22, "balanced": 26, "small": 30},
     "libsvtav1": {"high": 26, "balanced": 32, "small": 38},
     "libx265": {"high": 20, "balanced": 24, "small": 28},
 }
+
+
+def is_gpu(encoder: str) -> bool:
+    return encoder.endswith(("_nvenc", "_qsv", "_amf"))
+
+
+def quality_label(encoder: str) -> str:
+    """How each encoder names its quality number ("CRF 24", "CQ 27"...)."""
+    return {"_nvenc": "CQ", "_qsv": "ICQ", "_amf": "QP"}.get(encoder[encoder.rfind("_"):], "CRF")
+
+
+def _gpu_quality_args(encoder: str, q: int) -> list[str]:
+    """Constant-quality settings for a GPU encoder (also what its availability test uses)."""
+    if encoder.endswith("_nvenc"):
+        return ["-preset", "p6", "-tune", "hq", "-rc", "vbr", "-cq", str(q), "-b:v", "0", "-spatial-aq", "1"]
+    if encoder.endswith("_qsv"):
+        return ["-preset", "slower", "-global_quality", str(q)]
+    return ["-quality", "quality", "-rc", "cqp", "-qp_i", str(q), "-qp_p", str(q)]       # AMF
+
+
+def _gpu_rate_args(encoder: str, kbps: int) -> list[str]:
+    """Average-bitrate settings for a GPU encoder (a size limit)."""
+    rate = ["-b:v", f"{kbps}k", "-maxrate", f"{int(kbps * 1.5)}k", "-bufsize", f"{kbps * 2}k"]
+    if encoder.endswith("_nvenc"):
+        return ["-preset", "p6", "-tune", "hq", "-rc", "vbr", "-multipass", "fullres", *rate, "-spatial-aq", "1"]
+    if encoder.endswith("_qsv"):
+        return ["-preset", "slower", *rate]
+    return ["-quality", "quality", "-rc", "vbr_peak", *rate]
 
 # Audio codecs that can be copied into MP4 as-is; anything else becomes AAC.
 _MP4_AUDIO_OK = {"aac", "mp3", "ac3", "eac3", "alac", "opus", "flac"}
@@ -32,13 +67,16 @@ _TEXT_SUBS = {"mov_text", "subrip", "srt", "ass", "ssa", "webvtt", "text"}
 
 
 _ENCODER_CACHE_DAYS = 7
-CRF_MAX = {"av1_nvenc": 63, "libsvtav1": 63, "hevc_nvenc": 51, "libx265": 51}
+HW_DECODE = True    # decode sources on the GPU where possible (falls back to the CPU per file)
+CRF_MAX = {"av1_nvenc": 63, "libsvtav1": 63, "hevc_nvenc": 51, "libx265": 51, "av1_qsv": 51, "hevc_qsv": 51,
+           "av1_amf": 255, "hevc_amf": 51}
 
 
 def encoder_quality(s: Settings, encoder: str) -> int:
     """The constant-quality value for ``encoder`` (Custom: the user's own, within the encoder's range)."""
     if s.video_quality == "custom":
-        return max(1, min(CRF_MAX.get(encoder, 51), s.video_crf))
+        value = s.video_crf * 4 if encoder == "av1_amf" else s.video_crf    # (AMF's AV1 scale is 0-255)
+        return max(1, min(CRF_MAX.get(encoder, 51), value))
     return _QUALITY[encoder]["balanced" if s.video_quality == "identical" else s.video_quality]
 
 
@@ -93,10 +131,16 @@ def encoder_works(encoder: str) -> bool:
 
 
 def _test_encode(ffmpeg: str, encoder: str) -> bool:
+    """A short test encode with the settings jobs use (so a driver that rejects one of them counts as
+    unavailable, rather than failing every video later)."""
+    extra: list[str] = []
+    if is_gpu(encoder):
+        extra = _gpu_quality_args(encoder, _QUALITY[encoder]["balanced"]) if encoder in _QUALITY else []
+        extra += ["-pix_fmt", "yuv420p" if encoder.endswith("_nvenc") else "nv12"]
     try:
         proc = tools.run(
             [ffmpeg, "-hide_banner", "-nostdin", "-v", "error", "-f", "lavfi",
-             "-i", "color=black:s=320x240:r=30:d=0.2", "-c:v", encoder, "-f", "null", "-"],
+             "-i", "color=black:s=320x240:r=30:d=0.2", "-c:v", encoder, *extra, "-f", "null", "-"],
             timeout=60, check=False,
         )
         return proc.returncode == 0
@@ -105,20 +149,23 @@ def _test_encode(ffmpeg: str, encoder: str) -> bool:
 
 
 def available_encoders() -> dict[str, bool]:
-    return {e: encoder_works(e) for e in (*GPU_ENCODERS.values(), *CPU_ENCODERS.values())}
+    gpus = [e for family in GPU_ENCODERS.values() for e in family]
+    return {e: encoder_works(e) for e in (*gpus, *CPU_ENCODERS.values())}
 
 
 def choose_encoder(codec: str, preference: str) -> str:
-    gpu, cpu = GPU_ENCODERS[codec], CPU_ENCODERS[codec]
+    cpu = CPU_ENCODERS[codec]
     if preference == "cpu":
         return cpu
-    if encoder_works(gpu):
-        return gpu
+    for gpu in GPU_ENCODERS[codec]:
+        if encoder_works(gpu):
+            return gpu
     if preference == "gpu":
+        newer = codec == "av1"
         raise RuntimeError(
-            f"GPU encoder {gpu} isn't available (needs an NVIDIA GPU"
-            f"{' RTX 40 series or newer' if codec == 'av1' else ''} and a recent driver). "
-            f"Pick Auto or CPU."
+            f"No GPU can encode {codec.upper()} here (NVIDIA{' RTX 40 series or newer' if newer else ''}, "
+            f"Intel{' Arc or Core Ultra' if newer else ''} or AMD{' RX 7000 or newer' if newer else ''}, "
+            "with a recent driver). Pick Auto or CPU."
         )
     return cpu
 
@@ -321,7 +368,7 @@ def fit_bitrates(info: VideoInfo, s: Settings, audio_tracks: int) -> tuple[int, 
 
 def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str, q: int | None = None,
                segment: tuple[float, float] | None = None, progress: bool = True, remux: bool = False,
-               fit: tuple[int, int, tuple[int, int]] | None = None) -> list[str]:
+               fit: tuple[int, int, tuple[int, int]] | None = None, hw_decode: bool = False) -> list[str]:
     """ffmpeg command for the full encode, or (with ``segment=(start, length)``) a sample. ``remux``: copy the
     video as it is and only leave out tracks (audio/subtitles in other languages)."""
     ffmpeg = tools.require("ffmpeg")
@@ -331,6 +378,10 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
     args = [ffmpeg, "-hide_banner", "-nostdin", "-y", "-v", "error"]
     if progress:
         args += ["-progress", "pipe:1", "-nostats"]
+    if hw_decode:
+        # Decode the source on the graphics card where it can (D3D11VA, CUDA, Quick Sync...): the frames come back
+        # to normal memory, so filters and every encoder work as before; ffmpeg decodes on the CPU otherwise.
+        args += ["-hwaccel", "auto"]
     if segment:
         args += ["-ss", f"{segment[0]:.3f}", "-t", f"{segment[1]:.3f}"]
     args += ["-i", str(src)]
@@ -364,13 +415,14 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
     args += [f"-c:v:{v_out}", encoder]
 
     ten_bit = info.is_10bit or bool(info.hdr) or encoder in ("av1_nvenc", "libsvtav1")
+    gpu_pix = "p010le" if ten_bit else ("yuv420p" if encoder.endswith("_nvenc") else "nv12")   # (QSV/AMF: NV12)
     hdr10 = _hdr10_params(info, encoder)
     if fit is not None:                  # a size limit: an average bitrate instead of a constant quality
         kbps = fit[0]
         rate = ["-b:v", f"{kbps}k", "-maxrate", f"{int(kbps * 1.5)}k", "-bufsize", f"{kbps * 2}k"]
-        if encoder.endswith("_nvenc"):
-            args += ["-preset", "p6", "-tune", "hq", "-rc", "vbr", "-multipass", "fullres", *rate, "-spatial-aq", "1"]
-            pix = "p010le" if ten_bit else "yuv420p"
+        if is_gpu(encoder):
+            args += _gpu_rate_args(encoder, kbps)
+            pix = gpu_pix
         elif encoder == "libsvtav1":
             args += ["-preset", "6", "-b:v", f"{kbps}k"]
             if hdr10:
@@ -379,10 +431,9 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
         else:
             args += ["-preset", "medium", *rate, "-x265-params", "log-level=error" + (f":{hdr10}" if hdr10 else "")]
             pix = "yuv420p10le" if ten_bit else "yuv420p"
-    elif encoder.endswith("_nvenc"):
-        args += ["-preset", "p6", "-tune", "hq", "-rc", "vbr", "-cq", str(q), "-b:v", "0",
-                 "-spatial-aq", "1"]
-        pix = "p010le" if ten_bit else "yuv420p"
+    elif is_gpu(encoder):
+        args += _gpu_quality_args(encoder, q if q is not None else encoder_quality(s, encoder))
+        pix = gpu_pix
     elif encoder == "libsvtav1":
         args += ["-crf", str(q), "-preset", "6"]
         if hdr10:
@@ -413,7 +464,7 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
         filters.append(f"fps={fps:g}")
     if filters:
         args += [f"-filter:v:{v_out}", ",".join(filters)]
-    if mp4 and encoder in ("hevc_nvenc", "libx265"):
+    if mp4 and (encoder.startswith("hevc_") or encoder == "libx265"):
         args += [f"-tag:v:{v_out}", "hvc1"]  # plays in Windows/Apple players
 
     if not segment:
@@ -439,6 +490,10 @@ SMART_STEPS = {  # best quality first
     "libsvtav1": [20, 24, 28, 30, 32, 34, 36, 38, 40, 42, 44],
     "hevc_nvenc": [18, 21, 24, 26, 28, 30, 32, 34, 36],
     "libx265": [16, 19, 22, 24, 26, 28, 30, 32, 34],
+    "av1_qsv": [18, 21, 24, 26, 28, 30, 32, 34, 36, 38],
+    "hevc_qsv": [18, 21, 24, 26, 28, 30, 32, 34],
+    "av1_amf": [80, 96, 108, 116, 124, 132, 140, 148, 156, 164],
+    "hevc_amf": [18, 21, 24, 26, 28, 30, 32, 34],
 }
 SAMPLE_SECONDS = 4.0
 
@@ -480,7 +535,7 @@ def smart_quality(src: Path, info: VideoInfo, s: Settings, encoder: str,
         chosen = quality.search(ladder, attempt)
     finally:
         remove_quietly(*samples)
-    name = "CQ" if encoder.endswith("nvenc") else "CRF"
+    name = quality_label(encoder)
     if chosen is None:
         return ladder[0], f"{name} {ladder[0]} (target not reached)"
     q, score = chosen
@@ -569,7 +624,7 @@ def preview_video(src: Path, info: VideoInfo, s: Settings, cancel: threading.Eve
     if measures_quality(s):
         q, note = smart_quality(src, info, s, encoder, cancel)
     elif s.video_quality != "custom":           # (Custom's value is in the description already)
-        note = f"{'CQ' if encoder.endswith('nvenc') else 'CRF'} {encoder_quality(s, encoder)}"
+        note = f"{quality_label(encoder)} {encoder_quality(s, encoder)}"
     length = min(PREVIEW_SECONDS, info.duration)
     if start is None:
         start = info.duration / 2 - length / 2
@@ -658,10 +713,20 @@ def convert_video(
         steps.report("Encoding short samples to choose the quality")
         q, choice = smart_quality(src, info, s, encoder, cancel)
         notes.append(choice)
+    hw = s.video_encoder != "cpu" and HW_DECODE    # ("CPU only" keeps the graphics card out of it entirely)
     try:
         try:
             steps.report(f"Encoding {codec.upper()} video ({encoder})")
-            tools.run_ffmpeg_progress(build_args(src, out, info, s, encoder, q), info.duration, on_progress, cancel)
+            try:
+                tools.run_ffmpeg_progress(build_args(src, out, info, s, encoder, q, hw_decode=hw), info.duration,
+                                          on_progress, cancel)
+            except tools.ToolError:
+                if not hw:
+                    raise
+                remove_quietly(out)        # hardware decoding failed on this file: decode it on the CPU
+                steps.report(f"Encoding {codec.upper()} video ({encoder}, decoding on the processor)")
+                tools.run_ffmpeg_progress(build_args(src, out, info, s, encoder, q), info.duration, on_progress,
+                                          cancel)
         except tools.ToolError:
             # Some sources exceed GPU limits (e.g. > 8K, unusual formats). On Auto,
             # retry on the CPU; on an explicit GPU choice, report the failure.
