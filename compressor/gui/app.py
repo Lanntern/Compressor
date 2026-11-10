@@ -13,12 +13,15 @@ import time
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     background, preset, convert_to, paths = parse_args(argv)
+    target = open_target(argv)
 
     from PySide6.QtCore import QLockFile
     from PySide6.QtWidgets import QApplication
 
     from .. import APP_NAME
-    from . import integration
+    from . import integration, jumplist
+
+    jumplist.set_process_app_id()        # (before any window: taskbar grouping, pinning and the jump list)
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName(APP_NAME)
@@ -30,7 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     lock.setStaleLockTime(0)
     if not lock.tryLock(100):
         for _ in range(30):
-            if integration.send_to_running_instance(paths, show=not background, preset=preset, convert=convert_to):
+            if integration.send_to_running_instance(paths, show=not background, preset=preset, convert=convert_to,
+                                                    open_target=target):
                 return 0
             time.sleep(0.1)
         if not lock.tryLock(1000):
@@ -49,6 +53,9 @@ def main(argv: list[str] | None = None) -> int:
     server.paths_received.connect(win.receive_paths)
     if not background:
         win.show()
+    from PySide6.QtCore import QTimer
+
+    QTimer.singleShot(1500, jumplist.update)   # the taskbar / Start / Search tasks (cheap; once start-up settles)
     probe = os.environ.get("COMPRESSOR_STARTUP_PROBE")
     if probe:  # build checks: write a file once the window is up, then quit (used to time the start-up)
         from PySide6.QtCore import QTimer
@@ -58,8 +65,8 @@ def main(argv: list[str] | None = None) -> int:
                 f.write("shown")
             app.quit()
         QTimer.singleShot(0, done)
-    if paths:
-        win.receive_paths(paths, not background, preset, convert_to)
+    if paths or target:
+        win.receive_paths(paths, not background, preset, convert_to, target)
     code = app.exec()
     lock.unlock()
     return code
@@ -113,6 +120,8 @@ def parse_args(argv: list[str]) -> tuple[bool, str, str, list[str]]:
                 preset = value
             else:
                 convert_to = value
+        elif a == "--open":
+            next(it, "")                                   # (see open_target)
         elif a.startswith(("--preset=", "--convert=")):
             key, value = a.split("=", 1)
             if key == "--preset":
@@ -122,6 +131,18 @@ def parse_args(argv: list[str]) -> tuple[bool, str, str, list[str]]:
         elif not a.startswith("--"):
             paths.append(os.path.abspath(a))
     return background, preset, convert_to, paths
+
+
+def open_target(argv: list[str]) -> str:
+    """``--open=TARGET`` (the taskbar and Start menu's jump list, the tray): a page to show (home, compress,
+    convert, metadata, cleanup, watch, history, settings), or compress-files / convert-files to pick files there.
+    "" when not given."""
+    for i, a in enumerate(argv):
+        if a.startswith("--open="):
+            return a.split("=", 1)[1]
+        if a == "--open" and i + 1 < len(argv):
+            return argv[i + 1]
+    return ""
 
 
 def _user() -> str:

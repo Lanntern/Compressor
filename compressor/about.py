@@ -49,8 +49,8 @@ CREDITS: tuple[Credit, ...] = (
 )
 
 PRIVACY = ("Compressor works entirely on this computer. It has no accounts, no telemetry and no ads, and it never "
-           "sends your files or anything about them anywhere. It goes online only to check weekly for a newer "
-           "version (Settings → About; you can turn it off) and, when you ask for it, to download Pandoc for "
+           "sends your files or anything about them anywhere. It goes online only to check for a newer version "
+           "(weekly by default; Settings → About) and, when you ask for it, to download Pandoc for "
            "converting documents.")
 
 LICENCE_NOTE = ("Compressor is free software, © Lanntern, licensed under the GNU GPL version 3 (LICENSE), with "

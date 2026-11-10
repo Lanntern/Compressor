@@ -16,12 +16,12 @@ disclosing it publicly; you'll be credited in the release notes unless you'd rat
 
 ## Supported versions
 
-Only the newest release gets security fixes. Installed copies check weekly for a newer version (unless you
-turned that off), and a release that fixes a security problem says so.
+Only the newest release gets security fixes. Installed copies check for a newer version (weekly by default; the
+interval can be changed in Settings), and a release that fixes a security problem says so.
 
 ## Bundled components
 
 Many problems turn out to be in a bundled component (FFmpeg, libjxl, Pillow, pikepdf, Qt, …). Report those
 here too; if a fix is needed upstream, it will be reported there and Compressor updated once it's released.
-Components are pinned and checked weekly for known vulnerabilities (see "Keeping components up to date" in
-the README).
+Components are pinned and checked weekly for known vulnerabilities (see "How bundled components are kept up to
+date" in [CONTRIBUTING.md](CONTRIBUTING.md)).

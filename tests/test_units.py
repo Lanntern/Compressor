@@ -338,14 +338,43 @@ def test_installer_choices_are_applied_once(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     if integration.IS_WINDOWS:
         pytest.skip("touches the real registry")
-    assert cli.main(["--installer-setup", "context=0", "autostart=1", "updates=0", "upgrade=0"]) == 0
+    from compressor import updates
+
+    assert cli.main(["--installer-setup", "context=0", "autostart=1", "updates=monthly", "upgrade=0"]) == 0
     assert integration.autostart_enabled()
     qs = QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat)
-    assert qs.value("updates/auto", True, bool) is False
-    qs.setValue("updates/auto", True)                  # changed in Settings later
+    assert updates.frequency(qs) == "monthly"
+    qs.setValue("updates/frequency", "launch")         # changed in Settings later
     qs.sync()
-    cli.main(["--installer-setup", "updates=0", "upgrade=1"])
-    assert QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat).value("updates/auto", False, bool) is True
+    cli.main(["--installer-setup", "updates=never", "upgrade=1"])
+    assert updates.frequency(QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat)) == "launch"
+    cli.main(["--installer-setup", "updates=never", "upgrade=0"])     # (a reinstall over kept settings, too)
+    assert updates.frequency(QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat)) == "launch"
+
+
+def test_update_check_frequency(tmp_path):
+    """Settings from before the frequency choice (an on/off switch) still mean the same; each choice is due when
+    it should be."""
+    from PySide6.QtCore import QSettings
+
+    from compressor import updates
+
+    qs = QSettings(str(tmp_path / "u.ini"), QSettings.IniFormat)
+    assert updates.frequency(qs) == "weekly"                         # nothing chosen yet: the default
+    qs.setValue("updates/auto", False)
+    assert updates.frequency(qs) == "never"                          # switched off in an older version
+    qs.setValue("updates/auto", True)
+    assert updates.frequency(qs) == "weekly"
+    qs.setValue("updates/frequency", "monthly")
+    assert updates.frequency(qs) == "monthly"                        # the new choice wins
+    qs.setValue("updates/frequency", "nonsense")
+    assert updates.frequency(qs) == "weekly"
+    day, now = 86400, 1_000_000_000.0
+    assert updates.due("launch", now - 60, now)
+    assert updates.due("weekly", now - 8 * day, now) and not updates.due("weekly", now - 6 * day, now)
+    assert updates.due("monthly", now - 31 * day, now) and not updates.due("monthly", now - 8 * day, now)
+    assert not updates.due("never", 0, now)
+    assert updates.due("weekly", 0, now)                             # never checked yet
 
 
 def test_stored_data_survives_damage(tmp_path, monkeypatch):
@@ -389,3 +418,20 @@ def test_output_names_from_a_pattern(tmp_path):
     assert output_name(src, "%name%-%time%.%ext%", t) == "Holiday-14-05-09.jpg"
     assert output_name(src, "%name%: copy?", t) == "Holiday_ copy_"           # never characters a name can't hold
     assert output_name(src, "%unknown%", t) == "%unknown%"
+
+
+def test_jump_list_tasks():
+    """The taskbar / Start / Search tasks: each opens a page the app knows; on Windows the list is really built."""
+    import sys
+
+    from compressor.gui import jumplist
+    from compressor.gui.main_window import MainWindow
+
+    for title, target, description in jumplist.TASKS:
+        page = target.removesuffix("-files")
+        assert title and description and page in MainWindow.OPEN_PAGES, target
+    if not jumplist.IS_WINDOWS:
+        assert jumplist.update(exe="unused") is False
+        return
+    jumplist.set_process_app_id()
+    assert jumplist.update(exe=sys.executable, args_prefix="-c pass ")     # COM calls all succeeded

@@ -6,6 +6,9 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # Exact pins (requirements.txt) are always updated. pyproject.toml's ranges (">=8") only change when the new
+    # version falls outside them: raising those minimums would only stop people building with older tools.
+    versioning-strategy: increase-if-necessary
     groups:
       python-libraries:
         patterns: ["*"]

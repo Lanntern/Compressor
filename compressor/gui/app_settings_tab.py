@@ -256,12 +256,16 @@ class AppSettingsTab(Page):
         card.lay.addWidget(separator())
         from .. import updates
 
-        self.auto_updates = ToggleSwitch("Check for updates automatically")
-        self.auto_updates.setChecked(self.qs.value("updates/auto", True, bool))
-        self.auto_updates.toggled.connect(lambda on: self.qs.setValue("updates/auto", on))
-        card.lay.addWidget(setting_row("Check for updates automatically",
-                                       "Once a week, asks GitHub whether a newer version exists. Nothing is "
-                                       "downloaded or installed by itself.", self.auto_updates, updates.HELP))
+        self.update_frequency = QComboBox()
+        for key, (label, _days) in updates.FREQUENCIES.items():
+            self.update_frequency.addItem(label, key)
+        self.update_frequency.setCurrentIndex(self.update_frequency.findData(updates.frequency(self.qs)))
+        self.update_frequency.activated.connect(
+            lambda _i: self.qs.setValue("updates/frequency", self.update_frequency.currentData()))
+        self.update_frequency.setAccessibleName("Check for updates")
+        card.lay.addWidget(setting_row("Check for updates",
+                                       "Asks GitHub whether a newer version exists. Nothing is downloaded or "
+                                       "installed by itself.", self.update_frequency, updates.HELP))
         card.lay.addWidget(separator())
         self.check_btn = button("Check Now", "", "refresh", "Ask GitHub whether a newer version exists")
         self.check_btn.clicked.connect(lambda: self.win.check_for_updates(manual=True))

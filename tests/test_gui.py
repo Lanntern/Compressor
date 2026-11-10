@@ -227,6 +227,27 @@ def test_presets_apply_and_reach_the_panel(win):
     assert panel.settings().image_format == "jxl" and panel.settings().jpeg_mode == "lossless"
 
 
+def test_jump_list_and_tray_open_pages(win):
+    """--open=TARGET (taskbar/Start jump list, tray menu) shows that page, in this window or a running one."""
+    for target, attr in (("history", "history"), ("cleanup", "cleanup"), ("settings", "app_settings"),
+                         ("compress", "compress")):
+        win.receive_paths([], show=False, open_target=target)
+        assert win.pages.currentWidget() is getattr(win, attr), target
+    win.receive_paths([], show=False, open_target="no-such-page")         # ignored
+    assert win.pages.currentWidget() is win.compress
+
+
+def test_tray_menu(win):
+    if win.tray is None:
+        pytest.skip("no system tray here")
+    actions = {a.text(): a for a in win._tray_menu.actions() if a.text()}
+    assert win._tray_menu.defaultAction() is actions["Open Compressor"]
+    assert {"Compress Files…", "Convert Files…", "Clean Up", "History", "Watch Folders", "Check for Updates",
+            "About Compressor", "Quit"} <= set(actions)
+    actions["History"].trigger()
+    assert win.pages.currentWidget() is win.history
+
+
 def test_watch_folder_uses_its_preset(win, tmp_path):
     from PySide6.QtCore import Qt
 
@@ -807,7 +828,12 @@ def test_update_check_setting_and_notice(win):
     from compressor.gui.widgets import HelpTip
 
     page = win.app_settings
-    assert page.auto_updates.isChecked()                    # on by default
+    assert page.update_frequency.currentData() == "weekly"  # the default
+    page.update_frequency.setCurrentIndex(page.update_frequency.findData("monthly"))
+    page.update_frequency.activated.emit(page.update_frequency.currentIndex())
+    assert updates.frequency(page.qs) == "monthly"            # saved as soon as it's chosen
+    page.update_frequency.setCurrentIndex(page.update_frequency.findData("weekly"))
+    page.update_frequency.activated.emit(page.update_frequency.currentIndex())
     tips = [t for t in page.findChildren(HelpTip) if t.help_text == updates.HELP]
     assert tips and tips[0].accessibleDescription() == updates.HELP
     win.go_to(page)

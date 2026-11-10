@@ -1,7 +1,8 @@
 name: CLA
 
 # Asks each new contributor to sign CLA.md by commenting on their pull request, and records who signed in
-# signatures/cla.json (on the branch below). Pull requests are blocked by the "CLA" check until it's signed.
+# signatures/cla.json on the cla-signatures branch (not main, so main can be protected: the bot commits there).
+# Pull requests are blocked by the "CLA" check until it's signed.
 # It never checks out or runs the pull request's code (pull_request_target is safe for that reason only).
 on:
   issue_comment:
@@ -31,6 +32,7 @@ jobs:
         with:
           path-to-document: https://github.com/Lanntern/Compressor/blob/main/CLA.md
           path-to-signatures: signatures/cla.json
-          branch: main
-          # The copyright holder doesn't sign their own agreement; bots don't contribute copyrightable work.
-          allowlist: Lanntern,dependabot[bot],github-actions[bot]
+          branch: cla-signatures
+          # The copyright holder doesn't sign their own agreement, and neither do changes made for them by Claude
+          # (commits authored "Claude <noreply@anthropic.com>"); bots don't contribute copyrightable work.
+          allowlist: Lanntern,Claude,claude,dependabot[bot],github-actions[bot]
