@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass, field
 from collections.abc import Callable
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -43,20 +44,65 @@ def quality_label(encoder: str) -> str:
     return {"_nvenc": "CQ", "_qsv": "ICQ", "_amf": "QP"}.get(encoder[encoder.rfind("_"):], "CRF")
 
 
-def _gpu_quality_args(encoder: str, q: int) -> list[str]:
-    """Constant-quality settings for a GPU encoder (also what its availability test uses)."""
+NVENC_BASIC = ("-preset", "p6", "-tune", "hq")
+# Best first; the first one this GPU and ffmpeg accept is used (ultra high quality: RTX 40 and later, ffmpeg 7.1+
+# for HEVC and newer for AV1; a deeper preset and look-ahead everywhere else they work).
+NVENC_TUNINGS = (("-preset", "p7", "-tune", "uhq", "-rc-lookahead", "32"),
+                 ("-preset", "p7", "-tune", "hq", "-rc-lookahead", "32"))
+SPLIT_FROM_PIXELS = 3840 * 2160 * 0.9   # 4K and up: both encoders of a two-encoder GPU work on each frame
+
+
+@lru_cache(maxsize=None)
+def nvenc_tuning(encoder: str) -> tuple[str, ...]:
+    """The best NVENC settings this computer takes (each tried once with a tiny encode)."""
+    ffmpeg = tools.find_tool("ffmpeg")
+    for tuning in NVENC_TUNINGS:
+        if ffmpeg and _test_encode(ffmpeg, encoder, tuning):
+            return tuning
+    return NVENC_BASIC
+
+
+@lru_cache(maxsize=None)
+def nvenc_split(encoder: str) -> bool:
+    """Whether split-frame encoding works here (GPUs with two or more encoders, recent drivers): tried once
+    with a 4K frame, the size it's used for."""
+    ffmpeg = tools.find_tool("ffmpeg")
+    if not ffmpeg:
+        return False
+    return _test_encode(ffmpeg, encoder, (*nvenc_tuning(encoder), "-split_encode_mode", "forced"), size="3840x2160")
+
+
+def _nvenc_args(encoder: str, pixels: int = 0) -> list[str]:
+    split = ["-split_encode_mode", "forced"] if pixels >= SPLIT_FROM_PIXELS and nvenc_split(encoder) else []
+    return [*nvenc_tuning(encoder), *split]
+
+
+@lru_cache(maxsize=None)
+def svt_tuning() -> str:
+    """SVT-AV1's visual-quality tuning (instead of its default, which aims at the PSNR number) and variance boost
+    (protects dark and flat areas), where the bundled build has them; tried once."""
+    ffmpeg = tools.find_tool("ffmpeg")
+    for params in ("tune=0:enable-variance-boost=1", "tune=0"):
+        if ffmpeg and _test_encode(ffmpeg, "libsvtav1", ("-svtav1-params", params)):
+            return params
+    return ""
+
+
+def _gpu_quality_args(encoder: str, q: int, tuned: bool = True, pixels: int = 0) -> list[str]:
+    """Constant-quality settings for a GPU encoder (``tuned=False``: the basic ones its availability test uses)."""
     if encoder.endswith("_nvenc"):
-        return ["-preset", "p6", "-tune", "hq", "-rc", "vbr", "-cq", str(q), "-b:v", "0", "-spatial-aq", "1"]
+        tuning = _nvenc_args(encoder, pixels) if tuned else list(NVENC_BASIC)
+        return [*tuning, "-rc", "vbr", "-cq", str(q), "-b:v", "0", "-spatial-aq", "1"]
     if encoder.endswith("_qsv"):
         return ["-preset", "slower", "-global_quality", str(q)]
     return ["-quality", "quality", "-rc", "cqp", "-qp_i", str(q), "-qp_p", str(q)]       # AMF
 
 
-def _gpu_rate_args(encoder: str, kbps: int) -> list[str]:
+def _gpu_rate_args(encoder: str, kbps: int, pixels: int = 0) -> list[str]:
     """Average-bitrate settings for a GPU encoder (a size limit)."""
     rate = ["-b:v", f"{kbps}k", "-maxrate", f"{int(kbps * 1.5)}k", "-bufsize", f"{kbps * 2}k"]
     if encoder.endswith("_nvenc"):
-        return ["-preset", "p6", "-tune", "hq", "-rc", "vbr", "-multipass", "fullres", *rate, "-spatial-aq", "1"]
+        return [*_nvenc_args(encoder, pixels), "-rc", "vbr", "-multipass", "fullres", *rate, "-spatial-aq", "1"]
     if encoder.endswith("_qsv"):
         return ["-preset", "slower", *rate]
     return ["-quality", "quality", "-rc", "vbr_peak", *rate]
@@ -136,20 +182,29 @@ def encoder_works(encoder: str) -> bool:
     return ok
 
 
-def _test_encode(ffmpeg: str, encoder: str) -> bool:
+def _test_encode(ffmpeg: str, encoder: str, options: tuple[str, ...] | None = None, size: str = "320x240") -> bool:
     """A short test encode with the settings jobs use (so a driver that rejects one of them counts as
-    unavailable, rather than failing every video later)."""
+    unavailable, rather than failing every video later). ``options``: try these encoder settings instead (an
+    optional extra, e.g. a newer tuning: the basic ones decide whether the encoder is usable at all)."""
     extra: list[str] = []
     if is_gpu(encoder):
-        extra = _gpu_quality_args(encoder, _QUALITY[encoder]["balanced"]) if encoder in _QUALITY else []
+        if options is not None and encoder.endswith("_nvenc"):
+            extra = [*options, "-rc", "vbr", "-cq", "30", "-b:v", "0"]
+        elif encoder in _QUALITY:
+            extra = _gpu_quality_args(encoder, _QUALITY[encoder]["balanced"], tuned=False)
         extra += ["-pix_fmt", "yuv420p" if encoder.endswith("_nvenc") else "nv12"]
+    elif options is not None:
+        extra = [*options, "-crf", "40", "-preset", "12"]
     try:
         proc = tools.run(
-            [ffmpeg, "-hide_banner", "-nostdin", "-v", "error", "-f", "lavfi",
-             "-i", "color=black:s=320x240:r=30:d=0.2", "-c:v", encoder, *extra, "-f", "null", "-"],
-            timeout=60, check=False,
+            [ffmpeg, "-hide_banner", "-nostdin", "-v", "warning" if options is not None else "error", "-f", "lavfi",
+             "-i", f"color=black:s={size}:r=30:d=0.2", "-c:v", encoder, *extra, "-f", "null", "-"],
+            timeout=120, check=False,
         )
-        return proc.returncode == 0
+        # (SVT-AV1 only warns about settings it doesn't know, and carries on without them.)
+        rejected = re.search(r"Error parsing option|Unrecognized option|Unknown option|not supported",
+                             proc.stderr or "", re.I)
+        return proc.returncode == 0 and not (options is not None and rejected)
     except Exception:
         return False
 
@@ -499,7 +554,10 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
     ten_bit = info.is_10bit or bool(info.hdr) or encoder in ("av1_nvenc", "libsvtav1")
     gpu_pix = "p010le" if ten_bit else ("yuv420p" if encoder.endswith("_nvenc") else "nv12")   # (QSV/AMF: NV12)
     hdr10 = _hdr10_params(info, encoder)
-    svt = ":".join(p for p in (hdr10 if encoder == "libsvtav1" else "",
+    out_w, out_h = fit[2] if fit is not None else frame_size(info, s)
+    pixels = out_w * out_h
+    svt = ":".join(p for p in (svt_tuning() if encoder == "libsvtav1" else "",
+                               hdr10 if encoder == "libsvtav1" else "",
                                f"film-grain={grain}:film-grain-denoise=1" if grain and encoder == "libsvtav1" else "",
                                f"lp={threads}" if threads and encoder == "libsvtav1" else "") if p)
     x265 = ":".join(p for p in ("log-level=error", hdr10 if encoder == "libx265" else "",
@@ -508,7 +566,7 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
         kbps = fit[0]
         rate = ["-b:v", f"{kbps}k", "-maxrate", f"{int(kbps * 1.5)}k", "-bufsize", f"{kbps * 2}k"]
         if is_gpu(encoder):
-            args += _gpu_rate_args(encoder, kbps)
+            args += _gpu_rate_args(encoder, kbps, pixels)
             pix = gpu_pix
         elif encoder == "libsvtav1":
             args += ["-preset", "6", "-b:v", f"{kbps}k"]
@@ -519,7 +577,7 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
             args += ["-preset", "medium", *rate, "-x265-params", x265]
             pix = "yuv420p10le" if ten_bit else "yuv420p"
     elif is_gpu(encoder):
-        args += _gpu_quality_args(encoder, q if q is not None else encoder_quality(s, encoder))
+        args += _gpu_quality_args(encoder, q if q is not None else encoder_quality(s, encoder), pixels=pixels)
         pix = gpu_pix
     elif encoder == "libsvtav1":
         args += ["-crf", str(q), "-preset", str(SVT_PROBE_PRESET if probe else 6)]

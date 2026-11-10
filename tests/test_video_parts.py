@@ -133,7 +133,8 @@ def test_grain_is_measured(tmp_path):
     assert video.grain_level(p, info, s, "hevc_nvenc") == 0                # only SVT-AV1 re-creates grain
     assert video.grain_level(p, info, Settings(video_grain="off"), "libsvtav1") == 0
     args = video.build_args(p, tmp_path / "o.mkv", info, s, "libsvtav1", 30, grain=10, threads=4)
-    assert "film-grain=10:film-grain-denoise=1:lp=4" in args
+    svt = args[args.index("-svtav1-params") + 1]
+    assert svt.endswith("film-grain=10:film-grain-denoise=1:lp=4") and svt.startswith(video.svt_tuning())
 
 
 def test_quality_measures():
@@ -166,3 +167,43 @@ def test_frame_measures_compare_the_same_moments(scenes):
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-itsoffset", "0.023", "-i", str(scenes), "-i", str(scenes),
                     "-map", "0:v", "-map", "1:a", "-c", "copy", str(late)], check=True)
     assert quality.score_video_output(scenes, late, 1.0, 2.0, size, metric="Butteraugli").value < 0.05
+
+
+def test_encoder_settings_are_checked_not_assumed(monkeypatch):
+    """SVT-AV1 ignores settings it doesn't know (only warning), so each extra is tried and a warning counts as
+    unsupported; the combinations used here must all be accepted."""
+    ffmpeg = tools.find_tool("ffmpeg")
+    if not video.encoder_works("libsvtav1"):
+        pytest.skip("no SVT-AV1")
+    assert not video._test_encode(ffmpeg, "libsvtav1", ("-svtav1-params", "no-such-setting=1"))
+    tuning = video.svt_tuning()
+    assert tuning.startswith("tune=0") or tuning == ""
+    used = ":".join(p for p in (tuning, "film-grain=10:film-grain-denoise=1", "lp=2") if p)
+    assert video._test_encode(ffmpeg, "libsvtav1", ("-svtav1-params", used))
+
+
+def test_nvenc_uses_the_best_tuning_the_gpu_takes(monkeypatch):
+    """Ultra high quality where the GPU takes it, else high quality at p7, else the basic settings; split-frame
+    encoding only for 4K and up, and only where it works. The availability test always uses the basic ones."""
+    accepted: set[str] = {"hq"}
+    seen: list[tuple] = []
+
+    def fake(ffmpeg, encoder, options=None, size="320x240"):
+        seen.append((options, size))
+        if options is None:
+            return True
+        return options[3] in accepted and ("-split_encode_mode" not in options or "split" in accepted)
+
+    monkeypatch.setattr(video, "_test_encode", fake)
+    for accepted_now, want in (({"uhq", "hq", "split"}, "uhq"), ({"hq"}, "hq")):
+        video.nvenc_tuning.cache_clear()
+        video.nvenc_split.cache_clear()
+        accepted.clear()
+        accepted.update(accepted_now)
+        args = video._gpu_quality_args("av1_nvenc", 30, pixels=3840 * 2160)
+        assert args[:4] == ["-preset", "p7", "-tune", want] and "-rc-lookahead" in args
+        assert ("-split_encode_mode" in args) == ("split" in accepted_now)
+        assert "-split_encode_mode" not in video._gpu_quality_args("av1_nvenc", 30, pixels=1920 * 1080)
+    assert video._gpu_quality_args("av1_nvenc", 30, tuned=False)[:4] == list(video.NVENC_BASIC)
+    video.nvenc_tuning.cache_clear()
+    video.nvenc_split.cache_clear()
