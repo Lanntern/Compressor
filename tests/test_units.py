@@ -720,3 +720,13 @@ def test_winrt_notifications_and_accent():
         assert "HRESULT" in str(e)                    # bad XML is refused cleanly, not a crash
     else:
         raise AssertionError("malformed toast XML was accepted")
+
+
+def test_installer_script_has_no_line_inno_would_read_as_a_section():
+    """Inno Setup reads any line starting with "[" as a new section, even inside [Code] (an array literal on its
+    own line broke the installer build). The installer is only compiled on main, so this is checked here."""
+    lines = (Path(__file__).parent.parent / "packaging" / "installer.iss").read_text("utf-8-sig").splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == "[Code]")
+    bad = [f"{start + n + 2}: {line}" for n, line in enumerate(lines[start + 1:])
+           if line.lstrip().startswith("[") and not line.startswith("[")]
+    assert not bad, "\n".join(bad)

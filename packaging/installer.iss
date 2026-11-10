@@ -317,21 +317,26 @@ begin
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Choices: TArrayOfString;
 begin
   if (CurUninstallStep = usPostUninstall) and IsAdminInstallMode then
     RegisterCleanupForOtherUsers();
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
-    // (Command links: each choice says what it does. Keeping is the default, and the safe answer.)
+  begin
+    // Command links: each choice says what it does. Keeping is the default, and the safe answer.
+    // (Built here, not inline: Inno Setup reads any line starting with a bracket as a new section.)
+    SetArrayLength(Choices, 2);
+    Choices[0] := 'Keep them' + #13#10 + 'If you install Compressor again, it carries on where you left off, ' +
+      'and you can still undo past compressions from History.';
+    Choices[1] := 'Remove them' + #13#10 + 'Deletes Compressor''s settings, History and log. Your files ' +
+      'aren''t touched, but compressions can no longer be undone from History.';
     if TaskDialogMsgBox('Keep your settings and History?',
          'Compressor has been removed. Your settings and History are still on this PC.',
-         mbConfirmation, MB_YESNO,
-         ['Keep them' + #13#10 + 'If you install Compressor again, it carries on where you left off, and ' +
-            'you can still undo past compressions from History.',
-          'Remove them' + #13#10 + 'Deletes Compressor''s settings, History and log. Your files aren''t ' +
-            'touched, but compressions can no longer be undone from History.'],
-         0) = IDNO then
+         mbConfirmation, MB_YESNO, Choices, 0) = IDNO then
     begin
       DelTree(ExpandConstant('{localappdata}\Compressor'), True, True, True);
       RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Compressor');
     end;
+  end;
 end;
