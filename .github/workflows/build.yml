@@ -279,7 +279,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "The extension didn't work with the portable app" }
           Remove-Item Env:COMPRESSOR_EXE
           python packaging\make_mcpb.py build\mcp\compressor-mcp.exe dist\Compressor.mcpb
-          python -m pytest -q tests\test_mcp.py -k manifest
+          # (The manifest's own test runs with the other tests; here: the bundle holds what it should.)
+          python -c "import json, zipfile; z = zipfile.ZipFile('dist/Compressor.mcpb'); m = json.loads(z.read('manifest.json')); assert set(z.namelist()) >= {'manifest.json', 'server/compressor-mcp.exe', 'icon.png'}, z.namelist(); assert len(m['tools']) == 5 and m['server']['entry_point'] == 'server/compressor-mcp.exe', m; print('Compressor.mcpb', m['version'], len(m['tools']), 'tools')"
+          if ($LASTEXITCODE -ne 0) { throw "Compressor.mcpb is incomplete" }
       - name: Install, check, and uninstall (silently, for this user)
         shell: pwsh
         run: |
