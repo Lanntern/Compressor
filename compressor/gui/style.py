@@ -252,6 +252,8 @@ _ICONS = {
     "ellipsis": '<circle cx="6" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18" cy="12" r="1.2"/>',
     "trash": '<path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2l1-12M9 7V4.5h6V7"/>',
     "lock": '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+    "heart": '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/>',
+    "star": '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z"/>',
 }
 
 
@@ -374,6 +376,9 @@ QToolTip {{ background: {t.card}; color: {t.text}; border: 1px solid {t.border};
               font-weight: 600; }}
 #updateLink:hover {{ text-decoration: underline; }}
 #updateLink:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
+#supportLink {{ color: {t.text2}; background: transparent; border: none; padding: 0; text-align: left; }}
+#supportLink:hover {{ color: {t.accent_text}; }}
+#supportLink:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
 #sidebar QListWidget {{ background: transparent; border: none; padding: {S.XS}px {S.S}px; }}
 #sidebar QListWidget::item {{ height: {Z.SIDEBAR_ROW}px; padding-left: {S.S}px; border-radius: {R.CONTROL}px;
   color: {t.text}; margin: 1px 0; }}

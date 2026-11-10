@@ -237,6 +237,28 @@ def test_jump_list_and_tray_open_pages(win):
     assert win.pages.currentWidget() is win.compress
 
 
+def test_support_link_and_one_time_prompt(win):
+    from compressor.gui import support
+
+    win.sidebar.support_btn.click()                                         # any time, from the sidebar
+    dlg = win._support_dialog
+    assert dlg.isVisible() and not dlg.isModal() and dlg.star.text() and dlg.donate.text()
+    dlg.close()
+    qs = win.qsettings
+    qs.setValue(support.FIRST_SEEN, 0.0)
+    qs.setValue(support.SAVED_MOST, 11 * 1024 ** 3)
+    qs.remove(support.ASKED)
+    win.show_window()
+    win._maybe_ask_support()
+    assert win._support_dialog.isVisible() and qs.value(support.ASKED, False, bool)
+    win._support_dialog.close()
+    shown = win._support_dialog
+    win._maybe_ask_support()                                                # asked once only
+    assert win._support_dialog is shown
+    qs.remove(support.SAVED_MOST)
+    qs.remove(support.FIRST_SEEN)
+
+
 def test_tray_menu(win):
     if win.tray is None:
         pytest.skip("no system tray here")
@@ -841,7 +863,26 @@ def test_update_check_setting_and_notice(win):
     assert tips[0].is_open()
     pop = tips[0]._popover
     assert pop.width() <= 400 * 2 and pop.body.text() == updates.HELP and pop.body.height() > pop.body.fontMetrics().height()
+    assert pop.sticky
     pop.close()
+    # Hovering shows the same card without taking the focus; leaving closes it; clicking while hovered keeps it.
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent
+    from PySide6.QtWidgets import QApplication
+
+    tip = tips[0]
+    QApplication.sendEvent(tip, QEnterEvent(QPointF(5, 5), QPointF(5, 5), QPointF(5, 5)))
+    _wait(lambda: tip.is_open(), 2)
+    assert not tip._popover.sticky and tip._popover.body.text() == updates.HELP
+    QApplication.sendEvent(tip, QEvent(QEvent.Leave))
+    _wait(lambda: not tip.is_open(), 2)
+    QApplication.sendEvent(tip, QEnterEvent(QPointF(5, 5), QPointF(5, 5), QPointF(5, 5)))
+    _wait(lambda: tip.is_open(), 2)
+    tip.click()
+    assert tip.is_open() and tip._popover.sticky
+    QApplication.sendEvent(tip, QEvent(QEvent.Leave))
+    assert tip.is_open()                                    # pinned by the click: leaving doesn't close it
+    tip._popover.close()
     win.sidebar.set_update("99.0", security=True)
     assert win.sidebar.update_btn.isVisibleTo(win.sidebar) and "security" in win.sidebar.update_btn.text().lower()
     win.sidebar.set_update(None)

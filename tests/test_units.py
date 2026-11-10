@@ -435,3 +435,26 @@ def test_jump_list_tasks():
         return
     jumplist.set_process_app_id()
     assert jumplist.update(exe=sys.executable, args_prefix="-c pass ")     # COM calls all succeeded
+
+
+def test_support_prompt_rules(tmp_path):
+    """Asked once: only after a day and 10 GB saved; the most ever saved counts (History can be pruned later)."""
+    from PySide6.QtCore import QSettings
+
+    from compressor.gui import support
+
+    qs = QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat)
+    day, gb = 86400, 1024 ** 3
+    support.note_start(qs, now=1_000_000.0)
+    support.note_start(qs, now=9_000_000.0)                  # only the first start counts
+    assert support.note_saved(qs, 12 * gb) == 12 * gb
+    assert not support.due(qs, now=1_000_000.0 + day - 60)   # not a day yet
+    assert support.due(qs, now=1_000_000.0 + day + 60)
+    assert support.note_saved(qs, 2 * gb) == 12 * gb         # pruned or undone later: still counts
+    qs.setValue(support.ASKED, True)
+    assert not support.due(qs, now=1_000_000.0 + 30 * day)   # never twice
+
+    fresh = QSettings(str(tmp_path / "t.ini"), QSettings.IniFormat)
+    support.note_start(fresh, now=0.0)
+    support.note_saved(fresh, 9 * gb)
+    assert not support.due(fresh, now=10 * day)              # under 10 GB

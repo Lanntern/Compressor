@@ -9,7 +9,7 @@ import time
 from PySide6.QtCore import QPointF, QRectF, QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QDialog, QGridLayout, QHBoxLayout, QMainWindow, QMenu, QStackedWidget, QSystemTrayIcon,
+    QApplication, QDialog, QGridLayout, QHBoxLayout, QMainWindow, QMenu, QStackedWidget, QSystemTrayIcon,
     QVBoxLayout, QWidget,
 )
 
@@ -200,7 +200,11 @@ class MainWindow(QMainWindow):
             self.pages.addWidget(self._placeholders.get(name) or getattr(self, name))
         self.sidebar.page_selected.connect(self._go)
         self.sidebar.list.setCurrentRow(0)
-        self.compress.set_inputs_text(self.qsettings.value("last_inputs", "", str))
+        self.qsettings.remove("last_inputs")   # (older versions reopened the last session's files: no longer)
+        from . import support
+
+        support.note_start(self.qsettings)
+        self.sidebar.support_btn.clicked.connect(lambda: self.show_support())
         self.compress.hover.enabled = self.qsettings.value("hover_preview", True, bool)
         self.compress.update_summary()
 
@@ -376,6 +380,34 @@ class MainWindow(QMainWindow):
     def show_shortcuts(self) -> None:
         ShortcutsDialog(self).exec()
 
+    def show_support(self, asked: bool = False) -> None:
+        """The "star on GitHub / donate" window (the sidebar's Support link, or the one-time prompt)."""
+        from . import support
+
+        dlg = support.SupportDialog(int(self.qsettings.value(support.SAVED_MOST, 0, int)), self, asked=asked)
+        dlg.show()
+        self._support_dialog = dlg
+
+    def note_saved_total(self, total: int) -> None:
+        """History's total changed (or was read at start-up): maybe it's time for the one-time support prompt."""
+        from . import support
+
+        support.note_saved(self.qsettings, total)
+        if support.due(self.qsettings):
+            QTimer.singleShot(5000, self._maybe_ask_support)
+
+    def _maybe_ask_support(self) -> None:
+        """Ask once, and only at a quiet moment: the window on screen and nothing running."""
+        from . import support
+
+        lazy = [p for p in (self.built("cleanup"), self.built("converter"), self.built("metadata")) if p is not None]
+        busy = self.compress.busy() or any(p.busy() for p in lazy)
+        if not support.due(self.qsettings) or busy or not self.isVisible() or self.isMinimized() \
+                or QApplication.activeModalWidget() is not None:
+            return                          # (checked again the next time the History total changes)
+        self.qsettings.setValue(support.ASKED, True)
+        self.show_support(asked=True)
+
     def show_about(self) -> None:
         from .about_dialog import AboutDialog
 
@@ -436,7 +468,6 @@ class MainWindow(QMainWindow):
 
     def save_settings(self) -> None:
         self.qsettings.setValue("settings", json.dumps(self.compress.panel.settings().to_dict()))
-        self.qsettings.setValue("last_inputs", self.compress.inputs_text())
 
     # ------------------------------------------------------------------ drag & drop / other instances
     def dragEnterEvent(self, e) -> None:

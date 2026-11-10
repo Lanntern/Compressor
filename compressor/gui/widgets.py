@@ -514,14 +514,19 @@ class DropZone(QFrame):
 # ---------------------------------------------------------------- info button
 
 class InfoPopover(QWidget):
-    """A small card that points at what it explains (Fluent's info popover): opened by a click or the keyboard,
-    it stays until you click elsewhere or press Esc. Text wraps at a comfortable reading width."""
+    """A small card that points at what it explains (Fluent's info popover). Opened by a click or the keyboard
+    it stays until you click elsewhere or press Esc; opened by hovering (``sticky=False``) it takes no focus and
+    its owner closes it when the pointer leaves. Text wraps at a comfortable reading width."""
 
     BEAK = 7        # the arrow's height
     SHADOW = 10     # room around the card for its shadow
 
-    def __init__(self, body: str, title: str = "", parent=None):
-        super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+    def __init__(self, body: str, title: str = "", parent=None, sticky: bool = True):
+        kind = Qt.Popup if sticky else Qt.ToolTip
+        super().__init__(parent, kind | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.sticky = sticky
+        if not sticky:
+            self.setAttribute(Qt.WA_ShowWithoutActivating)   # hovering mustn't take the keyboard focus
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_NoMouseReplay)      # clicking the "?" again closes it, rather than reopening it
         self.setAttribute(Qt.WA_DeleteOnClose)
@@ -566,7 +571,8 @@ class InfoPopover(QWidget):
         self._beak_x = centre_x - x
         self.move(x, int(y))
         self.show()
-        self.setFocus(Qt.PopupFocusReason)
+        if self.sticky:
+            self.setFocus(Qt.PopupFocusReason)
 
     def _shape(self) -> QPainterPath:
         sh, b = self.SHADOW, self.BEAK
@@ -601,7 +607,10 @@ class InfoPopover(QWidget):
 
 
 class HelpTip(QAbstractButton):
-    """A small "?" beside a setting. Click it (or press Enter or Space) for the explanation in a popover."""
+    """A small "?" beside a setting. Hover over it for the explanation in a popover; click it (or press Enter or
+    Space) to keep the popover open."""
+
+    HOVER_DELAY_MS = 250      # long enough that passing over the "?" doesn't flash a card
 
     SIZE = 18
 
@@ -611,21 +620,40 @@ class HelpTip(QAbstractButton):
         self.setFixedSize(self.SIZE, self.SIZE)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("More information")
         self.setAccessibleName(f"More information: {title}" if title else "More information")
         self.setAccessibleDescription(help_text)
-        self.clicked.connect(self.open)
+        self.clicked.connect(lambda: self.open(sticky=True))   # (clicked passes a bool)
         self._popover: InfoPopover | None = None
+        from PySide6.QtCore import QTimer
 
-    def open(self) -> None:
+        self._hover_timer = QTimer(self, singleShot=True, interval=self.HOVER_DELAY_MS)
+        self._hover_timer.timeout.connect(lambda: self.open(sticky=False))
+
+    def open(self, sticky: bool = True) -> None:
         from PySide6.QtWidgets import QToolTip
 
+        self._hover_timer.stop()
+        if self.is_open():
+            if not sticky or self._popover.sticky:
+                return
+            self._popover.close()           # a click on a hovered "?" keeps the card: reopen it as sticky
         QToolTip.hideText()
-        pop = InfoPopover(self.help_text, self.title, self.window())
+        pop = InfoPopover(self.help_text, self.title, self.window(), sticky=sticky)
         pop.destroyed.connect(lambda *_: self.update())
         self._popover = pop
         pop.show_at(self)
         self.update()
+
+    def enterEvent(self, e) -> None:  # noqa: N802
+        super().enterEvent(e)
+        if not self.is_open():
+            self._hover_timer.start()
+
+    def leaveEvent(self, e) -> None:  # noqa: N802
+        super().leaveEvent(e)
+        self._hover_timer.stop()
+        if self.is_open() and not self._popover.sticky:
+            self._popover.close()
 
     def is_open(self) -> bool:
         try:
