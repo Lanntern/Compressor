@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from compressor import journal
-from compressor.cleanup import actions, appcompress, archives, caches, duplicates, empties, installers
-from compressor.engine import undo_run
+from wick import journal
+from wick.cleanup import actions, appcompress, archives, caches, duplicates, empties, installers
+from wick.engine import undo_run
 
 
 def _write(p: Path, data: bytes, age_days: float = 0) -> Path:
@@ -141,7 +141,7 @@ def test_installers_ignore_games_and_programs(tmp_path):
 
 
 def test_empty_items_are_really_empty(tmp_path):
-    from compressor.cleanup import actions
+    from wick.cleanup import actions
 
     _write(tmp_path / "hidden-only" / ".settings", b"x" * 5000)       # hidden 5 KB file: not empty
     (tmp_path / "nested" / "deeper").mkdir(parents=True)
@@ -178,7 +178,7 @@ def _age_tree(root: Path, days: float) -> None:
 
 
 def test_developer_folders(tmp_path):
-    from compressor.cleanup import devclean
+    from wick.cleanup import devclean
 
     big = os.urandom(2 * 1024 * 1024)
     old = tmp_path / "old-app"                       # idle Node project with a lock file: pre-selected
@@ -232,7 +232,7 @@ def test_developer_folders(tmp_path):
 def test_developer_folders_skip_committed_files(tmp_path):
     import subprocess
 
-    from compressor.cleanup import devclean
+    from wick.cleanup import devclean
 
     repo = tmp_path / "repo"
     _write(repo / "package.json", b"{}")
@@ -247,14 +247,14 @@ def test_developer_folders_skip_committed_files(tmp_path):
 
 
 def test_trash_refuses_what_windows_would_delete_permanently(tmp_path, monkeypatch):
-    from compressor import fileops
+    from wick import fileops
 
     f = _write(tmp_path / "big.bin", os.urandom(4096))
     monkeypatch.setattr(fileops, "recycle_bin_capacity", lambda p: 1000)   # a tiny Recycle Bin
     with pytest.raises(fileops.TooBigForTrash):
         fileops.move_to_trash(f)
     assert f.exists()
-    out = actions.trash_item(__import__("compressor.cleanup.common", fromlist=["Candidate"]).Candidate(f, 4096),
+    out = actions.trash_item(__import__("wick.cleanup.common", fromlist=["Candidate"]).Candidate(f, 4096),
                              journal.RunWriter(tmp_path, {}), "x")
     assert not out.ok and "Too big" in out.message and f.exists()
 
@@ -295,7 +295,7 @@ def _git(repo: Path, *args: str) -> None:
 @pytest.mark.skipif(not __import__("shutil").which("git"), reason="git not installed")
 def test_developer_ambiguous_folders_need_gitignore(tmp_path):
     """dist/build/coverage are only listed when the project's .gitignore ignores them."""
-    from compressor.cleanup import devclean
+    from wick.cleanup import devclean
 
     big = os.urandom(2 * 1024 * 1024)
     repo = tmp_path / "web"
@@ -317,7 +317,7 @@ def test_developer_ambiguous_folders_need_gitignore(tmp_path):
 
 
 def test_developer_skips_installed_apps_and_protected_projects(tmp_path):
-    from compressor.cleanup import devclean
+    from wick.cleanup import devclean
 
     big = os.urandom(2 * 1024 * 1024)
     app = tmp_path / "Tools" / "SomeEditor"                 # an installed Electron app, not a project
@@ -341,7 +341,7 @@ def test_developer_skips_installed_apps_and_protected_projects(tmp_path):
 
 
 def test_developer_activity_includes_git_and_sizes_are_honest(tmp_path):
-    from compressor.cleanup import devclean
+    from wick.cleanup import devclean
 
     big = os.urandom(3 * 1024 * 1024)
     proj = tmp_path / "proj"
@@ -364,11 +364,11 @@ def test_free_just_these_from_the_trash(tmp_path):
     d = tmp_path / "proj" / "node_modules"
     _write(d / "a.js", os.urandom(4096))
     keep = _write(tmp_path / "other.txt", b"stays in the bin")
-    item = __import__("compressor.cleanup.common", fromlist=["Candidate"]).Candidate(d, 4096, is_dir=True)
-    other = __import__("compressor.cleanup.common", fromlist=["Candidate"]).Candidate(keep, 16)
+    item = __import__("wick.cleanup.common", fromlist=["Candidate"]).Candidate(d, 4096, is_dir=True)
+    other = __import__("wick.cleanup.common", fromlist=["Candidate"]).Candidate(keep, 16)
     outcomes, _ = actions.apply([item, other], actions.TRASH, "devclean", tmp_path)
     assert all(o.ok for o in outcomes) and not d.exists()
-    from compressor import trash_restore
+    from wick import trash_restore
 
     assert trash_restore.find_trashed(d, outcomes[0].trashed_at) is not None
     count, freed, problems = actions.empty_from_trash(outcomes[:1])
@@ -378,7 +378,7 @@ def test_free_just_these_from_the_trash(tmp_path):
 
 
 def test_developer_kinds_can_be_switched_off(tmp_path):
-    from compressor.cleanup import devclean
+    from wick.cleanup import devclean
 
     big = os.urandom(2 * 1024 * 1024)
     p = tmp_path / "app"
@@ -404,7 +404,7 @@ def test_developer_projects_in_use(tmp_path):
     import subprocess
     import sys
 
-    from compressor.cleanup import devclean, inuse
+    from wick.cleanup import devclean, inuse
 
     p = tmp_path / "served"
     _write(p / "package.json", b"{}")
@@ -431,7 +431,7 @@ def test_developer_projects_in_use(tmp_path):
 
 
 def test_docker_sizes():
-    from compressor.cleanup.docker import parse_size
+    from wick.cleanup.docker import parse_size
 
     assert parse_size("16.02MB") == 16_020_000 and parse_size("4.096kB") == 4096
     assert parse_size("10MB (38%)") == 10_000_000 and parse_size("4.1kB (virtual 1.82MB)") == 4100
@@ -456,7 +456,7 @@ def _docker_builds_linux_images() -> bool:
 def test_docker_unused_images_and_containers(tmp_path):
     import subprocess
 
-    from compressor.cleanup import docker
+    from wick.cleanup import docker
 
     def build(tag: str) -> None:
         d = tmp_path / tag.replace(":", "_")
@@ -525,7 +525,7 @@ def test_app_compression_again_after_an_update(tmp_path):
 
 
 def test_windows_cleanup_script_uses_windows_tools():
-    from compressor.cleanup import winclean
+    from wick.cleanup import winclean
 
     ps = winclean.script(["windows_old", "update_cleanup", "delivery_optimization", "memory_dumps"])
     assert "Previous Installations" in ps and "System error memory dump files" in ps
@@ -540,7 +540,7 @@ def test_windows_cleanup_script_uses_windows_tools():
 
 
 def test_old_driver_versions_are_measured(tmp_path, monkeypatch):
-    from compressor.cleanup import winclean
+    from wick.cleanup import winclean
 
     repo = tmp_path / "System32" / "DriverStore" / "FileRepository"
     for i, age in enumerate((300, 200, 10)):                              # three versions of one driver
@@ -553,7 +553,7 @@ def test_old_driver_versions_are_measured(tmp_path, monkeypatch):
 
 def test_items_made_of_many_files_go_to_the_trash(tmp_path):
     files = [_write(tmp_path / "Temp" / f"old{i}.tmp", os.urandom(1000)) for i in range(3)]
-    item = __import__("compressor.cleanup.common", fromlist=["Candidate"]).Candidate(
+    item = __import__("wick.cleanup.common", fromlist=["Candidate"]).Candidate(
         tmp_path / "Temp", 3000, is_dir=True, extra={"paths": [str(f) for f in files]})
     outcomes, run_id = actions.apply([item], actions.TRASH, "winclean", tmp_path)
     assert outcomes[0].ok and outcomes[0].freed == 3000 and not any(f.exists() for f in files)
@@ -563,7 +563,7 @@ def test_items_made_of_many_files_go_to_the_trash(tmp_path):
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows only")
 def test_windows_leftovers_scan():
-    from compressor.cleanup import winclean
+    from wick.cleanup import winclean
 
     res = winclean.find()
     assert not res.cancelled
@@ -615,7 +615,7 @@ def _takeout_fixture(tmp_path: Path) -> tuple[list[Path], dict]:
 
 
 def test_google_takeout_merge(tmp_path):
-    from compressor.cleanup import takeout
+    from wick.cleanup import takeout
 
     sources, files = _takeout_fixture(tmp_path / "downloads")
     assert takeout.find_sources([tmp_path / "downloads"]) == sources
@@ -643,7 +643,7 @@ def test_google_takeout_cannot_write_outside_output(tmp_path):
     """A crafted archive ("../", absolute paths, drive letters) never writes outside the chosen folder."""
     import zipfile as _zip
 
-    from compressor.cleanup import takeout
+    from wick.cleanup import takeout
 
     src = tmp_path / "in" / "takeout-evil.zip"
     src.parent.mkdir()
@@ -687,7 +687,7 @@ def test_creative_and_chat_caches(tmp_path):
 
 
 def test_large_files_lists_the_biggest_first(tmp_path):
-    from compressor.cleanup import largefiles
+    from wick.cleanup import largefiles
 
     (tmp_path / "Videos").mkdir()
     (tmp_path / ".hidden").mkdir()
@@ -704,12 +704,12 @@ def test_large_files_lists_the_biggest_first(tmp_path):
 
 
 def test_files_are_what_their_contents_say(tmp_path):
-    from compressor import journal
-    from compressor.cleanup import actions, extensions
-    from compressor.engine import undo_record
-    from compressor.formats import PNG, sniff, wrong_extension
-    from compressor.scanner import scan
-    from compressor.settings import Settings
+    from wick import journal
+    from wick.cleanup import actions, extensions
+    from wick.engine import undo_record
+    from wick.formats import PNG, sniff, wrong_extension
+    from wick.scanner import scan
+    from wick.settings import Settings
     from PIL import Image
 
     Image.new("RGB", (40, 30), "red").save(tmp_path / "photo.jpg", "PNG")      # a PNG called .jpg
@@ -736,7 +736,7 @@ def test_files_are_what_their_contents_say(tmp_path):
 def test_broken_files_are_found(tmp_path):
     import zipfile
 
-    from compressor.cleanup import broken
+    from wick.cleanup import broken
     from PIL import Image
 
     Image.effect_noise((300, 200), 40).convert("RGB").save(tmp_path / "fine.jpg", quality=90)
@@ -759,7 +759,7 @@ def test_broken_files_are_found(tmp_path):
 
 
 def test_broken_videos_and_music_are_found(tmp_path):
-    from compressor.cleanup import broken
+    from wick.cleanup import broken
 
     from .conftest import ffmpeg, have
 
@@ -780,7 +780,7 @@ def test_broken_videos_and_music_are_found(tmp_path):
 def test_the_same_song_is_found_in_other_formats(tmp_path):
     import numpy as np
 
-    from compressor.cleanup import duplicates, music
+    from wick.cleanup import duplicates, music
 
     from .conftest import ffmpeg, have
 
@@ -818,7 +818,7 @@ def test_the_same_song_is_found_in_other_formats(tmp_path):
 
 
 def test_the_same_video_is_found_in_other_sizes(tmp_path):
-    from compressor.cleanup import videos
+    from wick.cleanup import videos
 
     from .conftest import ffmpeg, have
 
@@ -837,18 +837,18 @@ def test_the_same_video_is_found_in_other_sizes(tmp_path):
 
 
 def test_block_clone_on_refs():
-    """ReFS (CI makes a small drive and sets COMPRESSOR_REFS_DIR): a clone has the same contents, stays a separate
+    """ReFS (CI makes a small drive and sets WICK_REFS_DIR): a clone has the same contents, stays a separate
     file (changing it leaves the original alone), and the volume reports block cloning."""
     import os
     import pytest
 
-    from compressor import fileops
+    from wick import fileops
 
-    root = os.environ.get("COMPRESSOR_REFS_DIR")
+    root = os.environ.get("WICK_REFS_DIR")
     if os.name != "nt":
         assert not fileops.supports_block_clone(Path("."))
     if os.name != "nt" or not root:
-        pytest.skip("needs a ReFS drive (COMPRESSOR_REFS_DIR)")
+        pytest.skip("needs a ReFS drive (WICK_REFS_DIR)")
     folder = Path(root) / "clone-test"
     folder.mkdir(exist_ok=True)
     a, b = folder / "a.bin", folder / "b.bin"

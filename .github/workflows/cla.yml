@@ -31,7 +31,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          path-to-document: https://github.com/Lanntern/Compressor/blob/main/CLA.md
+          path-to-document: https://github.com/Lanntern/Wick/blob/main/CLA.md
           path-to-signatures: signatures/cla.json
           branch: cla-signatures
           # The copyright holder doesn't sign their own agreement, and neither do changes made for them by Claude

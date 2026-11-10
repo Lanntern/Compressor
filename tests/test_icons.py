@@ -4,11 +4,11 @@
 import pytest
 from PIL import Image
 
-from compressor import convert, icons
-from compressor.engine import DONE, process_convert
-from compressor.plan import Plan
-from compressor.scanner import scan
-from compressor.settings import Settings
+from wick import convert, icons
+from wick.engine import DONE, process_convert
+from wick.plan import Plan
+from wick.scanner import scan
+from wick.settings import Settings
 
 INKSCAPE = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!-- Created with Inkscape -->

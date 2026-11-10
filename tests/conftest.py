@@ -7,13 +7,13 @@ import pytest
 
 # Isolate app data and (on Linux) the Trash before anything imports send2trash,
 # which reads XDG_DATA_HOME at import time.
-_SANDBOX = Path(tempfile.mkdtemp(prefix="compressor-tests-"))
-os.environ["COMPRESSOR_DATA_DIR"] = str(_SANDBOX / "appdata")
-os.environ["COMPRESSOR_NO_NETWORK"] = "1"      # no automatic update checks while testing
+_SANDBOX = Path(tempfile.mkdtemp(prefix="wick-tests-"))
+os.environ["WICK_DATA_DIR"] = str(_SANDBOX / "appdata")
+os.environ["WICK_NO_NETWORK"] = "1"      # no automatic update checks while testing
 if os.name != "nt":
     os.environ["XDG_DATA_HOME"] = str(_SANDBOX / "xdg")
 
-from compressor import tools  # noqa: E402
+from wick import tools  # noqa: E402
 
 
 def have(*names: str) -> bool:

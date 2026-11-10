@@ -10,8 +10,8 @@ changes.
 
 | Rule | How |
 |---|---|
-| A, B: Usage Policy; high-risk uses need a human in the loop | Not a high-risk use; every change still needs the user's approval in Compressor's own dialog |
-| C: no evading Claude's guardrails | Tool descriptions and server instructions only describe Compressor's tools |
+| A, B: Usage Policy; high-risk uses need a human in the loop | Not a high-risk use; every change still needs the user's approval in Wick's own dialog |
+| C: no evading Claude's guardrails | Tool descriptions and server instructions only describe Wick's tools |
 | D: protect privacy | Runs locally; sends nothing; [PRIVACY.md](../../PRIVACY.md) says what reaches the conversation |
 | E: only the data needed; no conversation data, even in logs | Plans list at most `list_files` files (10 by default); the log records the tool name only |
 | F: no IP infringement | GPL-3.0 code by the maintainer; bundled tools' licences in THIRD-PARTY-NOTICES.md |
@@ -23,7 +23,7 @@ changes.
 |---|---|
 | A, B: narrow, accurate descriptions | Each says what it does, whether it changes files, and when to use it; checked against behaviour by tests |
 | C: no confusion with other software | Names are specific (`plan_compression`, `compress_planned_files`, ...) |
-| D, E: no steering Claude to other tools or away from them | Descriptions mention only Compressor's own tools |
+| D, E: no steering Claude to other tools or away from them | Descriptions mention only Wick's own tools |
 | F: no instructions pulled from elsewhere | None; file names are passed as data, cleaned of hidden/control characters |
 | G: nothing hidden or encoded | All text is plain and in the source |
 
@@ -65,8 +65,8 @@ None apply: no payments, no generated media, no ads, no adult content.
 
 ## Submitting (after the rename)
 
-1. Take `Compressor.mcpb` from the release (CI builds it and checks it against the installed and portable app).
+1. Take `Wick.mcpb` from the release (CI builds it and checks it against the installed and portable app).
 2. Submit it through Claude's extension submission form, with: the privacy policy URL, a verified contact address,
    the docs link, the three example prompts, and "no account needed; sample data: see docs/mcp.md".
-3. Note for reviewers: changes require the user's approval in a Compressor dialog, so a reviewer testing
+3. Note for reviewers: changes require the user's approval in a Wick dialog, so a reviewer testing
    `compress_planned_files` or `undo_run` needs to click OK in it.

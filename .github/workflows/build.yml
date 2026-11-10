@@ -53,7 +53,7 @@ jobs:
       - name: Lint and type check (settings in pyproject.toml)
         run: |
           ruff check .
-          mypy compressor
+          mypy wick
 
   linux:
     runs-on: ubuntu-24.04
@@ -126,8 +126,11 @@ jobs:
           choco install everything -y --no-progress
           $exe = Join-Path $env:ProgramFiles "Everything\Everything.exe"
           Start-Process $exe -ArgumentList "-startup"
-          Start-Sleep 20
-          "Everything started."
+          # A fresh install indexes every drive first, which on a busy runner has taken over two minutes. Wait for
+          # the index here (up to 5 minutes): when it isn't ready, this optional step fails and the test that asks
+          # Everything is skipped (WICK_REQUIRE_EVERYTHING=0), instead of failing as if Wick were broken.
+          python -c "import sys, time; from wick import everything; ok = any(everything.available() or time.sleep(2) for _ in range(150)); print('Everything index loaded' if ok else 'Everything index not loaded after 5 minutes'); sys.exit(0 if ok else 1)"
+          if ($LASTEXITCODE -ne 0) { throw "Everything didn't load its index in time" }
       - name: Make a small ReFS drive, to test block cloning
         continue-on-error: true
         shell: pwsh
@@ -140,11 +143,11 @@ jobs:
           ) | Set-Content -Encoding ascii $script
           diskpart /s $script
           if (-not (Test-Path R:\)) { throw "No ReFS drive" }
-          "COMPRESSOR_REFS_DIR=R:\" >> $env:GITHUB_ENV
+          "WICK_REFS_DIR=R:\" >> $env:GITHUB_ENV
       - name: Test (uses the real Recycle Bin)
         env:
-          COMPRESSOR_SHOTS_DIR: ${{ runner.temp }}/window-shots
-          COMPRESSOR_REQUIRE_EVERYTHING: ${{ steps.everything.outcome == 'success' && '1' || '0' }}
+          WICK_SHOTS_DIR: ${{ runner.temp }}/window-shots
+          WICK_REQUIRE_EVERYTHING: ${{ steps.everything.outcome == 'success' && '1' || '0' }}
         run: python -m pytest --durations=25
       - name: Keep window screenshots (title bar check)
         if: always()
@@ -189,12 +192,12 @@ jobs:
       - name: Draw the app icon (.ico) and write the version details (file Properties, Task Manager)
         run: |
           New-Item -ItemType Directory -Force build | Out-Null
-          python packaging/make_icon.py build/Compressor.ico
+          python packaging/make_icon.py build/Wick.ico
           python packaging/make_version_file.py build/version.txt
-      - name: Build Compressor.exe
+      - name: Build Wick.exe
         run: >
-          pyinstaller --noconfirm --windowed --name Compressor --icon build/Compressor.ico --version-file build/version.txt
-          --collect-submodules compressor
+          pyinstaller --noconfirm --windowed --name Wick --icon build/Wick.ico --version-file build/version.txt
+          --collect-submodules wick
           --collect-all pillow_heif --collect-all imagequant
           --collect-all mozjpeg_lossless_optimization --collect-all oxipng --collect-all py7zr
           --collect-all pikepdf --collect-all rawpy --collect-submodules fontTools
@@ -205,7 +208,7 @@ jobs:
           # Software OpenGL fallback and Qt Quick/QML: a Widgets app never loads them. (Qt PDF stays: Convert
           # draws PDF pages with it.)
           # The smoke test below opens the real window, so a needed file removed here fails the build.
-          $root = "dist/Compressor/_internal/PySide6"
+          $root = "dist/Wick/_internal/PySide6"
           $gone = Get-ChildItem $root -Recurse -File | Where-Object {
             $_.Name -match '^(opengl32sw\.dll|Qt6Quick.*\.dll|Qt6Qml.*\.dll|Qt6VirtualKeyboard.*\.dll)$' }
           "{0} files, {1:N0} MB removed" -f $gone.Count, (($gone | Measure-Object Length -Sum).Sum / 1MB)
@@ -216,165 +219,167 @@ jobs:
           # The DLL (static runtime: nothing extra to install) with the Visual Studio on the runner.
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          New-Item -ItemType Directory -Force dist/Compressor/shell | Out-Null
-          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && cl /nologo /O2 /MT /EHsc /std:c++17 /W4 /LD packaging\shell\CompressorShell.cpp /Fo:build\ /link /DEF:packaging\shell\CompressorShell.def shlwapi.lib ole32.lib uuid.lib advapi32.lib /OUT:dist\Compressor\shell\CompressorShell.dll"
-          if ($LASTEXITCODE -ne 0) { throw "Building CompressorShell.dll failed" }
-          Remove-Item dist/Compressor/shell/*.exp, dist/Compressor/shell/*.lib -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force dist/Wick/shell | Out-Null
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && cl /nologo /O2 /MT /EHsc /std:c++17 /W4 /LD packaging\shell\WickShell.cpp /Fo:build\ /link /DEF:packaging\shell\WickShell.def shlwapi.lib ole32.lib uuid.lib advapi32.lib /OUT:dist\Wick\shell\WickShell.dll"
+          if ($LASTEXITCODE -ne 0) { throw "Building WickShell.dll failed" }
+          Remove-Item dist/Wick/shell/*.exp, dist/Wick/shell/*.lib -ErrorAction SilentlyContinue
           # The package that gives it an identity (unsigned; the app registers it per user).
           python packaging/make_shell_package.py build/shell-package
           $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
             Sort-Object FullName -Descending | Select-Object -First 1
-          & $makeappx.FullName pack /d build\shell-package /p dist\Compressor\shell\CompressorShell.msix /nv /o
+          & $makeappx.FullName pack /d build\shell-package /p dist\Wick\shell\WickShell.msix /nv /o
           if ($LASTEXITCODE -ne 0) { throw "makeappx failed" }
-          Get-ChildItem dist/Compressor/shell | Select-Object Name, Length
+          Get-ChildItem dist/Wick/shell | Select-Object Name, Length
       - name: Report bundle size (what a cold start has to load)
         shell: pwsh
         run: |
-          $files = Get-ChildItem -Recurse -File dist/Compressor
+          $files = Get-ChildItem -Recurse -File dist/Wick
           "{0} files, {1:N0} MB" -f $files.Count, (($files | Measure-Object Length -Sum).Sum / 1MB)
           $files | Sort-Object Length -Descending | Select-Object -First 30 `
-            @{n='MB';e={[math]::Round($_.Length/1MB,1)}}, @{n='File';e={$_.FullName.Substring((Resolve-Path dist/Compressor).Path.Length)}} `
+            @{n='MB';e={[math]::Round($_.Length/1MB,1)}}, @{n='File';e={$_.FullName.Substring((Resolve-Path dist/Wick).Path.Length)}} `
             | Format-Table -AutoSize | Out-String -Width 220
       - name: Smoke-test the built app
         shell: pwsh
         run: |
-          Copy-Item -Recurse tools dist/Compressor/tools
-          python packaging/smoke_test.py dist/Compressor
+          Copy-Item -Recurse tools dist/Wick/tools
+          python packaging/smoke_test.py dist/Wick
       - name: Add docs and licences, and zip
         shell: pwsh
         run: |
-          Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md dist/Compressor/
+          Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md dist/Wick/
           foreach ($f in "LICENSE-ffmpeg.txt", "LICENSE-libjxl.txt", "LICENSE-gifsicle.txt") {
-            if (-not (Test-Path "dist/Compressor/tools/$f")) { throw "tools/$f is missing from the build" }
+            if (-not (Test-Path "dist/Wick/tools/$f")) { throw "tools/$f is missing from the build" }
           }
-          Compress-Archive -Path dist/Compressor -DestinationPath Compressor-windows.zip
+          Compress-Archive -Path dist/Wick -DestinationPath Wick-windows.zip
       - name: Build the installer (Inno Setup)
         shell: pwsh
         run: |
           choco install innosetup --no-progress -y | Out-Null
-          $version = python -c "import compressor; print(compressor.__version__)"
+          $version = python -c "import wick; print(wick.__version__)"
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=$version" `
-            "/DSourceDir=..\dist\Compressor" "/DIconFile=..\build\Compressor.ico" packaging\installer.iss
+            "/DSourceDir=..\dist\Wick" "/DIconFile=..\build\Wick.ico" packaging\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
-          Get-Item dist\Compressor-setup.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
+          Get-Item dist\Wick-setup.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
       - name: "Claude Desktop extension (MCP): build, and test it against the installed app"
         shell: pwsh
         run: |
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           New-Item -ItemType Directory -Force build\mcp | Out-Null
-          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && cl /nologo /O2 /MT /W4 /WX packaging\mcp\compressor-mcp.c /Fo:build\mcp\ /link advapi32.lib /OUT:build\mcp\compressor-mcp.exe"
-          if ($LASTEXITCODE -ne 0) { throw "Building compressor-mcp.exe failed" }
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && cl /nologo /O2 /MT /W4 /WX packaging\mcp\wick-mcp.c /Fo:build\mcp\ /link advapi32.lib /OUT:build\mcp\wick-mcp.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Building wick-mcp.exe failed" }
           # The installed app, found through its App Paths entry (as the extension does on people's PCs): proves the
           # windowed app serves MCP over the pipes it's handed.
-          $dir = Join-Path $env:RUNNER_TEMP "CompressorMcp"
-          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"
-          python packaging\mcp\check_extension.py "$env:RUNNER_TEMP\mcp-check\installed" -- build\mcp\compressor-mcp.exe
+          $dir = Join-Path $env:RUNNER_TEMP "WickMcp"
+          Start-Process dist\Wick-setup.exe -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"
+          python packaging\mcp\check_extension.py "$env:RUNNER_TEMP\mcp-check\installed" -- build\mcp\wick-mcp.exe
           if ($LASTEXITCODE -ne 0) { throw "The extension didn't work with the installed app" }
           Start-Process "$dir\unins000.exe" -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
-          for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Compressor.exe"); $i++) { Start-Sleep 1 }
-          # The portable zip: "Compressor.exe location" set in the extension's settings.
-          $env:COMPRESSOR_EXE = (Resolve-Path dist\Compressor\Compressor.exe).Path
-          python packaging\mcp\check_extension.py "$env:RUNNER_TEMP\mcp-check\portable" -- build\mcp\compressor-mcp.exe
+          for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Wick.exe"); $i++) { Start-Sleep 1 }
+          # The portable zip: "Wick.exe location" set in the extension's settings.
+          $env:WICK_EXE = (Resolve-Path dist\Wick\Wick.exe).Path
+          python packaging\mcp\check_extension.py "$env:RUNNER_TEMP\mcp-check\portable" -- build\mcp\wick-mcp.exe
           if ($LASTEXITCODE -ne 0) { throw "The extension didn't work with the portable app" }
-          Remove-Item Env:COMPRESSOR_EXE
-          python packaging\make_mcpb.py build\mcp\compressor-mcp.exe dist\Compressor.mcpb
-          python -m pytest -q tests\test_mcp.py -k manifest
+          Remove-Item Env:WICK_EXE
+          python packaging\make_mcpb.py build\mcp\wick-mcp.exe dist\Wick.mcpb
+          # (The manifest's own test runs with the other tests; here: the bundle holds what it should.)
+          python -c "import json, zipfile; z = zipfile.ZipFile('dist/Wick.mcpb'); m = json.loads(z.read('manifest.json')); assert set(z.namelist()) >= {'manifest.json', 'server/wick-mcp.exe', 'icon.png'}, z.namelist(); assert len(m['tools']) == 5 and m['server']['entry_point'] == 'server/wick-mcp.exe', m; print('Wick.mcpb', m['version'], len(m['tools']), 'tools')"
+          if ($LASTEXITCODE -ne 0) { throw "Wick.mcpb is incomplete" }
       - name: Install, check, and uninstall (silently, for this user)
         shell: pwsh
         run: |
-          $dir = Join-Path $env:RUNNER_TEMP "CompressorInstalled"
-          $menu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Compressor.lnk"
+          $dir = Join-Path $env:RUNNER_TEMP "WickInstalled"
+          $menu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Wick.lnk"
           $run = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
           function Uninstall {
             Start-Process "$dir\unins000.exe" -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
-            for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Compressor.exe"); $i++) { Start-Sleep 1 }  # (it finishes in a copy)
-            if (Test-Path "$dir\Compressor.exe") { throw "Uninstall left Compressor.exe behind" }
+            for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Wick.exe"); $i++) { Start-Sleep 1 }  # (it finishes in a copy)
+            if (Test-Path "$dir\Wick.exe") { throw "Uninstall left Wick.exe behind" }
           }
           # 1. Every option ticked: each one takes effect, and uninstalling takes each one away again.
-          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
+          Start-Process dist\Wick-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir", `
             "/TASKS=startmenu,contextmenu,autostart", "/UPDATES=monthly"
-          if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed" }
+          if (-not (Test-Path "$dir\Wick.exe")) { throw "Wick.exe wasn't installed" }
           if (-not (Test-Path $menu)) { throw "No Start menu entry" }
           $uninst = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
-            Where-Object DisplayName -eq "Compressor"
+            Where-Object DisplayName -eq "Wick"
           if (-not $uninst) { throw "Not listed in Apps & features" }
-          python -c "from compressor.gui import integration; assert integration.context_menu_installed(), 'no context menu'"
-          # Win+R "compressor", the Modify item in Installed apps, Default apps / Open with.
-          if (-not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe")) { throw "No App Paths entry" }
+          python -c "from wick.gui import integration; assert integration.context_menu_installed(), 'no context menu'"
+          # Win+R "wick", the Modify item in Installed apps, Default apps / Open with.
+          if (-not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Wick.exe")) { throw "No App Paths entry" }
           if ($uninst.NoModify -ne 0 -or -not $uninst.ModifyPath) { throw "No Modify entry in Installed apps" }
-          if ((Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name Compressor -ErrorAction SilentlyContinue).Compressor -ne "Software\Lanntern\Compressor\Capabilities") { throw "Not in Default apps" }
-          if (-not (Get-ItemProperty "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Compressor.Picture -ErrorAction SilentlyContinue)) { throw "Not in Open with for .jpg" }
-          for ($i = 0; $i -lt 30 -and -not (Get-AppxPackage -Name Lanntern.Compressor.ContextMenu); $i++) { Start-Sleep 1 }
-          "Windows 11 menu package registered: " + [bool](Get-AppxPackage -Name Lanntern.Compressor.ContextMenu)
-          if (-not (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue)) { throw "Not started at sign-in" }
-          python -c "from PySide6.QtCore import QSettings; assert QSettings('Compressor', 'Compressor').value('updates/frequency') == 'monthly', 'update check frequency not saved'"
+          if ((Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name Wick -ErrorAction SilentlyContinue).Wick -ne "Software\Lanntern\Wick\Capabilities") { throw "Not in Default apps" }
+          if (-not (Get-ItemProperty "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Wick.Picture -ErrorAction SilentlyContinue)) { throw "Not in Open with for .jpg" }
+          for ($i = 0; $i -lt 30 -and -not (Get-AppxPackage -Name Lanntern.Wick.ContextMenu); $i++) { Start-Sleep 1 }
+          "Windows 11 menu package registered: " + [bool](Get-AppxPackage -Name Lanntern.Wick.ContextMenu)
+          if (-not (Get-ItemProperty $run -Name Wick -ErrorAction SilentlyContinue)) { throw "Not started at sign-in" }
+          python -c "from PySide6.QtCore import QSettings; assert QSettings('Wick', 'Wick').value('updates/frequency') == 'monthly', 'update check frequency not saved'"
           Uninstall
           if (Test-Path $menu) { throw "Uninstall left the Start menu entry" }
-          python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu left behind'"
-          if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Start at sign-in left behind" }
-          if (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe") { throw "App Paths entry left behind" }
-          if (Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name Compressor -ErrorAction SilentlyContinue) { throw "Default apps entry left behind" }
+          python -c "from wick.gui import integration; assert not integration.context_menu_installed(), 'context menu left behind'"
+          if (Get-ItemProperty $run -Name Wick -ErrorAction SilentlyContinue) { throw "Start at sign-in left behind" }
+          if (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Wick.exe") { throw "App Paths entry left behind" }
+          if (Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name Wick -ErrorAction SilentlyContinue) { throw "Default apps entry left behind" }
           # (Windows 11's main menu: the package is registered in the background; reported, not required, since the
           # runner is Windows Server, whose Explorer may not take unsigned sparse packages.)
-          "Windows 11 menu package after uninstall: " + [bool](Get-AppxPackage -Name Lanntern.Compressor.ContextMenu)
+          "Windows 11 menu package after uninstall: " + [bool](Get-AppxPackage -Name Lanntern.Wick.ContextMenu)
           # 2. The defaults: a Start menu shortcut, and nothing else optional.
-          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
+          Start-Process dist\Wick-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"
-          if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed (defaults)" }
+          if (-not (Test-Path "$dir\Wick.exe")) { throw "Wick.exe wasn't installed (defaults)" }
           if (-not (Test-Path $menu)) { throw "No Start menu entry by default" }
-          python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu without asking'"
-          if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Starts at sign-in without asking" }
+          python -c "from wick.gui import integration; assert not integration.context_menu_installed(), 'context menu without asking'"
+          if (Get-ItemProperty $run -Name Wick -ErrorAction SilentlyContinue) { throw "Starts at sign-in without asking" }
           Uninstall
           if (Test-Path $menu) { throw "Uninstall left the default Start menu entry" }
           # 3. For everyone (the recommended mode; the runner is an administrator): into a protected folder.
-          $all = Join-Path $env:ProgramFiles "CompressorCI"
-          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
+          $all = Join-Path $env:ProgramFiles "WickCI"
+          Start-Process dist\Wick-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS", "/DIR=`"$all`""   # (quoted: it has a space)
-          if (-not (Test-Path "$all\Compressor.exe")) { throw "Compressor.exe wasn't installed for everyone" }
+          if (-not (Test-Path "$all\Wick.exe")) { throw "Wick.exe wasn't installed for everyone" }
           $machine = Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
-            Where-Object DisplayName -eq "Compressor"
+            Where-Object DisplayName -eq "Wick"
           if (-not $machine) { throw "Not listed in Apps & features (for everyone)" }
           Start-Process "$all\unins000.exe" -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
-          for ($i = 0; $i -lt 60 -and (Test-Path "$all\Compressor.exe"); $i++) { Start-Sleep 1 }
-          if (Test-Path "$all\Compressor.exe") { throw "Uninstall (for everyone) left Compressor.exe behind" }
+          for ($i = 0; $i -lt 60 -and (Test-Path "$all\Wick.exe"); $i++) { Start-Sleep 1 }
+          if (Test-Path "$all\Wick.exe") { throw "Uninstall (for everyone) left Wick.exe behind" }
           # Other users' leftovers: Active Setup runs the clean-up once per user at their next sign-in. Simulate one
           # user's leftovers here and run the registered command as Windows would.
-          $setup = Get-ItemProperty "HKLM:\Software\Microsoft\Active Setup\Installed Components\{6E3B5C1A-2F44-4C1E-9B8A-0C6D2E7F4A31}"
+          $setup = Get-ItemProperty "HKLM:\Software\Microsoft\Active Setup\Installed Components\{221A5C66-2C65-4E55-B016-44533EACAE8C}"
           if (-not $setup.StubPath) { throw "No clean-up registered for other users" }
-          New-Item -Force "HKCU:\Software\Classes\Compressor.Picture\shell\open\command" | Out-Null
+          New-Item -Force "HKCU:\Software\Classes\Wick.Picture\shell\open\command" | Out-Null
           New-Item -Force "HKCU:\Software\Classes\.jpg\OpenWithProgids" | Out-Null
-          New-ItemProperty -Force "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Compressor.Picture -Value "" | Out-Null
-          New-ItemProperty -Force $run -Name Compressor -Value "x" | Out-Null
+          New-ItemProperty -Force "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Wick.Picture -Value "" | Out-Null
+          New-ItemProperty -Force $run -Name Wick -Value "x" | Out-Null
           $exe, $rest = $setup.StubPath -split ' ', 2              # (Windows starts it the same way: program + arguments)
           Start-Process -Wait -WindowStyle Hidden -FilePath $exe -ArgumentList $rest
-          if (Test-Path "HKCU:\Software\Classes\Compressor.Picture") { throw "Clean-up left the ProgID" }
-          if (Get-ItemProperty "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Compressor.Picture -ErrorAction SilentlyContinue) { throw "Clean-up left Open with" }
-          if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Clean-up left start at sign-in" }
+          if (Test-Path "HKCU:\Software\Classes\Wick.Picture") { throw "Clean-up left the ProgID" }
+          if (Get-ItemProperty "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Wick.Picture -ErrorAction SilentlyContinue) { throw "Clean-up left Open with" }
+          if (Get-ItemProperty $run -Name Wick -ErrorAction SilentlyContinue) { throw "Clean-up left start at sign-in" }
           "Other users' clean-up: version $($setup.Version), works."
           "Installed, checked and uninstalled cleanly (all options, the defaults, and for everyone)."
       - uses: actions/upload-artifact@v7
         with:
-          name: Compressor-windows
-          path: dist/Compressor
+          name: Wick-windows
+          path: dist/Wick
           retention-days: 30
       - uses: actions/upload-artifact@v7
         with:
-          name: Compressor-setup
-          path: dist/Compressor-setup.exe
+          name: Wick-setup
+          path: dist/Wick-setup.exe
           retention-days: 30
       - uses: actions/upload-artifact@v7
         with:
-          name: Compressor-mcpb
-          path: dist/Compressor.mcpb
+          name: Wick-mcpb
+          path: dist/Wick.mcpb
           retention-days: 30
       - name: Checksums for the release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          Copy-Item dist/Compressor-setup.exe, dist/Compressor.mcpb .
-          Get-FileHash Compressor-setup.exe, Compressor-windows.zip, Compressor.mcpb -Algorithm SHA256 |
+          Copy-Item dist/Wick-setup.exe, dist/Wick.mcpb .
+          Get-FileHash Wick-setup.exe, Wick-windows.zip, Wick.mcpb -Algorithm SHA256 |
             ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
             Set-Content -Encoding ascii SHA256SUMS.txt
           Get-Content SHA256SUMS.txt
@@ -383,16 +388,16 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            Compressor-setup.exe
-            Compressor-windows.zip
-            Compressor.mcpb
+            Wick-setup.exe
+            Wick-windows.zip
+            Wick.mcpb
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         # (Pinned to a commit: a third-party action with write access. Dependabot proposes updates.)
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           files: |
-            Compressor-windows.zip
-            Compressor-setup.exe
-            Compressor.mcpb
+            Wick-windows.zip
+            Wick-setup.exe
+            Wick.mcpb
             SHA256SUMS.txt

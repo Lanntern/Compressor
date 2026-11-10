@@ -2,11 +2,11 @@
 
 from fontTools.ttLib import TTFont
 
-from compressor import convert, fonts
-from compressor.engine import DONE, process_convert
-from compressor.plan import Plan
-from compressor.scanner import scan
-from compressor.settings import Settings
+from wick import convert, fonts
+from wick.engine import DONE, process_convert
+from wick.plan import Plan
+from wick.scanner import scan
+from wick.settings import Settings
 
 
 def _font(path, chars="ABCabc", extra=(0x0416, 0x4E2D)):

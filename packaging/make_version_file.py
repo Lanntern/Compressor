@@ -1,4 +1,4 @@
-"""Write the Windows version resource for Compressor.exe (PyInstaller --version-file): the name, company,
+"""Write the Windows version resource for Wick.exe (PyInstaller --version-file): the name, company,
 description, version and copyright that File Properties → Details, Task Manager and uninstallers show.
 Usage: python packaging/make_version_file.py OUT.txt"""
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from compressor import APP_NAME, DESCRIPTION, __version__  # noqa: E402
+from wick import APP_NAME, DESCRIPTION, __version__  # noqa: E402
 
 
 def version_tuple(version: str) -> tuple[int, int, int, int]:

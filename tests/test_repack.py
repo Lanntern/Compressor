@@ -6,11 +6,11 @@ import zipfile
 import py7zr
 import pytest
 
-from compressor import archives, convert
-from compressor.engine import DONE, SKIPPED, process_convert
-from compressor.plan import Plan
-from compressor.scanner import scan
-from compressor.settings import Settings
+from wick import archives, convert
+from wick.engine import DONE, SKIPPED, process_convert
+from wick.plan import Plan
+from wick.scanner import scan
+from wick.settings import Settings
 
 
 def _stored_zip(path, files):

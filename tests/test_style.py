@@ -4,7 +4,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from compressor.gui.style import DARK, LIGHT, contrast_ratio  # noqa: E402
+from wick.gui.style import DARK, LIGHT, contrast_ratio  # noqa: E402
 
 AA = 4.5
 
@@ -33,8 +33,8 @@ def test_controls_share_one_height(mode):
     from PySide6.QtWidgets import QApplication, QComboBox, QGridLayout, QLineEdit, QSpinBox, QWidget
 
     app = QApplication.instance() or QApplication([])
-    from compressor.gui import style
-    from compressor.gui.widgets import button
+    from wick.gui import style
+    from wick.gui.widgets import button
 
     style.apply_style(mode)
     w = QWidget()
@@ -58,7 +58,7 @@ def test_controls_share_one_height(mode):
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_windows_accent_colours_stay_readable(accent, theme):
     """Any Windows accent (even pale yellow or near-black) gives buttons and accent text AA contrast."""
-    from compressor.gui.style import DARK, LIGHT, with_accent
+    from wick.gui.style import DARK, LIGHT, with_accent
 
     base = LIGHT if theme == "light" else DARK
     t = with_accent(base, accent)
@@ -72,7 +72,7 @@ def test_high_contrast_uses_the_users_colours():
     from PySide6.QtGui import QColor, QPalette
     from PySide6.QtWidgets import QApplication
 
-    from compressor.gui.style import contrast_ratio, high_contrast_tokens
+    from wick.gui.style import contrast_ratio, high_contrast_tokens
 
     QApplication.instance() or QApplication([])
     pal = QPalette()

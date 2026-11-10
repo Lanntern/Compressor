@@ -3,7 +3,7 @@
 import os
 import sys
 
-from compressor.cli import main
+from wick.cli import main
 
 def _run() -> int:
     try:
@@ -14,7 +14,7 @@ def _run() -> int:
         import traceback
 
         try:
-            from compressor.journal import data_dir
+            from wick.journal import data_dir
 
             (data_dir() / "last-error.txt").write_text(traceback.format_exc(), encoding="utf-8")
         except Exception:  # noqa: BLE001
@@ -25,7 +25,7 @@ def _run() -> int:
 if __name__ == "__main__":
     import multiprocessing
 
-    multiprocessing.freeze_support()   # helper processes (see compressor/procpool.py) start here and stop
+    multiprocessing.freeze_support()   # helper processes (see wick/procpool.py) start here and stop
     # No arguments (or file paths) open the window; "scan"/"run"/... use the command line.
     code = _run()
     # Exit immediately: native libraries' worker threads can deadlock while they are

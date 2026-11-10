@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from compressor import journal
-from compressor.engine import DONE, SKIPPED, run_job, undo_run
-from compressor.plan import plan_entry
-from compressor.scanner import scan
-from compressor.settings import Settings
+from wick import journal
+from wick.engine import DONE, SKIPPED, run_job, undo_run
+from wick.plan import plan_entry
+from wick.scanner import scan
+from wick.settings import Settings
 
 from .conftest import ffmpeg, needs_ffmpeg, needs_gifsicle, needs_image_tools
 
@@ -98,7 +98,7 @@ def test_jpeg_rebuilt_when_bin_emptied(media_dir):
     assert rec.reversible and rec.original_sha256
 
     # Simulate an emptied Recycle Bin for the JPEG.
-    from compressor import trash_restore
+    from wick import trash_restore
     item = trash_restore.find_trashed(Path(rec.original), rec.trashed_at)
     assert item is not None, "original should be findable in the Recycle Bin/Trash"
     os.remove(item.data_path)
@@ -238,8 +238,8 @@ def test_videos_are_made_to_fit_a_size_limit(media_dir):
 @needs_ffmpeg
 def test_black_bars_are_found_and_removed(media_dir):
     """A 16:9 picture letterboxed into a 4:3 frame: the bars go, the picture stays whole."""
-    from compressor.probe import probe_video
-    from compressor.video import detect_bars
+    from wick.probe import probe_video
+    from wick.video import detect_bars
 
     ffmpeg("-f", "lavfi", "-i", "testsrc2=s=640x360:r=25:d=4", "-vf", "pad=640:480:0:60:black",
            "-c:v", "libx264", "-crf", "16", "boxed.mp4", cwd=media_dir)
@@ -265,8 +265,8 @@ def test_black_bars_are_found_and_removed(media_dir):
 def test_a_file_you_pick_ignores_the_size_minimums(tmp_path):
     """Minimum sizes keep folder scans (and Watch Folders) off tiny files, but a video you drop or pick by itself
     is compressed whatever its size, instead of "1 file found, 0 can be compressed"."""
-    from compressor.plan import plan_entry
-    from compressor.scanner import scan
+    from wick.plan import plan_entry
+    from wick.scanner import scan
 
     clip = tmp_path / "clip.mp4"
     ffmpeg("-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=25", "-c:v", "libx264", "-b:v", "2M",
@@ -288,8 +288,8 @@ def test_same_named_results_finishing_together_get_their_own_names(tmp_path, mon
     import time
     from types import SimpleNamespace
 
-    from compressor import engine
-    from compressor.settings import Settings
+    from wick import engine
+    from wick.settings import Settings
 
     s = Settings(output_mode="beside")
     s.validate()

@@ -1,11 +1,11 @@
 <p align="center"><img src="docs/icon.png" width="96" height="96" alt=""></p>
 
-<h1 align="center">Compressor</h1>
+<h1 align="center">Wick</h1>
 
 <p align="center">
 Shrink photos, videos and music on Windows. Every result is verified, every change can be undone, and nothing leaves your computer.
 <br><br>
-<a href="https://github.com/Lanntern/Compressor/releases/latest"><b>Download for Windows</b></a> ·
+<a href="https://github.com/Lanntern/Wick/releases/latest"><b>Download for Windows</b></a> ·
 <a href="#safety-first">Safety</a> ·
 <a href="#privacy">Privacy</a> ·
 <a href="https://ko-fi.com/lanntern">Support on Ko-fi</a>
@@ -35,7 +35,7 @@ Also: **resize** (long edge, fit box, or percent, never enlarging), **metadata c
 
 ## Presets and Smart quality
 
-* **Presets** bundle the compression options: *Photo archive* (lossless, reversible JPEG XL), *Screenshots*, *For sharing* (WebP, 2560 px, no location or personal info, 1080p HEVC), *Maximum savings* (Smart quality aiming for "good", AV1) and *Keep compatible* (same file types, visually identical). Save your own from the options panel. Use them on the Compress page, per **watched folder**, from Explorer's **Compress with Compressor** submenu, or with `--preset` on the command line.
+* **Presets** bundle the compression options: *Photo archive* (lossless, reversible JPEG XL), *Screenshots*, *For sharing* (WebP, 2560 px, no location or personal info, 1080p HEVC), *Maximum savings* (Smart quality aiming for "good", AV1) and *Keep compatible* (same file types, visually identical). Save your own from the options panel. Use them on the Compress page, per **watched folder**, from Explorer's **Compress with Wick** submenu, or with `--preset` on the command line.
 * **Smart quality** (optional) searches per file for the smallest result that still *measures* as visually identical, high or good: SSIMULACRA2 for images (libjxl's `ssimulacra2` when present, otherwise a built-in implementation scored on the most detailed area) and VMAF for videos (when ffmpeg has libvmaf; SSIM otherwise). The chosen setting and score are shown per file and in the preview. It's slower, since every file is encoded several times.
 * **Video codec**: *Automatic* (default) uses HEVC for videos straight from cameras and phones (AV1 encoders smooth away their grain and fine detail) and AV1 for everything else.
 * **Visually identical** video quality test-encodes short stretches, measures them against the original (VMAF, else SSIM) and uses the smallest setting that still looks the same. Every encoded video reports how close it is to the original.
@@ -76,7 +76,7 @@ A second page finds space Windows doesn't free for you. Each tool scans first, p
 
 ## Safety first
 
-> **Keep backups of files that matter.** Compressor is built to never lose a file (below), but it changes and
+> **Keep backups of files that matter.** Wick is built to never lose a file (below), but it changes and
 > replaces files, and it comes with **no warranty** (see [License](#license)). Run it on files you also have
 > elsewhere, and check the results before you empty the Recycle Bin.
 
@@ -87,7 +87,7 @@ A second page finds space Windows doesn't free for you. Each tool scans first, p
   * Lossy images: the output must decode with the same dimensions.
   * Videos: codec, duration, resolution and audio-track count are checked, and the start and end are test-decoded.
 * **Originals go to the Recycle Bin / Trash**, never deleted outright, unless you explicitly allow permanent deletion for drives without a bin. Space is freed once you empty the bin. Or keep originals untouched by saving to a folder or with a suffix.
-* **Undo** any run or single file from the History tab (or `compressor undo <run>`). Lossless JPEG XL files can be turned back into the *exact* original JPEG even after the bin has been emptied.
+* **Undo** any run or single file from the History tab (or `wick undo <run>`). Lossless JPEG XL files can be turned back into the *exact* original JPEG even after the bin has been emptied.
 * Files are skipped, never half-done, if the saving is below a threshold (default 5%), if they're already efficient (HEVC/AV1/VP9 video), if the drive has no Recycle Bin (USB sticks, network drives), or if they live in program/game folders (any folder containing `.dll`/`.so` files, plus `Program Files`, `AppData`, `steamapps`, …) where converting files would break things.
 * Modified/created dates are carried over to the new files.
 * **Motion Photos** (a short video stored inside a Google/Samsung JPEG or HEIC) and **Live Photos** (an iPhone photo with its .MOV) are left alone, so the video part is never lost.
@@ -96,16 +96,16 @@ A second page finds space Windows doesn't free for you. Each tool scans first, p
 
 ## Download
 
-Get the latest version from the **[Releases page](https://github.com/Lanntern/Compressor/releases/latest)** (Windows 10 or 11, 64-bit):
+Get the latest version from the **[Releases page](https://github.com/Lanntern/Wick/releases/latest)** (Windows 10 or 11, 64-bit):
 
-* **`Compressor-setup.exe`**: the installer (recommended). It can add Start menu and desktop shortcuts and the right-click menu in File Explorer, and uninstalls cleanly from Settings → Apps.
-* **`Compressor-windows.zip`**: the portable version. Unzip it anywhere and run `Compressor.exe`.
+* **`Wick-setup.exe`**: the installer (recommended). It can add Start menu and desktop shortcuts and the right-click menu in File Explorer, and uninstalls cleanly from Settings → Apps.
+* **`Wick-windows.zip`**: the portable version. Unzip it anywhere and run `Wick.exe`.
 
-Everything it needs, encoders included, comes in the download. Compressor isn't code-signed yet, so the first time you run it Windows may say "Windows protected your PC": choose **More info → Run anyway**.
+Everything it needs, encoders included, comes in the download. Wick isn't code-signed yet, so the first time you run it Windows may say "Windows protected your PC": choose **More info → Run anyway**.
 
 **Checking a download (optional):** each release lists the files' SHA-256 checksums in `SHA256SUMS.txt`
-(compare with `Get-FileHash Compressor-setup.exe` in PowerShell), and carries GitHub's build provenance, so
-`gh attestation verify Compressor-setup.exe -R Lanntern/Compressor` confirms it was built by this repository's
+(compare with `Get-FileHash Wick-setup.exe` in PowerShell), and carries GitHub's build provenance, so
+`gh attestation verify Wick-setup.exe -R Lanntern/Wick` confirms it was built by this repository's
 workflow from its source.
 
 To view `.jxl` files in Windows 11 Photos/Explorer, install Microsoft's free **[JPEG XL Image Extension](https://apps.microsoft.com/detail/9MZPRTH5C0TB)** from the Microsoft Store. Browsers and most chat apps don't open JPEG XL yet; use WebP for images you share.
@@ -126,28 +126,28 @@ Then get the encoders:
 Start the app:
 
 ```bash
-compressor
+wick
 ```
 
 ### Command line
 
 ```bash
-compressor scan "D:\Photos"                                  # what would happen (changes nothing)
-compressor run "D:\Photos" --video hevc                      # compress (asks first; -y to skip)
-compressor run "D:\Photos" --images keep --jpeg lossy --quality 85 --resize-long-edge 2560 --metadata strip_gps
-compressor run a.png b.gif --images webp --output folder --output-dir "D:\Small"
-compressor run "D:\Videos" --preset "For sharing" --output suffix   # a preset; output and rules still apply
-compressor run "D:\Photos" --images jxl --jpeg lossy --smart high     # Smart quality
-compressor run "D:\Videos" --max-height 1080 --max-fps 30 --audio-bitrate 128
-compressor run "D:\Music" --audio-lossless flac --cd-quality          # lossless FLAC, hi-res to CD quality
-compressor run "D:\Music" --audio-lossy reencode --audio-format opus  # also shrink high-bitrate MP3s
-compressor presets                          # list presets
-compressor history -v                       # past runs
-compressor undo 20261104-123011-023         # restore a run's originals
-compressor tools                            # which encoders / GPU encoders are available
+wick scan "D:\Photos"                                  # what would happen (changes nothing)
+wick run "D:\Photos" --video hevc                      # compress (asks first; -y to skip)
+wick run "D:\Photos" --images keep --jpeg lossy --quality 85 --resize-long-edge 2560 --metadata strip_gps
+wick run a.png b.gif --images webp --output folder --output-dir "D:\Small"
+wick run "D:\Videos" --preset "For sharing" --output suffix   # a preset; output and rules still apply
+wick run "D:\Photos" --images jxl --jpeg lossy --smart high     # Smart quality
+wick run "D:\Videos" --max-height 1080 --max-fps 30 --audio-bitrate 128
+wick run "D:\Music" --audio-lossless flac --cd-quality          # lossless FLAC, hi-res to CD quality
+wick run "D:\Music" --audio-lossy reencode --audio-format opus  # also shrink high-bitrate MP3s
+wick presets                          # list presets
+wick history -v                       # past runs
+wick undo 20261104-123011-023         # restore a run's originals
+wick tools                            # which encoders / GPU encoders are available
 ```
 
-Run `compressor run --help` for all options (image format, lossy quality, AV1/HEVC, GPU/CPU, quality preset, thresholds).
+Run `wick run --help` for all options (image format, lossy quality, AV1/HEVC, GPU/CPU, quality preset, thresholds).
 
 ## Video settings
 
@@ -164,7 +164,7 @@ GPU encoding works on NVIDIA (HEVC from GTX 10-series, AV1 from RTX 40-series), 
 
 ## Speed
 
-Images and audio are processed one file per CPU thread (capped by memory), which measured about 25% faster than the old "half the threads" rule. With an NVIDIA RTX 40-series GPU, which has two video encoders, two videos are encoded at once. **Settings → Diagnostics → Speed Test** (or `compressor speedtest`) compares the old and new settings on generated samples, without touching your files or History.
+Images and audio are processed one file per CPU thread (capped by memory), which measured about 25% faster than the old "half the threads" rule. With an NVIDIA RTX 40-series GPU, which has two video encoders, two videos are encoded at once. **Settings → Diagnostics → Speed Test** (or `wick speedtest`) compares the old and new settings on generated samples, without touching your files or History.
 
 ## Keyboard
 
@@ -172,21 +172,21 @@ Everything works without a mouse. `F1` lists every shortcut. The essentials: `Ct
 
 ## Security updates
 
-Compressor opens your files with decoders it bundles (FFmpeg, libjxl, Pillow with its WebP/JPEG libraries,
+Wick opens your files with decoders it bundles (FFmpeg, libjxl, Pillow with its WebP/JPEG libraries,
 libheif, qpdf), and those get security fixes. Every release ships exact, checksum-verified versions of them,
-which are checked every week for newer releases and known vulnerabilities. The app checks for a newer Compressor
+which are checked every week for newer releases and known vulnerabilities. The app checks for a newer Wick
 weekly by default (Settings → About: whenever you open it, weekly, monthly or never), and Settings → About →
-About Compressor lists every component's version. To report a security problem, see [SECURITY.md](SECURITY.md).
+About Wick lists every component's version. To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## Use it from an AI assistant
 
-Compressor works with Claude and other assistants that support the Model Context Protocol: ask *"how much space
+Wick works with Claude and other assistants that support the Model Context Protocol: ask *"how much space
 could I save in my Pictures?"* and approve what it proposes. It only uses the folders you choose, asks you in
-Compressor's own window before changing anything, and every run can be undone. See [docs/mcp.md](docs/mcp.md).
+Wick's own window before changing anything, and every run can be undone. See [docs/mcp.md](docs/mcp.md).
 
 ## Privacy
 
-Compressor works entirely on your computer. It has no accounts, no telemetry and no ads, and it never sends your
+Wick works entirely on your computer. It has no accounts, no telemetry and no ads, and it never sends your
 files or anything about them anywhere. It goes online only to:
 
 * **check for a newer version**, weekly by default: one anonymous request to GitHub's list of releases (GitHub
@@ -194,13 +194,13 @@ files or anything about them anywhere. It goes online only to:
   Settings → About, or in the installer.
 * **download Pandoc**, only when you convert a document and only after you agree, from Pandoc's own release page.
 
-Your settings, history (what can be undone), presets and a small log stay in `%LOCALAPPDATA%\Compressor`
-(`~/.local/share/compressor` on Linux). Uninstalling asks whether to remove them. The full
+Your settings, history (what can be undone), presets and a small log stay in `%LOCALAPPDATA%\Wick`
+(`~/.local/share/wick` on Linux). Uninstalling asks whether to remove them. The full
 [privacy policy](PRIVACY.md) has the details.
 
-## Support Compressor
+## Support Wick
 
-Compressor is free, with no ads, no paid tier and nothing locked. If it saved you space or time, you can support
+Wick is free, with no ads, no paid tier and nothing locked. If it saved you space or time, you can support
 it on **[Ko-fi](https://ko-fi.com/lanntern)**. Donations are entirely optional and don't buy support or features;
 they help keep the project going.
 
@@ -208,15 +208,15 @@ they help keep the project going.
 
 Copyright © 2026 Lanntern.
 
-Compressor is free software: you can redistribute it and/or modify it under the terms of the
+Wick is free software: you can redistribute it and/or modify it under the terms of the
 **GNU General Public License, version 3** only, as published by the Free Software Foundation ([LICENSE](LICENSE)).
 
-Compressor is distributed in the hope that it will be useful, but **WITHOUT ANY WARRANTY**; without even the
+Wick is distributed in the hope that it will be useful, but **WITHOUT ANY WARRANTY**; without even the
 implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
 more details.
 
 The Windows build includes unmodified third-party programs (FFmpeg, libjxl, gifsicle) in `tools/`, which
-Compressor runs as separate programs, and libraries such as Qt (LGPL) and libimagequant (GPL-3.0). Their
+Wick runs as separate programs, and libraries such as Qt (LGPL) and libimagequant (GPL-3.0). Their
 licences, and where to get their source code, are in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md); the
 licence files of the tools are next to them in `tools/`.
 
@@ -225,7 +225,7 @@ Security problems: [SECURITY.md](SECURITY.md).
 
 ## Name and logo
 
-The Compressor name and icon identify the official releases from this repository and are not licensed under
+The Wick name and icon identify the official releases from this repository and are not licensed under
 the GPL. You're welcome to fork and redistribute the code under the GPL, but please give your version a
-different name and icon so nobody mistakes it for the official app. Saying that it is "based on Compressor"
+different name and icon so nobody mistakes it for the official app. Saying that it is "based on Wick"
 is fine.

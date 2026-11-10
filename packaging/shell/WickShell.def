@@ -1,0 +1,4 @@
+LIBRARY WickShell
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

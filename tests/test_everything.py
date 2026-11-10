@@ -4,7 +4,7 @@ listing. (Talking to a running Everything is Windows-only: tested in CI on Windo
 import struct
 from pathlib import Path, PureWindowsPath
 
-from compressor import everything
+from wick import everything
 
 
 def _reply(items):
@@ -58,13 +58,13 @@ def test_search_asks_for_folders_and_the_listed_types():
 
 
 def test_a_running_everything_lists_a_folder(tmp_path):
-    """Windows CI installs and starts Everything (COMPRESSOR_REQUIRE_EVERYTHING=1); elsewhere this is skipped."""
+    """Windows CI installs and starts Everything (WICK_REQUIRE_EVERYTHING=1); elsewhere this is skipped."""
     import os
     import time
 
     import pytest
 
-    required = os.environ.get("COMPRESSOR_REQUIRE_EVERYTHING") == "1"
+    required = os.environ.get("WICK_REQUIRE_EVERYTHING") == "1"
     if os.name != "nt" or not (required or everything.available()):
         pytest.skip("Everything isn't running here")
     (tmp_path / "sub").mkdir()

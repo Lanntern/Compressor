@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from compressor import power
+from wick import power
 
 
 def _supply(root: Path, name: str, **values) -> None:
@@ -50,10 +50,10 @@ def test_awake_nests_and_can_be_turned_off(monkeypatch):
 
 
 def test_a_paused_job_starts_nothing_new(tmp_path):
-    from compressor.engine import DONE, run_job
-    from compressor.plan import plan_entry
-    from compressor.scanner import scan
-    from compressor.settings import Settings
+    from wick.engine import DONE, run_job
+    from wick.plan import plan_entry
+    from wick.scanner import scan
+    from wick.settings import Settings
 
     for i in range(3):
         Image.effect_noise((64, 48), 40).convert("RGB").save(tmp_path / f"{i}.png")
@@ -83,7 +83,7 @@ def test_background_and_efficiency_modes_are_safe_everywhere():
     """Windows-only effects (background thread mode, EcoQoS); elsewhere they must simply do nothing."""
     import threading
 
-    from compressor import power
+    from wick import power
 
     ran = []
     with power.background():
@@ -95,10 +95,10 @@ def test_background_and_efficiency_modes_are_safe_everywhere():
 
 def test_an_interrupted_job_starts_nothing_new(tmp_path):
     """Ctrl+C in the command line: files still queued are cancelled, not all run to the end first."""
-    from compressor.engine import run_job
-    from compressor.plan import plan_entry
-    from compressor.scanner import scan
-    from compressor.settings import Settings
+    from wick.engine import run_job
+    from wick.plan import plan_entry
+    from wick.scanner import scan
+    from wick.settings import Settings
 
     for i in range(6):
         Image.effect_noise((64, 48), 40).convert("RGB").save(tmp_path / f"{i}.png")
@@ -124,11 +124,11 @@ def test_an_interrupted_job_starts_nothing_new(tmp_path):
 
 @pytest.mark.skipif(os.name != "nt", reason="the internet mark is an NTFS stream")
 def test_converted_download_keeps_the_internet_mark(tmp_path):
-    from compressor import fileops
-    from compressor.engine import DONE, run_job
-    from compressor.plan import plan_entry
-    from compressor.scanner import scan
-    from compressor.settings import Settings
+    from wick import fileops
+    from wick.engine import DONE, run_job
+    from wick.plan import plan_entry
+    from wick.scanner import scan
+    from wick.settings import Settings
 
     src = tmp_path / "download.png"
     Image.effect_noise((64, 48), 40).convert("RGB").save(src)
