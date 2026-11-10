@@ -307,19 +307,24 @@ def _ps_literal(text) -> str:
 
 
 def _powershell(script: str, wait: bool) -> bool:
-    """Run a PowerShell script hidden; ``wait`` for it (True if it succeeded), or start it and return True."""
-    import base64
+    """Run a PowerShell script hidden; ``wait`` for it (True if it succeeded), or start it and return True.
+    The script is passed as plain text on standard input (readable by anything inspecting it, unlike an encoded
+    command). Bypass is needed here: the Appx cmdlets load module files, which Windows' default policy blocks."""
     import subprocess
 
     exe = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-    encoded = base64.b64encode(("$ErrorActionPreference = 'Stop'\n" + script).encode("utf-16-le")).decode("ascii")
-    args = [str(exe), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded]
+    text = "$ErrorActionPreference = 'Stop'\n" + script + "\n"
+    args = [str(exe), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "-"]
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
         if wait:
-            return subprocess.run(args, capture_output=True, timeout=120, creationflags=flags).returncode == 0
-        subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         creationflags=flags)
+            return subprocess.run(args, input=text, capture_output=True, text=True, timeout=120,
+                                  creationflags=flags).returncode == 0
+        p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             text=True, creationflags=flags)
+        assert p.stdin is not None
+        p.stdin.write(text)
+        p.stdin.close()
         return True
     except (OSError, subprocess.SubprocessError):
         return False

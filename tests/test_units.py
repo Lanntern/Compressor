@@ -697,3 +697,26 @@ def test_limits_against_bombs(tmp_path, monkeypatch):
     assert tools.encoder_memory_limit() == 12 * 1024 ** 3
     monkeypatch.setattr(tools, "total_memory_gb", lambda: 1.0)
     assert tools.encoder_memory_limit() == 2 * 1024 ** 3
+
+
+def test_winrt_notifications_and_accent():
+    """Windows: a notification is built through WinRT itself (no PowerShell), and the accent colour comes from
+    UISettings; elsewhere neither exists."""
+    import re
+
+    from compressor.gui import toasts, winrt
+
+    if os.name != "nt":
+        assert winrt.accent_color() is None and toasts.show("t", "m") is False
+        return
+    assert re.fullmatch(r"#[0-9A-F]{6}", winrt.accent_color() or "")
+    notifier, toast = toasts._build(toasts.toast_xml("Done", "Saved 1 GB", [("Show in History", "history")]))
+    assert notifier.ptr and toast.ptr
+    toast.release()
+    notifier.release()
+    try:
+        toasts._build("<toast><not-closed>")
+    except OSError as e:
+        assert "HRESULT" in str(e)                    # bad XML is refused cleanly, not a crash
+    else:
+        raise AssertionError("malformed toast XML was accepted")

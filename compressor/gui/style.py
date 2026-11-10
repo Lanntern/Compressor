@@ -80,17 +80,11 @@ def set_system_accent(on: bool) -> None:
 
 
 def windows_accent() -> str | None:
-    """The accent colour chosen in Windows' Settings › Personalisation › Colours ("#RRGGBB"), or None."""
-    if os.name != "nt":
-        return None
-    try:
-        import winreg
+    """The accent colour chosen in Windows' Settings › Personalisation › Colours ("#RRGGBB"), or None. Asked of
+    Windows' own UISettings API (the supported way), not read from its private registry values."""
+    from .winrt import accent_color
 
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\DWM") as key:
-            abgr = int(winreg.QueryValueEx(key, "AccentColor")[0]) & 0xFFFFFFFF
-        return f"#{abgr & 0xFF:02X}{(abgr >> 8) & 0xFF:02X}{(abgr >> 16) & 0xFF:02X}"
-    except (OSError, ValueError):
-        return None
+    return accent_color()
 
 
 def _mix(a: QColor, b: QColor, t: float) -> str:
