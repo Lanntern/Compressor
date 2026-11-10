@@ -198,18 +198,25 @@ class FlowLayout(QLayout):
         self._items: list = []
         self._groups: list[list] = []
         self._spacing, self._line_spacing, self._inner = spacing, line_spacing, inner
-        self._cache: dict = {}       # sizes and heights for the current layout pass (cleared by invalidate)
+        # Sizes measured during one call from Qt (sizeHint, heightForWidth...), so each widget is asked once
+        # rather than once per group and line. Not kept between calls: overriding invalidate() to clear it
+        # would make Qt call into Python while tearing the window down, which crashes at exit.
+        self._cache: dict | None = None
         self.setContentsMargins(0, 0, 0, 0)
 
-    def invalidate(self) -> None:
+    def _measuring(self, fn, *args):
+        if self._cache is not None:          # (already inside a call: share its measurements)
+            return fn(*args)
         self._cache = {}
-        super().invalidate()
+        try:
+            return fn(*args)
+        finally:
+            self._cache = None
 
     # QLayout interface
     def addItem(self, item) -> None:
         self._items.append(item)
         self._groups.append([item])
-        self._cache = {}
 
     def add_group(self, *widgets) -> None:
         group = []
@@ -231,7 +238,6 @@ class FlowLayout(QLayout):
         if not 0 <= index < len(self._items):
             return None
         item = self._items.pop(index)
-        self._cache = {}
         for g in self._groups:
             if item in g:
                 g.remove(item)
@@ -245,31 +251,33 @@ class FlowLayout(QLayout):
         return True
 
     def heightForWidth(self, width: int) -> int:
-        key = ("hfw", width)
-        if key not in self._cache:
-            self._cache[key] = self._layout(QRect(0, 0, width, 0), apply=False)
-        return self._cache[key]
+        return self._measuring(self._layout, QRect(0, 0, width, 0), False)
 
     def setGeometry(self, rect) -> None:
         super().setGeometry(rect)
-        self._layout(rect, apply=True)
+        self._measuring(self._layout, rect, True)
 
     def sizeHint(self) -> QSize:
-        w = sum(self._group_width(g) for g in self._visible_groups())
-        w += self._spacing * max(0, len(self._visible_groups()) - 1)
-        return QSize(w, self.heightForWidth(w) if w else 0)
+        return self._measuring(self._size, False)
 
     def minimumSize(self) -> QSize:
-        w = max((self._group_width(g) for g in self._visible_groups()), default=0)
-        return QSize(w, self.heightForWidth(w) if w else 0)
+        return self._measuring(self._size, True)
+
+    def _size(self, minimum: bool) -> QSize:
+        widths = [self._group_width(g) for g in self._visible_groups()]
+        w = max(widths, default=0) if minimum else sum(widths) + self._spacing * max(0, len(widths) - 1)
+        return QSize(w, self._layout(QRect(0, 0, w, 0), apply=False) if w else 0)
 
     # internals
     def _visible_groups(self) -> list[list]:
-        if "groups" not in self._cache:
-            self._cache["groups"] = [vis for g in self._groups if (vis := [i for i in g if not i.isEmpty()])]
-        return self._cache["groups"]
+        cache = self._cache if self._cache is not None else {}
+        if "groups" not in cache:
+            cache["groups"] = [vis for g in self._groups if (vis := [i for i in g if not i.isEmpty()])]
+        return cache["groups"]
 
     def _hint(self, item) -> QSize:
+        if self._cache is None:
+            return item.sizeHint()
         hints = self._cache.setdefault("hints", {})
         if id(item) not in hints:
             hints[id(item)] = item.sizeHint()
