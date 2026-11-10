@@ -195,6 +195,23 @@ jobs:
             $_.Name -match '^(opengl32sw\.dll|Qt6Quick.*\.dll|Qt6Qml.*\.dll|Qt6VirtualKeyboard.*\.dll)$' }
           "{0} files, {1:N0} MB removed" -f $gone.Count, (($gone | Measure-Object Length -Sum).Sum / 1MB)
           $gone | Remove-Item
+      - name: Build the Windows 11 menu (shell extension DLL and its sparse package)
+        shell: pwsh
+        run: |
+          # The DLL (static runtime: nothing extra to install) with the Visual Studio on the runner.
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          New-Item -ItemType Directory -Force dist/Compressor/shell | Out-Null
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && cl /nologo /O2 /MT /EHsc /std:c++17 /W4 /LD packaging\shell\CompressorShell.cpp /Fo:build\ /link /DEF:packaging\shell\CompressorShell.def shlwapi.lib ole32.lib uuid.lib advapi32.lib /OUT:dist\Compressor\shell\CompressorShell.dll"
+          if ($LASTEXITCODE -ne 0) { throw "Building CompressorShell.dll failed" }
+          Remove-Item dist/Compressor/shell/*.exp, dist/Compressor/shell/*.lib -ErrorAction SilentlyContinue
+          # The package that gives it an identity (unsigned; the app registers it per user).
+          python packaging/make_shell_package.py build/shell-package
+          $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          & $makeappx.FullName pack /d build\shell-package /p dist\Compressor\shell\CompressorShell.msix /nv /o
+          if ($LASTEXITCODE -ne 0) { throw "makeappx failed" }
+          Get-ChildItem dist/Compressor/shell | Select-Object Name, Length
       - name: Report bundle size (what a cold start has to load)
         shell: pwsh
         run: |
@@ -246,12 +263,17 @@ jobs:
             Where-Object DisplayName -eq "Compressor"
           if (-not $uninst) { throw "Not listed in Apps & features" }
           python -c "from compressor.gui import integration; assert integration.context_menu_installed(), 'no context menu'"
+          for ($i = 0; $i -lt 30 -and -not (Get-AppxPackage -Name Lanntern.Compressor.ContextMenu); $i++) { Start-Sleep 1 }
+          "Windows 11 menu package registered: " + [bool](Get-AppxPackage -Name Lanntern.Compressor.ContextMenu)
           if (-not (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue)) { throw "Not started at sign-in" }
           python -c "from PySide6.QtCore import QSettings; assert QSettings('Compressor', 'Compressor').value('updates/frequency') == 'monthly', 'update check frequency not saved'"
           Uninstall
           if (Test-Path $menu) { throw "Uninstall left the Start menu entry" }
           python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu left behind'"
           if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Start at sign-in left behind" }
+          # (Windows 11's main menu: the package is registered in the background; reported, not required, since the
+          # runner is Windows Server, whose Explorer may not take unsigned sparse packages.)
+          "Windows 11 menu package after uninstall: " + [bool](Get-AppxPackage -Name Lanntern.Compressor.ContextMenu)
           # 2. The defaults: a Start menu shortcut, and nothing else optional.
           Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"

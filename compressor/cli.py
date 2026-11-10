@@ -302,7 +302,8 @@ def main(argv: list[str] | None = None) -> int:
 
         from .gui import toasts
 
-        for undo in (integration.uninstall_context_menu, lambda: integration.set_autostart(False), toasts.unregister):
+        for undo in (lambda: integration.uninstall_context_menu(wait=True), lambda: integration.set_autostart(False),
+                     toasts.unregister):
             try:
                 undo()
             except Exception:  # noqa: BLE001 - remove what can be removed

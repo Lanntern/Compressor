@@ -553,3 +553,29 @@ def test_windows_notifications():
     with pytest.raises(OSError):
         winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\AppUserModelId\Lanntern.Compressor")
     toasts._registered = False
+
+
+def test_windows11_menu_package_matches_the_dll():
+    """The sparse package's manifest is valid XML, names the DLL's two command IDs and the package name the app
+    registers, and has an unsigned-package publisher. (CI builds and packs both on Windows.)"""
+    import re
+    import sys
+    import xml.dom.minidom
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "packaging"))
+    import make_shell_package as pkg
+
+    from compressor.gui import integration
+
+    doc = xml.dom.minidom.parseString(pkg.manifest("1.2.3"))
+    identity = doc.getElementsByTagName("Identity")[0]
+    assert identity.getAttribute("Name") == integration.MODERN_PACKAGE
+    assert identity.getAttribute("Version") == "1.2.3.0"
+    assert "OID.2.25.311729368913984317654407730594956997722=1" in identity.getAttribute("Publisher")
+    cpp = (root / "packaging" / "shell" / "CompressorShell.cpp").read_text()
+    ids = {m.lower() for m in re.findall(r"// \{([0-9a-f-]{36})\}", cpp)}
+    assert ids == {pkg.CLSID_COMPRESS, pkg.CLSID_CONVERT}
+    classes = {c.getAttribute("Id") for c in doc.getElementsByTagName("com:Class")}
+    assert classes == ids
+    assert integration._modern_menu_files() is None or os.name == "nt"     # (only a Windows build has it)

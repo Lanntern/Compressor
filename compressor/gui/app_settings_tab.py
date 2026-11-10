@@ -117,8 +117,8 @@ class AppSettingsTab(Page):
         self.menu.toggled.connect(self._menu_toggled)
         menu_desc = ("Adds “Compress with Compressor” for files and folders in Explorer, with your current "
                      "options or any preset, and “Convert with Compressor” for pictures, videos and music, with the "
-                     "usual formats (the converted copy is saved next to the original). On Windows 11 they're "
-                     "under Show more options." if integration.IS_WINDOWS
+                     "usual formats (the converted copy is saved next to the original). On Windows 11 they're in "
+                     "the main menu as well as under Show more options." if integration.IS_WINDOWS
                      else "Adds Compressor to your file manager's context menu (Open With).")
         card.lay.addWidget(setting_row("Context menu", menu_desc, self.menu))
         card.lay.addWidget(separator())

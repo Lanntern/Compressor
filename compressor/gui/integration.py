@@ -141,6 +141,7 @@ def install_context_menu() -> None:
                         winreg.SetValueEx(k, "CommandFlags", 0, winreg.REG_DWORD, 0x40)  # separator after
                 with winreg.CreateKey(winreg.HKEY_CURRENT_USER, item + r"\command") as k:
                     winreg.SetValueEx(k, None, 0, winreg.REG_SZ, _quote(launch_command(*extra)) + ' "%1"')
+        install_modern_menu()
         return
     path = _desktop_file()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -156,17 +157,105 @@ def refresh_context_menu() -> None:
         pass
 
 
-def uninstall_context_menu() -> None:
+def uninstall_context_menu(wait: bool = False) -> None:
     if IS_WINDOWS:
         import winreg
 
         for key in (*_MENU_KEYS, *(_CONVERT_KEY.format(kind=k) for k in CONVERT_MENUS)):
             _delete_tree(winreg.HKEY_CURRENT_USER, key)
+        uninstall_modern_menu(wait)
         return
     try:
         _desktop_file().unlink()
     except OSError:
         pass
+
+
+# ------------------------------------------------------------------ Windows 11's main menu
+# Windows 11 shows only packaged IExplorerCommand handlers in its main right-click menu; everything else waits
+# under "Show more options". The build ships shell/CompressorShell.dll (packaging/shell/CompressorShell.cpp) and
+# a small unsigned sparse package (packaging/make_shell_package.py) that gives this folder that identity. It
+# reads the classic menu's keys above, so both menus always match. Registered per user, only when it changed.
+
+MODERN_PACKAGE = "Lanntern.Compressor.ContextMenu"
+_MODERN_MARKER = r"Software\Compressor\Shell"
+
+
+def _modern_menu_files() -> tuple[Path, Path] | None:
+    """(the app folder, the package) when this build has them (installed or portable, Windows 11)."""
+    if not IS_WINDOWS or not getattr(sys, "frozen", False):
+        return None
+    try:
+        if sys.getwindowsversion().build < 22000:  # type: ignore[attr-defined]
+            return None
+    except AttributeError:
+        return None
+    base = Path(sys.executable).resolve().parent
+    pkg = base / "shell" / "CompressorShell.msix"
+    return (base, pkg) if pkg.is_file() and (base / "shell" / "CompressorShell.dll").is_file() else None
+
+
+def _ps_literal(text) -> str:
+    return "'" + str(text).replace("'", "''") + "'"
+
+
+def _powershell(script: str, wait: bool) -> bool:
+    """Run a PowerShell script hidden; ``wait`` for it (True if it succeeded), or start it and return True."""
+    import base64
+    import subprocess
+
+    exe = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    encoded = base64.b64encode(("$ErrorActionPreference = 'Stop'\n" + script).encode("utf-16-le")).decode("ascii")
+    args = [str(exe), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded]
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        if wait:
+            return subprocess.run(args, capture_output=True, timeout=120, creationflags=flags).returncode == 0
+        subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=flags)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _modern_marker() -> str:
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _MODERN_MARKER) as k:
+            return str(winreg.QueryValueEx(k, "Registered")[0])
+    except OSError:
+        return ""
+
+
+def install_modern_menu(wait: bool = False) -> bool:
+    """Add Compressor to Windows 11's main right-click menu for this user (does nothing when it's already there
+    for this version and folder, or the build/Windows has no such menu)."""
+    from .. import __version__
+
+    files = _modern_menu_files()
+    if files is None:
+        return False
+    base, pkg = files
+    marker = f"{__version__}|{base}"
+    if _modern_marker() == marker:
+        return True
+    script = (f"Add-AppxPackage -Path {_ps_literal(pkg)} -ExternalLocation {_ps_literal(base)} -AllowUnsigned "
+              f"-ForceUpdateFromAnyVersion\n"
+              f"New-Item -Force -Path {_ps_literal('HKCU:' + chr(92) + _MODERN_MARKER)} | Out-Null\n"
+              f"Set-ItemProperty -Path {_ps_literal('HKCU:' + chr(92) + _MODERN_MARKER)} -Name Registered "
+              f"-Value {_ps_literal(marker)}")
+    return _powershell(script, wait)
+
+
+def uninstall_modern_menu(wait: bool = False) -> bool:
+    """Take Compressor out of Windows 11's main menu for this user (the classic menu is handled separately)."""
+    if not IS_WINDOWS or not _modern_marker():
+        return False
+    script = (f"Get-AppxPackage -Name {_ps_literal(MODERN_PACKAGE)} | Remove-AppxPackage\n"
+              f"Remove-Item -Force -ErrorAction SilentlyContinue -Path "
+              f"{_ps_literal('HKCU:' + chr(92) + _MODERN_MARKER)}")
+    return _powershell(script, wait)
 
 
 def _desktop_file() -> Path:
