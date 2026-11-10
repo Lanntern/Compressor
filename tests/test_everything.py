@@ -70,7 +70,8 @@ def test_a_running_everything_lists_a_folder(tmp_path):
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "photo.jpg").write_bytes(b"x" * 1234)
     (tmp_path / "notes.txt").write_text("not asked for")
-    for _ in range(30):
+    # A fresh install indexes the whole drive first: on a busy CI runner that has taken over 50 s.
+    for _ in range(120):
         if everything.available():
             break
         time.sleep(1)
