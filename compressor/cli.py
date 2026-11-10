@@ -300,7 +300,9 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "--uninstall-cleanup":   # the uninstaller: undo what the app added to Windows
         from .gui import integration
 
-        for undo in (integration.uninstall_context_menu, lambda: integration.set_autostart(False)):
+        from .gui import toasts
+
+        for undo in (integration.uninstall_context_menu, lambda: integration.set_autostart(False), toasts.unregister):
             try:
                 undo()
             except Exception:  # noqa: BLE001 - remove what can be removed
@@ -314,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
         return ntfs_main(argv)
     commands = {"scan", "run", "history", "undo", "tools", "presets", "speedtest", "gui", "-h", "--help", "--version"}
     opens_app = not argv or (argv[0] not in commands and (
-        argv[0] in ("--background", "--preset", "--convert", "--open")
+        argv[0] in ("--background", "--preset", "--convert", "--open", "--url")
         or argv[0].startswith(("--preset=", "--convert=", "--open="))
         or not argv[0].startswith("-")))
     if opens_app:

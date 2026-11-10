@@ -149,6 +149,14 @@ class AppSettingsTab(Page):
             card.lay.addWidget(setting_row("Pause and Stop in the taskbar preview",
                                            "While a job runs, hovering Compressor's taskbar icon shows Pause and "
                                            "Stop buttons under the window's preview.", self.taskbar_buttons))
+            card.lay.addWidget(separator())
+            self.native_notes = ToggleSwitch("Windows notifications")
+            self.native_notes.setChecked(self.qs.value("notifications/native", True, bool))
+            self.native_notes.toggled.connect(lambda on: self.qs.setValue("notifications/native", on))
+            card.lay.addWidget(setting_row("Windows notifications",
+                                           "Finished jobs and updates appear as Windows notifications, with "
+                                           "buttons like Show in History, and wait in the notification centre. "
+                                           "Off: a small message from the tray icon instead.", self.native_notes))
         col.addWidget(card)
 
         # power

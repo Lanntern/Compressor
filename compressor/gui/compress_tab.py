@@ -673,7 +673,8 @@ class CompressTab(QWidget):
                     else f"The original{'s were' if many else ' was'} kept.")
         self.job_status.finish(results, note, replaced=self._job_settings.output_mode == "replace")
         if not self.window().isActiveWindow():      # finished in the background: say so
-            self.win.tray_message(self.job_status.title.text())
+            self.win.tray_message(self.job_status.title.text(), actions=[("Show in History", "history")],
+                                  launch="compress")
             QApplication.alert(self.window())
 
     def _job_error(self, message: str) -> None:

@@ -120,7 +120,7 @@ def parse_args(argv: list[str]) -> tuple[bool, str, str, list[str]]:
                 preset = value
             else:
                 convert_to = value
-        elif a == "--open":
+        elif a in ("--open", "--url"):
             next(it, "")                                   # (see open_target)
         elif a.startswith(("--preset=", "--convert=")):
             key, value = a.split("=", 1)
@@ -142,6 +142,10 @@ def open_target(argv: list[str]) -> str:
             return a.split("=", 1)[1]
         if a == "--open" and i + 1 < len(argv):
             return argv[i + 1]
+        if a == "--url" and i + 1 < len(argv):           # a notification's button: compressor:open/history
+            from .toasts import target_from_link
+
+            return target_from_link(argv[i + 1])
     return ""
 
 

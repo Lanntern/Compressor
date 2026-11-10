@@ -371,7 +371,8 @@ class WatchTab(Page):
         self.win.history.refresh()
         if done or failed:
             self.win.tray_message(f"Compressed {done} new file(s), saved {human(saved)}"
-                                  + (f"; {failed} failed" if failed else ""))
+                                  + (f"; {failed} failed" if failed else ""),
+                                  actions=[("Show in History", "history")], launch="watch")
 
     def _log(self, line: str) -> None:
         self.logw.insertItem(0, f"{time.strftime('%H:%M')}   {line}")

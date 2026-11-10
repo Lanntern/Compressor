@@ -518,3 +518,38 @@ def test_quiet_when_full_screen_and_restart_after_updates():
     assert power.user_busy() in (True, False)
     assert power.set_restart_after_update(True) is (os.name == "nt")
     assert power.set_restart_after_update(False) is (os.name == "nt")
+
+
+def test_windows_notifications():
+    """Toast XML is escaped and carries the buttons; their compressor: links reach the right page; on Windows the
+    app registers its name and icon for notifications (and the uninstaller's clean-up removes it)."""
+    import xml.dom.minidom
+
+    from compressor.gui import toasts
+    from compressor.gui.app import open_target, parse_args
+
+    x = toasts.toast_xml("Compressor", "Saved 3 GB <& more>", [("Show in History", "history")], launch="compress")
+    doc = xml.dom.minidom.parseString(x)                      # well-formed
+    texts = [t.firstChild.data for t in doc.getElementsByTagName("text")]
+    assert texts == ["Compressor", "Saved 3 GB <& more>"]
+    action = doc.getElementsByTagName("action")[0]
+    assert action.getAttribute("arguments") == "compressor:open/history"
+    assert doc.documentElement.getAttribute("launch") == "compressor:open/compress"
+    assert toasts.target_from_link('"compressor:open/history/"') == "history" and toasts.target_from_link("http://x") == ""
+    assert open_target(["--url", "compressor:open/cleanup"]) == "cleanup"
+    assert parse_args(["--url", "compressor:open/cleanup"])[3] == []     # not taken for a file
+    if os.name != "nt":
+        assert toasts.show("t", "m") is False
+        return
+    import winreg
+
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])               # (the icon file is drawn with Qt)
+    assert toasts.register()
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\AppUserModelId\Lanntern.Compressor") as key:
+        assert winreg.QueryValueEx(key, "DisplayName")[0] == "Compressor"
+    toasts.unregister()
+    with pytest.raises(OSError):
+        winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\AppUserModelId\Lanntern.Compressor")
+    toasts._registered = False

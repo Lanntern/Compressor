@@ -662,7 +662,8 @@ class MainWindow(QMainWindow):
                 settings_page.show_update_status()
             if release and not manual:
                 self.tray_message(f"{APP_NAME} {release.version} is available"
-                                  + (" with security fixes." if release.security else "."))
+                                  + (" with security fixes." if release.security else "."),
+                                  actions=[("Details", "update")], launch="update")
             if manual and release:
                 self._show_update()
 
@@ -748,6 +749,9 @@ class MainWindow(QMainWindow):
     def open_target(self, target: str) -> None:
         """Show a page (jump list, tray), or pick files on one: compress-files, convert-files."""
         self.show_window()
+        if target == "update":                         # a notification's "Details" button
+            self._show_update()
+            return
         page_name, _, action = target.partition("-")
         attr = self.OPEN_PAGES.get(page_name)
         if attr is None:
@@ -851,8 +855,15 @@ class MainWindow(QMainWindow):
         self.tray.setToolTip(f"{APP_NAME}: {'watching folders' if watching else 'idle'}")
         self.tray.setVisible(watching or not self.isVisible())
 
-    def tray_message(self, message: str, force: bool = False) -> None:
-        """A notification. ``force``: show the tray icon for it if it's hidden (the window is open)."""
+    def tray_message(self, message: str, force: bool = False, actions=(), launch: str = "") -> None:
+        """A notification: a Windows notification when that's on (Settings › Integration; ``actions``:
+        (label, open target) buttons, ``launch``: where clicking it goes), else a tray balloon. ``force``: show
+        the tray icon for the balloon if it's hidden (the window is open)."""
+        if self.qsettings.value("notifications/native", True, bool):
+            from . import toasts
+
+            if toasts.show(APP_NAME, message, actions, launch):
+                return
         if self.tray is None:
             return
         if not self.tray.isVisible() and force:
