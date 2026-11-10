@@ -47,10 +47,21 @@ def _call(s, name, **args):
     return (json.loads(text) if not r.get("isError") else text), bool(r.get("isError"))
 
 
+def _outside_appdata(tmp_path: Path) -> Path:
+    """A folder the real server accepts: on Windows pytest's temp folders are under AppData, which it refuses."""
+    if os.name != "nt":
+        return tmp_path
+    import tempfile
+
+    base = Path(__file__).parent.parent / "build" / "test-mcp"
+    base.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(dir=base))
+
+
 def test_protocol_over_stdio(tmp_path):
     """A real client conversation: initialize (version negotiation), tools/list with every annotation the
     directory requires, ping, unknown method and tool errors, and nothing but JSON-RPC on stdout."""
-    allowed = tmp_path / "allowed"
+    allowed = _outside_appdata(tmp_path) / "allowed"
     allowed.mkdir()
     env = {**os.environ, "COMPRESSOR_SETTINGS_FILE": str(tmp_path / "s.ini")}
     proc = subprocess.Popen([sys.executable, "-c", "from compressor.cli import main; raise SystemExit(main())",
@@ -88,8 +99,20 @@ def test_protocol_over_stdio(tmp_path):
     assert by_id[4]["error"]["code"] == -32601
     assert by_id[5]["error"]["code"] == -32602
     listed = json.loads(by_id[6]["result"]["content"][0]["text"])
-    assert listed["allowed_folders"] == [str(allowed.resolve())]
+    assert listed["allowed_folders"] == [str(allowed.resolve())], listed
     assert proc.returncode == 0
+    if os.name == "nt":
+        import shutil
+
+        shutil.rmtree(allowed.parent, ignore_errors=True)
+
+
+def test_appdata_is_refused_for_real():
+    """With the real list of forbidden places, AppData (where pytest's temp folders are on Windows) is refused."""
+    if os.name != "nt":
+        pytest.skip("Windows paths")
+    s = Server([os.environ["LOCALAPPDATA"]], confirm=lambda t: True, out=io.BytesIO())
+    assert not s.allowed and "app-data" in s.refused[0][1]
 
 
 def test_paths_must_stay_inside_the_allowed_folders(tmp_path):
