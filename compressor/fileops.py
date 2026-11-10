@@ -259,6 +259,84 @@ def notify_shell(created=(), updated=(), deleted=()) -> None:
         pass
 
 
+_FILE_SUPPORTS_BLOCK_REFCOUNTING = 0x08000000
+
+
+def supports_block_clone(path: Path) -> bool:
+    """Windows: is ``path`` on a volume that can share data between files (ReFS, e.g. a Dev Drive)?"""
+    if not _IS_WINDOWS:
+        return False
+    try:
+        import ctypes
+
+        k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        root = ctypes.create_unicode_buffer(300)
+        if not k32.GetVolumePathNameW(str(path), root, 300):
+            return False
+        flags = ctypes.c_ulong()
+        ok = k32.GetVolumeInformationW(root.value, None, 0, None, None, ctypes.byref(flags), None, 0)
+        return bool(ok) and bool(flags.value & _FILE_SUPPORTS_BLOCK_REFCOUNTING)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def clone_file(src: Path, dst: Path) -> None:
+    """Make ``dst`` (new) a block clone of ``src``: an independent file whose data is stored only once, until either
+    is changed (ReFS copy-on-write). Raises OSError where that isn't possible; ``dst`` is removed then."""
+    import ctypes
+    from ctypes import wintypes
+
+    class DuplicateExtents(ctypes.Structure):
+        _fields_ = [("FileHandle", wintypes.HANDLE), ("SourceFileOffset", ctypes.c_int64),
+                    ("TargetFileOffset", ctypes.c_int64), ("ByteCount", ctypes.c_int64)]
+
+    k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    k32.CreateFileW.restype = wintypes.HANDLE
+    invalid = wintypes.HANDLE(-1).value
+    GENERIC_READ, GENERIC_WRITE, SHARE_READ, OPEN_EXISTING, CREATE_NEW = 0x80000000, 0x40000000, 0x1, 3, 1
+    FSCTL_SET_SPARSE, FSCTL_DUPLICATE_EXTENTS_TO_FILE = 0x000900C4, 0x00098344
+    size = os.path.getsize(src)
+    root = ctypes.create_unicode_buffer(300)
+    k32.GetVolumePathNameW(str(src), root, 300)
+    spc, bps, _free, _total = (wintypes.DWORD() for _ in range(4))
+    if not k32.GetDiskFreeSpaceW(root.value, ctypes.byref(spc), ctypes.byref(bps), ctypes.byref(_free),
+                                 ctypes.byref(_total)):
+        raise ctypes.WinError()
+    cluster = spc.value * bps.value
+    s_handle = k32.CreateFileW(str(src), GENERIC_READ, SHARE_READ, None, OPEN_EXISTING, 0, None)
+    if s_handle in (None, invalid):
+        raise ctypes.WinError()
+    d_handle = k32.CreateFileW(str(dst), GENERIC_READ | GENERIC_WRITE, 0, None, CREATE_NEW, 0, None)
+    if d_handle in (None, invalid):
+        k32.CloseHandle(wintypes.HANDLE(s_handle))
+        raise ctypes.WinError()
+    ok = False
+    try:
+        returned = wintypes.DWORD()
+        if os.stat(src).st_file_attributes & 0x200:                     # a sparse source needs a sparse copy
+            k32.DeviceIoControl(wintypes.HANDLE(d_handle), FSCTL_SET_SPARSE, None, 0, None, 0,
+                                ctypes.byref(returned), None)
+        end = ctypes.c_int64(size)
+        if not (k32.SetFilePointerEx(wintypes.HANDLE(d_handle), end, None, 0)
+                and k32.SetEndOfFile(wintypes.HANDLE(d_handle))):
+            raise ctypes.WinError()
+        chunk = (1 << 30) // cluster * cluster                          # 1 GiB, whole clusters
+        offset = 0
+        while offset < size:
+            count = min(chunk, -(-(size - offset) // cluster) * cluster)  # the last piece rounded up to a cluster
+            data = DuplicateExtents(wintypes.HANDLE(s_handle), offset, offset, count)
+            if not k32.DeviceIoControl(wintypes.HANDLE(d_handle), FSCTL_DUPLICATE_EXTENTS_TO_FILE,
+                                       ctypes.byref(data), ctypes.sizeof(data), None, 0, ctypes.byref(returned), None):
+                raise ctypes.WinError()
+            offset += count
+        ok = True
+    finally:
+        k32.CloseHandle(wintypes.HANDLE(s_handle))
+        k32.CloseHandle(wintypes.HANDLE(d_handle))
+        if not ok:
+            remove_quietly(dst)
+
+
 def atomic_write_text(path: Path, text: str) -> None:
     """Replace ``path`` with ``text`` so that a crash or power cut leaves either the old file or the new one,
     never half of one: written to a temporary file beside it, flushed to disk, then renamed over it."""

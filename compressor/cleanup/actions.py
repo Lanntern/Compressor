@@ -219,16 +219,32 @@ def hardlink_item(item: Candidate, writer: journal.RunWriter) -> Outcome:
         return Outcome(item, False, "On a different drive: hard links only work within one drive")
     if ks.st_size != ds.st_size:
         return Outcome(item, False, "Files changed since the scan")
+    from ..fileops import clone_file, supports_block_clone
+
     tmp = temp_name(dup.parent, dup.suffix, "-link")
-    try:
-        os.link(keeper, tmp)
-        os.replace(tmp, dup)
-    except OSError as e:
-        remove_quietly(tmp)
-        return Outcome(item, False, f"Couldn't create a hard link: {e}")
+    # ReFS (e.g. a Dev Drive): a block clone stores the data once too, but stays a separate file, so changing
+    # one copy never changes the other (as it would with a hard link).
+    cloned = False
+    if supports_block_clone(dup):
+        try:
+            clone_file(keeper, tmp)
+            os.utime(tmp, ns=(ds.st_atime_ns, ds.st_mtime_ns))
+            os.replace(tmp, dup)
+            cloned = True
+        except OSError:
+            remove_quietly(tmp)                 # (fall back to a hard link)
+    if not cloned:
+        try:
+            os.link(keeper, tmp)
+            os.replace(tmp, dup)
+        except OSError as e:
+            remove_quietly(tmp)
+            return Outcome(item, False, f"Couldn't create a hard link: {e}")
     item.extra["mtime_ns"] = ds.st_mtime_ns
-    _record(writer, item, HARDLINK, f"Duplicate → hard link to {keeper.name}", item.size, time.time(), str(keeper))
-    return Outcome(item, True, "Now a hard link (stored once)", item.size)
+    how = "block clone of" if cloned else "hard link to"
+    _record(writer, item, HARDLINK, f"Duplicate → {how} {keeper.name}", item.size, time.time(), str(keeper))
+    return Outcome(item, True, "Now a block clone (stored once, still a separate file)" if cloned
+                   else "Now a hard link (stored once)", item.size)
 
 
 def compact_item(item: Candidate, writer: journal.RunWriter, on_line=None,
