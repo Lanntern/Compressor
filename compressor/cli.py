@@ -284,6 +284,12 @@ def _installer_setup(args: list[str]) -> int:
 def main(argv: list[str] | None = None) -> int:
     import os
 
+    args = sys.argv[1:] if argv is None else argv
+    if args and args[0] == "mcp":       # an AI agent's connection (stdio): before anything touches stdout
+        from .mcp_server import main as mcp_main
+
+        return mcp_main(args[1:])
+
     # The windowed .exe has no console: give print() somewhere harmless to write.
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
@@ -328,7 +334,8 @@ def main(argv: list[str] | None = None) -> int:
         from .ntfs import _main as ntfs_main
 
         return ntfs_main(argv)
-    commands = {"scan", "run", "history", "undo", "tools", "presets", "speedtest", "gui", "-h", "--help", "--version"}
+    commands = {"scan", "run", "history", "undo", "tools", "presets", "speedtest", "gui", "mcp", "-h", "--help",
+                "--version"}
     opens_app = not argv or (argv[0] not in commands and (
         argv[0] in ("--background", "--preset", "--convert", "--open", "--url")
         or argv[0].startswith(("--preset=", "--convert=", "--open="))
