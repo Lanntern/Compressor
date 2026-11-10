@@ -579,3 +579,29 @@ def test_windows11_menu_package_matches_the_dll():
     classes = {c.getAttribute("Id") for c in doc.getElementsByTagName("com:Class")}
     assert classes == ids
     assert integration._modern_menu_files() is None or os.name == "nt"     # (only a Windows build has it)
+
+
+def test_default_apps_and_open_with():
+    """Windows: Compressor is listed in Default apps and Open with for its file types (never made the default),
+    and unregistering removes it. Skipped where a real Compressor is registered, so a real install isn't touched."""
+    from compressor.gui import integration
+
+    if os.name != "nt":
+        integration.register_file_types()                 # no-op elsewhere
+        assert not integration.file_types_registered()
+        return
+    if integration.file_types_registered():
+        pytest.skip("a real Compressor is registered on this computer")
+    import winreg
+
+    exe = r"C:\CompressorTest\CompressorTest.exe"
+    integration.register_file_types(exe)
+    try:
+        assert integration.file_types_registered()
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.mp4\OpenWithProgids") as k:
+            winreg.QueryValueEx(k, "Compressor.Video")
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\Compressor.Picture\shell\open\command") as k:
+            assert winreg.QueryValueEx(k, "")[0] == f'"{exe}" "%1"'
+    finally:
+        integration.unregister_file_types("CompressorTest.exe")
+    assert not integration.file_types_registered()

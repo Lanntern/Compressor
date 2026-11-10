@@ -171,6 +171,113 @@ def uninstall_context_menu(wait: bool = False) -> None:
         pass
 
 
+# ------------------------------------------------------------------ Default apps and Open with
+# Lists Compressor in Settings › Apps › Default apps (with the file types it handles) and in Explorer's "Open
+# with" for pictures, videos and music, without making it the default for anything. Opening a file with it adds
+# the file to Compress. Per user, for the installed app (the installer's set-up and each user's first start).
+
+_CAPABILITIES = r"Software\Lanntern\Compressor\Capabilities"
+_PROGIDS = {"Compressor.Picture": "Picture", "Compressor.Video": "Video", "Compressor.Audio": "Music or audio file"}
+
+
+def _file_types() -> dict[str, str]:
+    """extension -> Compressor's ProgID for it."""
+    from .. import formats
+
+    types = {ext: "Compressor.Picture" for ext in formats._EXT_KIND}
+    types.update({ext: "Compressor.Video" for ext in formats.VIDEO_EXTS})
+    types.update({ext: "Compressor.Audio" for ext in formats.AUDIO_EXTS})
+    return types
+
+
+def installed_copy() -> bool:
+    """Running from an installed copy (the installer put an uninstaller next to it), not portable or source."""
+    return getattr(sys, "frozen", False) and (Path(sys.executable).parent / "unins000.exe").is_file()
+
+
+def file_types_registered() -> bool:
+    if not IS_WINDOWS:
+        return False
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\RegisteredApplications") as k:
+            return winreg.QueryValueEx(k, APP_NAME)[0] == _CAPABILITIES
+    except OSError:
+        return False
+
+
+def register_file_types(exe: str | None = None) -> None:
+    """Add Compressor to Default apps and Open with (``exe``: the program to start; this one by default)."""
+    if not IS_WINDOWS:
+        return
+    import winreg
+
+    command = _quote([exe] if exe else launch_command()) + ' "%1"'
+    icon = (exe or launch_command()[0]) + ",0"
+    hk = winreg.HKEY_CURRENT_USER
+    for progid, kind in _PROGIDS.items():
+        with winreg.CreateKey(hk, rf"Software\Classes\{progid}") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, f"{kind} (compress with {APP_NAME})")
+            winreg.SetValueEx(k, "FriendlyTypeName", 0, winreg.REG_SZ, kind)
+        with winreg.CreateKey(hk, rf"Software\Classes\{progid}\DefaultIcon") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, icon)
+        with winreg.CreateKey(hk, rf"Software\Classes\{progid}\shell\open") as k:
+            winreg.SetValueEx(k, "FriendlyAppName", 0, winreg.REG_SZ, APP_NAME)
+        with winreg.CreateKey(hk, rf"Software\Classes\{progid}\shell\open\command") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, command)
+    with winreg.CreateKey(hk, _CAPABILITIES) as k:
+        winreg.SetValueEx(k, "ApplicationName", 0, winreg.REG_SZ, APP_NAME)
+        winreg.SetValueEx(k, "ApplicationDescription", 0, winreg.REG_SZ,
+                          "Shrink photos, videos and music safely: every result verified, every change undoable.")
+        winreg.SetValueEx(k, "ApplicationIcon", 0, winreg.REG_SZ, icon)
+    exe_name = Path(exe or launch_command()[0]).name
+    with winreg.CreateKey(hk, _CAPABILITIES + r"\FileAssociations") as assoc, \
+            winreg.CreateKey(hk, rf"Software\Classes\Applications\{exe_name}\SupportedTypes") as supported:
+        for ext, progid in _file_types().items():
+            winreg.SetValueEx(assoc, ext, 0, winreg.REG_SZ, progid)
+            winreg.SetValueEx(supported, ext, 0, winreg.REG_SZ, "")
+            with winreg.CreateKey(hk, rf"Software\Classes\{ext}\OpenWithProgids") as k:
+                winreg.SetValueEx(k, progid, 0, winreg.REG_NONE, b"")    # listed in Open with, not the default
+    with winreg.CreateKey(hk, rf"Software\Classes\Applications\{exe_name}") as k:
+        winreg.SetValueEx(k, "FriendlyAppName", 0, winreg.REG_SZ, APP_NAME)
+    with winreg.CreateKey(hk, r"Software\RegisteredApplications") as k:
+        winreg.SetValueEx(k, APP_NAME, 0, winreg.REG_SZ, _CAPABILITIES)
+    _associations_changed()
+
+
+def unregister_file_types(exe_name: str = "Compressor.exe") -> None:
+    if not IS_WINDOWS:
+        return
+    import winreg
+
+    hk = winreg.HKEY_CURRENT_USER
+    for ext, progid in _file_types().items():
+        try:
+            with winreg.OpenKey(hk, rf"Software\Classes\{ext}\OpenWithProgids", 0, winreg.KEY_SET_VALUE) as k:
+                winreg.DeleteValue(k, progid)
+        except OSError:
+            pass
+    try:
+        with winreg.OpenKey(hk, r"Software\RegisteredApplications", 0, winreg.KEY_SET_VALUE) as k:
+            winreg.DeleteValue(k, APP_NAME)
+    except OSError:
+        pass
+    for key in (*(rf"Software\Classes\{p}" for p in _PROGIDS), r"Software\Lanntern\Compressor",
+                rf"Software\Classes\Applications\{exe_name}"):
+        _delete_tree(hk, key)
+    _associations_changed()
+
+
+def _associations_changed() -> None:
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)  # type: ignore[attr-defined]  # SHCNE_ASSOCCHANGED
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ------------------------------------------------------------------ Windows 11's main menu
 # Windows 11 shows only packaged IExplorerCommand handlers in its main right-click menu; everything else waits
 # under "Show more options". The build ships shell/CompressorShell.dll (packaging/shell/CompressorShell.cpp) and

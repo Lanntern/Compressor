@@ -82,6 +82,11 @@ Name: "jxlext"; Description: "Get the JPEG XL Image Extension from the Microsoft
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[Registry]
+; App Paths: typing "compressor" in Win+R (and launchers that use it) starts the app.
+Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\Compressor.exe"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
+
 [Icons]
 ; AppUserModelID: the same as the app's (compressor/gui/jumplist.py), so the shortcut, the running window and the
 ; jump list (taskbar right-click, Start, Windows Search actions) are one app.
@@ -252,6 +257,22 @@ begin
   if Upgrading then Up := '1' else Up := '0';
   Result := 'context=' + Flag('contextmenu') + ' autostart=' + Flag('autostart') +
             ' updates=' + UpdatesChoice() + ' upgrade=' + Up;
+end;
+
+// Settings › Apps › Installed apps › … › Modify: opens Compressor's Settings (menus, start at sign-in,
+// notifications), the closest thing a classic app has to "Advanced options". (Inno marks it NoModify otherwise.)
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Root: Integer;
+  Key: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if IsAdminInstallMode then Root := HKLM else Root := HKCU;
+    Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8A6F2C1E-5B7D-4C2A-9E3F-6D1B2C3A4F50}_is1';
+    RegWriteDWordValue(Root, Key, 'NoModify', 0);
+    RegWriteStringValue(Root, Key, 'ModifyPath', '"' + ExpandConstant('{app}\Compressor.exe') + '" --open=settings');
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

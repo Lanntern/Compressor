@@ -276,6 +276,11 @@ jobs:
             Where-Object DisplayName -eq "Compressor"
           if (-not $uninst) { throw "Not listed in Apps & features" }
           python -c "from compressor.gui import integration; assert integration.context_menu_installed(), 'no context menu'"
+          # Win+R "compressor", the Modify item in Installed apps, Default apps / Open with.
+          if (-not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe")) { throw "No App Paths entry" }
+          if ($uninst.NoModify -ne 0 -or -not $uninst.ModifyPath) { throw "No Modify entry in Installed apps" }
+          if ((Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name Compressor -ErrorAction SilentlyContinue).Compressor -ne "Software\Lanntern\Compressor\Capabilities") { throw "Not in Default apps" }
+          if (-not (Get-ItemProperty "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Compressor.Picture -ErrorAction SilentlyContinue)) { throw "Not in Open with for .jpg" }
           for ($i = 0; $i -lt 30 -and -not (Get-AppxPackage -Name Lanntern.Compressor.ContextMenu); $i++) { Start-Sleep 1 }
           "Windows 11 menu package registered: " + [bool](Get-AppxPackage -Name Lanntern.Compressor.ContextMenu)
           if (-not (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue)) { throw "Not started at sign-in" }
@@ -284,6 +289,8 @@ jobs:
           if (Test-Path $menu) { throw "Uninstall left the Start menu entry" }
           python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu left behind'"
           if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Start at sign-in left behind" }
+          if (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe") { throw "App Paths entry left behind" }
+          if (Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name Compressor -ErrorAction SilentlyContinue) { throw "Default apps entry left behind" }
           # (Windows 11's main menu: the package is registered in the background; reported, not required, since the
           # runner is Windows Server, whose Explorer may not take unsigned sparse packages.)
           "Windows 11 menu package after uninstall: " + [bool](Get-AppxPackage -Name Lanntern.Compressor.ContextMenu)

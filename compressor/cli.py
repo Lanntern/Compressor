@@ -261,6 +261,10 @@ def _installer_setup(args: list[str]) -> int:
 
     opts = dict(a.split("=", 1) for a in args if "=" in a)
     on = {k: v == "1" for k, v in opts.items()}
+    try:
+        integration.register_file_types()        # Default apps and Open with (never the default for anything)
+    except OSError:
+        pass
     for key, add in (("context", integration.install_context_menu), ("autostart", lambda: integration.set_autostart(True))):
         if on.get(key):
             try:
@@ -304,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
         from .gui import toasts
 
         for undo in (lambda: integration.uninstall_context_menu(wait=True), lambda: integration.set_autostart(False),
-                     toasts.unregister):
+                     toasts.unregister, integration.unregister_file_types):
             try:
                 undo()
             except Exception:  # noqa: BLE001 - remove what can be removed

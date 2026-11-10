@@ -250,6 +250,9 @@ class MainWindow(QMainWindow):
         self.compress.panel.presets_changed.connect(self._presets_changed)
         from . import integration
         QTimer.singleShot(2000, integration.refresh_context_menu)  # keep the menu's preset list current
+        if integration.installed_copy() and not integration.file_types_registered():
+            # (an install for everyone: each user gets Default apps / Open with at their first start)
+            QTimer.singleShot(2500, lambda: integration.register_file_types())
         QTimer.singleShot(200, self.probe.start)
 
     # ------------------------------------------------------------------ pages built on demand
