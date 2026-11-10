@@ -83,6 +83,8 @@ Name: "jxlext"; Description: "Get the JPEG XL Image Extension from the Microsoft
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Registry]
+; (An earlier uninstall's clean-up for other users must not run on this new install: see RegisterCleanupForOtherUsers.)
+Root: HKLM; Subkey: "Software\Microsoft\Active Setup\Installed Components\{{6E3B5C1A-2F44-4C1E-9B8A-0C6D2E7F4A31}"; ValueType: none; Flags: deletekey; Check: IsAdminInstallMode
 ; App Paths: typing "compressor" in Win+R (and launchers that use it) starts the app.
 Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\Compressor.exe"; Flags: uninsdeletekey
 Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
@@ -275,8 +277,48 @@ begin
   end;
 end;
 
+// Other people's leftovers after an install for everyone: start at sign-in, menus, Open with, notifications
+// are written per user (in each one's own registry), and the uninstaller can only reach the person running it.
+// Windows' Active Setup runs a command once for each user at their next sign-in: this one removes those entries
+// (never anyone's files, settings or History). A later install removes the Active Setup entry again ([Registry]).
+const
+  CleanupKey = 'Software\Microsoft\Active Setup\Installed Components\{6E3B5C1A-2F44-4C1E-9B8A-0C6D2E7F4A31}';
+
+function CleanupScript(): String;
+begin
+  Result :=
+    '$c=''HKCU:\Software\Classes''; ' +
+    'foreach($k in ''Compressor.Picture'',''Compressor.Video'',''Compressor.Audio'',''compressor'',' +
+    '''*\shell\Compressor'',''Directory\shell\Compressor'',' +
+    '''SystemFileAssociations\image\shell\CompressorConvert'',''SystemFileAssociations\video\shell\CompressorConvert'',' +
+    '''SystemFileAssociations\audio\shell\CompressorConvert'',''Applications\Compressor.exe'',' +
+    '''AppUserModelId\Lanntern.Compressor''){Remove-Item -LiteralPath ($c+''\''+$k) -Recurse -Force -EA 0}; ' +
+    'Get-ChildItem $c -EA 0 | Where-Object {$_.PSChildName -like ''.*''} | ForEach-Object {' +
+    'Remove-ItemProperty -LiteralPath ($_.PSPath+''\OpenWithProgids'') ' +
+    '-Name ''Compressor.Picture'',''Compressor.Video'',''Compressor.Audio'' -EA 0}; ' +
+    'Remove-ItemProperty -LiteralPath ''HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'' -Name ''Compressor'' -EA 0; ' +
+    'Remove-ItemProperty -LiteralPath ''HKCU:\Software\RegisteredApplications'' -Name ''Compressor'' -EA 0; ' +
+    'Remove-Item -LiteralPath ''HKCU:\Software\Lanntern\Compressor'',' +
+    '''HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\Lanntern.Compressor'',' +
+    '''HKCU:\Software\Compressor\Shell'' -Recurse -Force -EA 0; ' +
+    'Get-AppxPackage -Name ''Lanntern.Compressor.ContextMenu'' | Remove-AppxPackage -EA 0';
+end;
+
+procedure RegisterCleanupForOtherUsers();
+begin
+  RegWriteStringValue(HKLM, CleanupKey, '', 'Compressor clean-up after uninstalling');
+  RegWriteStringValue(HKLM, CleanupKey, 'StubPath',
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe') +
+    ' -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "' + CleanupScript() + '"');
+  // A new version number each time, so a user who ran an earlier clean-up gets this one too.
+  RegWriteStringValue(HKLM, CleanupKey, 'Version', '1,' + GetDateTimeString('yyyy,mmdd,hhnn', #0, #0));
+  RegWriteDWordValue(HKLM, CleanupKey, 'IsInstalled', 1);
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if (CurUninstallStep = usPostUninstall) and IsAdminInstallMode then
+    RegisterCleanupForOtherUsers();
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
     if MsgBox('Also remove your Compressor settings and History?' + #13#10#13#10 +
               'History is how compressed files can be undone. Keep it if you might reinstall.',
