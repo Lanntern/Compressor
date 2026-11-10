@@ -87,7 +87,7 @@ def _png(img: QImage) -> bytes:
     ba = QByteArray()
     buf = QBuffer(ba)
     buf.open(QIODevice.WriteOnly)
-    img.save(buf, b"PNG")
+    img.save(buf, "PNG")
     return bytes(ba.data())
 
 

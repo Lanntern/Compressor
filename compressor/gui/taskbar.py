@@ -95,6 +95,7 @@ class Taskbar:
         self.window, self.qs = window, qsettings
         self._list = None
         self._failed = False
+        self.error = ""                      # why the taskbar couldn't be used (for the log and tests)
         self._buttons_added = False
         self._jobs: dict[int, tuple[object, str, float]] = {}   # id(panel) -> (panel, state, fraction)
         self._created_msg = 0
@@ -125,7 +126,8 @@ class Taskbar:
                 tb.call(_HR_INIT, ())
                 self._list = tb
             except OSError as e:
-                log.info("Taskbar progress unavailable: %s", e)
+                log.warning("Taskbar progress unavailable: %s", e)
+                self.error = str(e)
                 self._failed = True
                 return None
         return self._list
@@ -175,6 +177,7 @@ class Taskbar:
             self._update_buttons()
         except Exception as e:  # noqa: BLE001 - the taskbar is a nicety: never let it break a job
             log.warning("Taskbar progress turned off for this session: %s", e)
+            self.error = str(e)
             self._failed = True
 
     # ------------------------------------------------------------- thumbnail buttons

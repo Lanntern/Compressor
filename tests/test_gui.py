@@ -287,7 +287,7 @@ def test_taskbar_mirrors_the_job(win):
     tb.clear_error()
     assert not tb._jobs
     if os.name == "nt":
-        assert tb._list is not None and not tb._failed            # ITaskbarList3 answered
+        assert tb._list is not None and not tb._failed, tb.error  # ITaskbarList3 answered
     panel.hide()
 
 

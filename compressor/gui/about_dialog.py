@@ -101,6 +101,11 @@ class AboutDialog(QDialog):
         self._version, self._clicks = version, 0
         titles.addWidget(version)
         titles.addWidget(text(PRIVACY, Type.BODY, wrap=True))
+        policy = QLabel(f'<a href="{PRIVACY_URL}">Read the full privacy policy</a>')
+        policy.setOpenExternalLinks(True)
+        policy.setTextInteractionFlags(Qt.TextBrowserInteraction)        # (Tab reaches it; Enter opens it)
+        policy.setToolTip("Everything Compressor keeps and when it goes online (opens GitHub)")
+        titles.addWidget(policy)
         head.addLayout(titles, 1)
         lay.addLayout(head)
 
@@ -144,9 +149,6 @@ class AboutDialog(QDialog):
         copy = button("Copy Versions", "", None, "Copy every component's version (useful when reporting a problem)")
         copy.clicked.connect(self._copy_versions)
         buttons.addWidget(copy)
-        policy = button("Privacy Policy", "", None, "Everything Compressor keeps and when it goes online (opens GitHub)")
-        policy.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(PRIVACY_URL)))
-        buttons.addWidget(policy)
         donate = button("Support on Ko-fi", "", None, "Compressor is free: a donation helps keep it going (opens Ko-fi)")
         donate.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(DONATE_URL)))
         buttons.addWidget(donate)

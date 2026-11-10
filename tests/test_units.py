@@ -673,6 +673,11 @@ def test_thumbnails_from_windows(tmp_path):
         assert img.pixelColor(img.width() // 2, img.height() // 2).red() > 150      # the red picture, not black
     data = thumbs.make_thumbnail(src, PNG, 160)
     assert data and data[:8] == b"\x89PNG\r\n\x1a\n"
+    from PySide6.QtGui import QImage
+
+    pic = QImage(20, 10, QImage.Format_RGB32)
+    pic.fill(0xFF2030)
+    assert thumbs._png(pic)[:8] == b"\x89PNG\r\n\x1a\n"           # (how Windows' thumbnails are passed on)
 
 
 def test_limits_against_bombs(tmp_path, monkeypatch):
