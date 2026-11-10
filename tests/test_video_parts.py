@@ -160,3 +160,9 @@ def test_frame_measures_compare_the_same_moments(scenes):
     assert quality.score_video_output(scenes, blurred, 1.0, 2.0, size, metric="Butteraugli").value > 2
     if quality.image_metric() == "SSIMULACRA2":
         assert quality.score_video_output(scenes, scenes, 1.0, 2.0, size, metric="SSIMULACRA2-video").value > 90
+    # A result whose picture starts a little later in its file (room made for an audio encoder's lead-in) is
+    # still compared frame for frame, not with the neighbouring frame.
+    late = scenes.with_name("late.mkv")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-itsoffset", "0.023", "-i", str(scenes), "-i", str(scenes),
+                    "-map", "0:v", "-map", "1:a", "-c", "copy", str(late)], check=True)
+    assert quality.score_video_output(scenes, late, 1.0, 2.0, size, metric="Butteraugli").value < 0.05

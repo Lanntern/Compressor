@@ -257,7 +257,10 @@ def _compare_frames(ffmpeg: str, dist: list[str], ref: list[str], length: float,
     import tempfile
 
     def seek_args(inputs: list[str], at: float) -> list[str]:
-        # The stretch's own -ss (if any) moves on by ``at``; the rest stays as given.
+        # The stretch's own -ss (if any) moves on by ``at``, counted from where the file's picture starts (a
+        # result can start a frame's fraction later than its original, e.g. to make room for an audio
+        # encoder's lead-in: seeking to the same clock time would then compare neighbouring frames).
+        at += _video_start(inputs[inputs.index("-i") + 1])
         out, i = [], 0
         while i < len(inputs):
             if inputs[i] == "-ss":
@@ -295,6 +298,20 @@ def _compare_frames(ffmpeg: str, dist: list[str], ref: list[str], length: float,
     if not values:
         raise RuntimeError("Couldn't measure video quality")
     return Score(metric, sum(values) / len(values))
+
+
+@lru_cache(maxsize=256)
+def _video_start(path: str) -> float:
+    """When the first video stream's picture starts in the file's timeline (seconds; usually 0)."""
+    ffprobe = tools.find_tool("ffprobe")
+    if not ffprobe:
+        return 0.0
+    out = tools.run([ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=start_time",
+                     "-of", "csv=p=0", path], timeout=60, check=False).stdout.strip()
+    try:
+        return float(out.splitlines()[0])
+    except (ValueError, IndexError):
+        return 0.0
 
 
 def _input(path: Path, start: float | None, length: float) -> list[str]:
