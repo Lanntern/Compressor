@@ -30,11 +30,11 @@ def manifest() -> dict:
         "name": "compressor",
         "display_name": APP_NAME,
         "version": __version__,
-        "description": "Find and reclaim space taken by photos, videos and music on your PC, with every change "
+        "description": "Find and reclaim space taken by photos, videos, music and documents on your PC, with every change "
                        "approved by you and undoable.",
         "long_description": (
             "Requires the Compressor app for Windows (free, open source): " + REPO + "\n\n"
-            "Lets Claude look for photos, videos and music that can be stored smaller, in folders you choose, and "
+            "Lets Claude look for photos, videos, music and documents that can be stored smaller, in folders you choose, and "
             "compress them with Compressor's encoders (lossless JPEG XL by default, so every photo stays "
             "bit-for-bit recoverable).\n\n"
             "**Safe by design**\n"

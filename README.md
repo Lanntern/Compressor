@@ -175,6 +175,12 @@ which are checked every week for newer releases and known vulnerabilities. The a
 weekly by default (Settings → About: whenever you open it, weekly, monthly or never), and Settings → About →
 About Compressor lists every component's version. To report a security problem, see [SECURITY.md](SECURITY.md).
 
+## Use it from an AI assistant
+
+Compressor works with Claude and other assistants that support the Model Context Protocol: ask *"how much space
+could I save in my Pictures?"* and approve what it proposes. It only uses the folders you choose, asks you in
+Compressor's own window before changing anything, and every run can be undone. See [docs/mcp.md](docs/mcp.md).
+
 ## Privacy
 
 Compressor works entirely on your computer. It has no accounts, no telemetry and no ads, and it never sends your

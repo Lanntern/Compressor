@@ -205,8 +205,9 @@ class Server:
              "annotations": {"title": "List allowed folders", "readOnlyHint": True, "destructiveHint": False,
                              "idempotentHint": True, "openWorldHint": False}},
             {"name": "plan_compression", "title": "Plan compression",
-             "description": "Scans folders or files (inside the allowed folders) for photos, videos and music that "
-                            "can be stored smaller, and estimates the savings. Changes nothing. Returns a plan_id to "
+             "description": "Scans folders or files (inside the allowed folders) for photos, videos, music and "
+                            "documents (the pictures inside Office files and PDFs) that can be stored smaller, and "
+                            "estimates the savings. Changes nothing. Returns a plan_id to "
                             "pass to compress_planned_files if the user wants to go ahead. Use it when the user asks "
                             "how much space could be saved or to shrink media files.",
              "inputSchema": {"type": "object", "additionalProperties": False, "required": ["paths"], "properties": {
@@ -255,6 +256,14 @@ class Server:
             raise KeyError(name)
         if not isinstance(args, dict):
             return self._error("Arguments must be an object.")
+        schema = next(t["inputSchema"] for t in self.tools() if t["name"] == name)
+        unknown = sorted(set(args) - set(schema.get("properties", {})))
+        missing = [k for k in schema.get("required", []) if k not in args]
+        if unknown or missing:
+            return self._error("Invalid arguments: " + "; ".join(
+                ([f"unexpected {', '.join(clean(k, 40) for k in unknown)}"] if unknown else [])
+                + ([f"missing {', '.join(missing)}"] if missing else []))
+                + f". Expected: {', '.join(schema.get('properties', {})) or 'no arguments'}.")
         log.info("MCP: %s", name)          # (which tool ran: never its arguments or anything from the conversation)
         try:
             self._rate_limit(name)
@@ -587,7 +596,7 @@ class Server:
                                  "capabilities": {"tools": {"listChanged": False}},
                                  "serverInfo": {"name": "compressor", "title": APP_NAME, "version": __version__},
                                  "instructions": (
-                                     "Compressor shrinks photos, videos and music on this computer. Plan first "
+                                     "Compressor shrinks photos, videos, music and documents on this computer. Plan first "
                                      "(plan_compression, which changes nothing), tell the user what it found, and only "
                                      "compress or undo when they ask; they confirm every change in Compressor.")})
             elif method == "ping":

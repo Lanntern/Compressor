@@ -1,11 +1,12 @@
 # Privacy policy
 
-**Effective:** 10 November 2026 · **Applies to:** Compressor for Windows and Linux, every version and every way of
+**Effective:** 10 November 2026 (updated for AI assistants) · **Applies to:** Compressor for Windows and Linux, every version and every way of
 getting it (installer, portable zip, Microsoft Store, source code).
 
 Compressor works entirely on your computer. It has no accounts, no telemetry, no analytics, no ads and no crash
 reporting. It never sends your files, their names or anything about them anywhere, and it doesn't collect, sell or
-share personal information. The developer (Lanntern) receives nothing from the app.
+share personal information. The developer (Lanntern) receives nothing from the app. (If you connect it to an AI
+assistant, what it tells the assistant is part of your conversation: see [AI assistants](#ai-assistants-mcp).)
 
 ## What stays on your computer
 
@@ -40,6 +41,16 @@ Like any website, GitHub sees your IP address and the request; its own
 [privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement) applies.
 Links you click in Compressor (Ko-fi, GitHub, the websites of included components) open in your web browser,
 where those sites' own policies apply. Donating on Ko-fi is entirely optional and unlocks nothing in the app.
+
+## AI assistants (MCP)
+
+If you connect Compressor to an AI assistant (the Claude Desktop extension, or `Compressor.exe mcp`), the
+assistant can ask Compressor to plan, compress or undo, only in the folders you chose and only with your approval
+for each change. Compressor itself still sends nothing anywhere. What it answers the assistant (the paths, names
+and sizes of the files involved, the folders you allowed, your past runs there) becomes part of your
+conversation, so it goes wherever your AI app sends conversations, under that app's privacy policy (for Claude:
+[Anthropic's privacy policy](https://www.anthropic.com/legal/privacy)). Compressor doesn't keep anything from the
+conversation: its log notes which tool ran, not what was asked. Details: [docs/mcp.md](docs/mcp.md).
 
 ## Windows features
 

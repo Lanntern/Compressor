@@ -258,3 +258,13 @@ def test_extension_manifest():
     assert any(u.endswith("PRIVACY.md") for u in m["privacy_policies"]) and m["support"] and m["documentation"]
     assert mcp_server.parse_args(["--keep-originals=false", "--max-files=1000", "--", "C:\\A B"]) == \
         (["C:\\A B"], False, 1000)
+
+
+def test_arguments_are_checked_against_the_schema(tmp_path):
+    s, allowed, _ = _server(tmp_path)
+    text, err = _call(s, "list_history", limit=3, rm="-rf")
+    assert err and "unexpected rm" in text
+    text, err = _call(s, "compress_planned_files")
+    assert err and "missing plan_id" in text
+    text, err = _call(s, "plan_compression", paths="D:\\")
+    assert err
