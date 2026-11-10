@@ -71,8 +71,10 @@ def _hicon(name: str, size: int, light_taskbar: bool):
     mask = gdi.CreateBitmap(w, h, 1, 1, None)
     info = IconInfo(True, 0, 0, mask, color)
     handle = user.CreateIconIndirect(ctypes.byref(info))
-    gdi.DeleteObject(color)
-    gdi.DeleteObject(mask)
+    # (Handles are 64-bit: pass them typed, or ctypes squeezes them into a 32-bit int and fails.)
+    gdi.DeleteObject(wintypes.HGDIOBJ(color))
+    if mask:
+        gdi.DeleteObject(wintypes.HGDIOBJ(mask))
     return handle
 
 

@@ -85,12 +85,15 @@ def _to_qimage(hbitmap, max_px: int, gdi32):
     w, h = bm.bmWidth, abs(bm.bmHeight)
     header = BitmapInfoHeader(ctypes.sizeof(BitmapInfoHeader), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
     buf = ctypes.create_string_buffer(w * h * 4)
-    dc = ctypes.windll.user32.GetDC(None)  # type: ignore[attr-defined]
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    get_dc = user32.GetDC
+    get_dc.restype = wintypes.HDC                      # (64-bit handle: the default int would cut it short)
+    dc = wintypes.HDC(get_dc(None))
     try:
         if gdi32.GetDIBits(dc, hbitmap, 0, h, buf, ctypes.byref(header), 0) != h:
             return None
     finally:
-        ctypes.windll.user32.ReleaseDC(None, dc)  # type: ignore[attr-defined]
+        user32.ReleaseDC(None, dc)
     data = buf.raw
     # Thumbnails with transparency carry premultiplied alpha; plain ones have 0 in every alpha byte.
     has_alpha = any(data[3::4])
