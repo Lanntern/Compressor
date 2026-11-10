@@ -126,8 +126,11 @@ jobs:
           choco install everything -y --no-progress
           $exe = Join-Path $env:ProgramFiles "Everything\Everything.exe"
           Start-Process $exe -ArgumentList "-startup"
-          Start-Sleep 20
-          "Everything started."
+          # A fresh install indexes every drive first, which on a busy runner has taken over two minutes. Wait for
+          # the index here (up to 5 minutes): when it isn't ready, this optional step fails and the test that asks
+          # Everything is skipped (WICK_REQUIRE_EVERYTHING=0), instead of failing as if Wick were broken.
+          python -c "import sys, time; from wick import everything; ok = any(everything.available() or time.sleep(2) for _ in range(150)); print('Everything index loaded' if ok else 'Everything index not loaded after 5 minutes'); sys.exit(0 if ok else 1)"
+          if ($LASTEXITCODE -ne 0) { throw "Everything didn't load its index in time" }
       - name: Make a small ReFS drive, to test block cloning
         continue-on-error: true
         shell: pwsh
