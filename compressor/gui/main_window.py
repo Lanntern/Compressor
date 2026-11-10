@@ -203,6 +203,10 @@ class MainWindow(QMainWindow):
             self.pages.addWidget(self._placeholders.get(name) or getattr(self, name))
         self.sidebar.page_selected.connect(self._go)
         self.sidebar.list.setCurrentRow(0)
+        # ...and then built anyway, one at a time once the window has settled, so the first visit doesn't hitch.
+        self._prebuild = QTimer(self, interval=400)
+        self._prebuild.timeout.connect(self._prebuild_next)
+        QTimer.singleShot(2500, self._prebuild.start)
         self.qsettings.remove("last_inputs")   # (older versions reopened the last session's files: no longer)
         from . import support
 
@@ -281,6 +285,14 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(current)
         self._page_shortcuts(name, page)
         return page
+
+    def _prebuild_next(self) -> None:
+        """Build one not-yet-opened page while nothing is happening (not mid-click or drag, window shown)."""
+        waiting = list(self.__dict__.get("_placeholders", {}))
+        if not waiting:
+            self._prebuild.stop()
+        elif self.isVisible() and QApplication.mouseButtons() == Qt.NoButton:
+            self._build_page(waiting[0])
 
     def _go(self, index: int) -> None:
         if 0 <= index < self.pages.count():

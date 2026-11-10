@@ -36,11 +36,21 @@ class WrapLabel(QLabel):
 
     def _lines_height(self, width: int) -> int:
         """The height the text needs at ``width``. (QLabel's own heightForWidth never goes below the minimum
-        height, which _keep_lines sets: measured with it, a label laid out narrow once would stay tall.)"""
+        height, which _keep_lines sets: measured with it, a label laid out narrow once would stay tall.)
+        Remembered per width, text and font: a layout asks the same question many times while it settles."""
         m = self.contentsMargins()
+        key = (width, self.text(), self.font().key(), m.left(), m.right(), m.top(), m.bottom(), self.margin())
+        cache = self.__dict__.setdefault("_hfw", {})
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
         rect = self.fontMetrics().boundingRect(0, 0, max(1, width - m.left() - m.right()), 100_000,
                                                int(self.alignment()) | Qt.TextWordWrap, self._plain())
-        return rect.height() + m.top() + m.bottom() + 2 * self.margin()
+        height = rect.height() + m.top() + m.bottom() + 2 * self.margin()
+        if len(cache) > 64:
+            cache.clear()
+        cache[key] = height
+        return height
 
     def _plain(self) -> str:
         if self.textFormat() == Qt.PlainText or not _might_be_rich(self.text()):
@@ -188,12 +198,18 @@ class FlowLayout(QLayout):
         self._items: list = []
         self._groups: list[list] = []
         self._spacing, self._line_spacing, self._inner = spacing, line_spacing, inner
+        self._cache: dict = {}       # sizes and heights for the current layout pass (cleared by invalidate)
         self.setContentsMargins(0, 0, 0, 0)
+
+    def invalidate(self) -> None:
+        self._cache = {}
+        super().invalidate()
 
     # QLayout interface
     def addItem(self, item) -> None:
         self._items.append(item)
         self._groups.append([item])
+        self._cache = {}
 
     def add_group(self, *widgets) -> None:
         group = []
@@ -215,6 +231,7 @@ class FlowLayout(QLayout):
         if not 0 <= index < len(self._items):
             return None
         item = self._items.pop(index)
+        self._cache = {}
         for g in self._groups:
             if item in g:
                 g.remove(item)
@@ -228,7 +245,10 @@ class FlowLayout(QLayout):
         return True
 
     def heightForWidth(self, width: int) -> int:
-        return self._layout(QRect(0, 0, width, 0), apply=False)
+        key = ("hfw", width)
+        if key not in self._cache:
+            self._cache[key] = self._layout(QRect(0, 0, width, 0), apply=False)
+        return self._cache[key]
 
     def setGeometry(self, rect) -> None:
         super().setGeometry(rect)
@@ -245,10 +265,18 @@ class FlowLayout(QLayout):
 
     # internals
     def _visible_groups(self) -> list[list]:
-        return [vis for g in self._groups if (vis := [i for i in g if not i.isEmpty()])]
+        if "groups" not in self._cache:
+            self._cache["groups"] = [vis for g in self._groups if (vis := [i for i in g if not i.isEmpty()])]
+        return self._cache["groups"]
+
+    def _hint(self, item) -> QSize:
+        hints = self._cache.setdefault("hints", {})
+        if id(item) not in hints:
+            hints[id(item)] = item.sizeHint()
+        return hints[id(item)]
 
     def _group_width(self, group) -> int:
-        return sum(i.sizeHint().width() for i in group) + self._inner * (len(group) - 1)
+        return sum(self._hint(i).width() for i in group) + self._inner * (len(group) - 1)
 
     def _layout(self, rect, apply: bool) -> int:
         lines: list[list] = [[]]
@@ -264,12 +292,12 @@ class FlowLayout(QLayout):
         for line in lines:
             if not line:
                 continue
-            h = max(i.sizeHint().height() for g in line for i in g)
+            h = max(self._hint(i).height() for g in line for i in g)
             if apply:
                 x = rect.x()
                 for g in line:
                     for i in g:
-                        sh = i.sizeHint()
+                        sh = self._hint(i)
                         i.setGeometry(QRect(x, y + (h - sh.height()) // 2, sh.width(), sh.height()))
                         x += sh.width() + self._inner
                     x += self._spacing - self._inner

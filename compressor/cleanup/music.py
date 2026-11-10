@@ -19,12 +19,17 @@ import re
 import threading
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import numpy as np
+
 
 from .. import index, tools
 from ..formats import AUDIO_EXTS
+if TYPE_CHECKING:
+    import numpy as np
+
 from .common import Candidate, ProgressFn, ScanResult, cancelled, walk_files
 from .similar import _Ticker
 
@@ -42,6 +47,8 @@ _VERSION = 1                     # (bump when the fingerprint changes: cached on
 
 
 def decode(path: Path, seconds: int = SECONDS) -> np.ndarray | None:
+    import numpy as np
+
     ffmpeg = tools.find_tool("ffmpeg")
     if not ffmpeg:
         return None
@@ -55,22 +62,30 @@ def decode(path: Path, seconds: int = SECONDS) -> np.ndarray | None:
     return np.frombuffer(p.stdout, dtype="<i2").astype(np.float32) / 32768.0
 
 
+@lru_cache(maxsize=1)
 def _band_edges() -> np.ndarray:
+    import numpy as np
+
     freqs = np.fft.rfftfreq(WINDOW, 1 / RATE)
     edges = np.geomspace(300, 2000, BANDS + 1)
     return np.searchsorted(freqs, edges)
 
 
-_EDGES = _band_edges()
-_HANN = np.hanning(WINDOW).astype(np.float32)
+@lru_cache(maxsize=1)
+def _hann() -> np.ndarray:
+    import numpy as np
+
+    return np.hanning(WINDOW).astype(np.float32)
 
 
 def fingerprint(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """(32-bit code per frame, loudness envelope)."""
+    import numpy as np
+
     n = 1 + max(0, (len(samples) - WINDOW) // HOP)
-    frames = np.lib.stride_tricks.sliding_window_view(samples, WINDOW)[::HOP][:n] * _HANN
+    frames = np.lib.stride_tricks.sliding_window_view(samples, WINDOW)[::HOP][:n] * _hann()
     power = np.abs(np.fft.rfft(frames, axis=1)) ** 2
-    energy = np.add.reduceat(power, _EDGES[:-1], axis=1)[:, :BANDS]
+    energy = np.add.reduceat(power, _band_edges()[:-1], axis=1)[:, :BANDS]
     d = energy[:, :-1] - energy[:, 1:]                  # band m vs band m+1
     bits = (d[1:] - d[:-1]) > 0                          # ... rising or falling since the last frame
     codes = np.packbits(bits, axis=1, bitorder="little").view("<u4").ravel()
@@ -80,11 +95,18 @@ def fingerprint(samples: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return codes.astype(np.uint32), env.astype(np.float32)
 
 
-_POP = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
+@lru_cache(maxsize=1)
+def _pop() -> np.ndarray:
+    """Set bits in each byte value."""
+    import numpy as np
+
+    return np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
 
 
 def bit_error(a: np.ndarray, b: np.ndarray, max_shift: int = MAX_SHIFT) -> float:
     """Share of differing fingerprint bits at the best alignment (0 = identical, ~0.5 = unrelated)."""
+    import numpy as np
+
     best = 1.0
     for s in range(-max_shift, max_shift + 1):
         x, y = (a[s:], b) if s >= 0 else (a, b[-s:])
@@ -92,12 +114,14 @@ def bit_error(a: np.ndarray, b: np.ndarray, max_shift: int = MAX_SHIFT) -> float
         if n < 100:
             continue
         diff = np.bitwise_xor(x[:n], y[:n]).view(np.uint8)
-        best = min(best, float(_POP[diff].sum()) / (n * 32))
+        best = min(best, float(_pop()[diff].sum()) / (n * 32))
     return best
 
 
 def _envelopes(envs: list[np.ndarray]) -> np.ndarray:
     """Loudness envelopes as rows of equal length, each scaled to mean 0 and spread 1 (short ones padded)."""
+    import numpy as np
+
     width = max((len(e) for e in envs), default=1)
     out = np.zeros((len(envs), width), dtype=np.float32)
     for r, e in enumerate(envs):
@@ -108,6 +132,8 @@ def _envelopes(envs: list[np.ndarray]) -> np.ndarray:
 
 def _envelope_close(a: np.ndarray, others: np.ndarray, shift: int = 5) -> np.ndarray:
     """For each row of ``others``: does its loudness over time follow ``a``'s at some small shift?"""
+    import numpy as np
+
     width = len(a)
     best = np.full(len(others), -1.0, dtype=np.float32)
     for s in range(-shift, shift + 1):
@@ -162,6 +188,8 @@ def _rank(d: dict, size: int) -> tuple:
 def find_same_music(roots: list[Path], *, by: str = "sound", min_size: int = 500 * 1024,
                     exclude: list[Path] | None = None, progress: ProgressFn | None = None,
                     cancel: threading.Event | None = None) -> ScanResult:
+    import numpy as np
+
     result = ScanResult("music")
     skip = [os.path.normcase(str(p)) for p in exclude or []]
     files: list[tuple[Path, os.stat_result]] = []
