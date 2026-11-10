@@ -47,6 +47,9 @@ def main(argv: list[str] | None = None) -> int:
     setup_log()
     _report_unexpected_errors()
     app.setWindowIcon(app_icon())
+    from . import style
+
+    style.set_system_accent(bool(open_qsettings().value("accent/system", False, bool)))
     apply_theme(cast(str, open_qsettings().value("theme", "system", str)))
     server = integration.InstanceServer()
     win = MainWindow()

@@ -70,6 +70,56 @@ DARK = Tokens(
 )
 
 _current: Tokens = LIGHT
+_system_accent = False      # Settings › Appearance › "Use the Windows accent colour"
+
+
+def set_system_accent(on: bool) -> None:
+    """Use Windows' accent colour instead of the app's blue (from the next apply_style)."""
+    global _system_accent
+    _system_accent = bool(on)
+
+
+def windows_accent() -> str | None:
+    """The accent colour chosen in Windows' Settings › Personalisation › Colours ("#RRGGBB"), or None."""
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\DWM") as key:
+            abgr = int(winreg.QueryValueEx(key, "AccentColor")[0]) & 0xFFFFFFFF
+        return f"#{abgr & 0xFF:02X}{(abgr >> 8) & 0xFF:02X}{(abgr >> 16) & 0xFF:02X}"
+    except (OSError, ValueError):
+        return None
+
+
+def _mix(a: QColor, b: QColor, t: float) -> str:
+    """``a`` moved ``t`` (0..1) of the way towards ``b``."""
+    return QColor(round(a.red() + (b.red() - a.red()) * t), round(a.green() + (b.green() - a.green()) * t),
+                  round(a.blue() + (b.blue() - a.blue()) * t)).name().upper()
+
+
+def with_accent(t: Tokens, accent: str) -> Tokens:
+    """``t`` with every accent colour derived from ``accent``, each nudged until it meets the same contrast
+    rules as the app's own blue (AA: 4.5:1 for text on buttons, and for accent-coloured text on cards)."""
+    import dataclasses
+
+    base = QColor(accent)
+    on = "#FFFFFF"                  # as Windows does with light accents: a deeper shade behind white text
+    for _ in range(60):                                     # buttons: text on the accent stays readable
+        if contrast_ratio(on, base.name()) >= 4.5:
+            break
+        base = base.darker(106) if base.value() > 20 else QColor(0, 0, 0)
+    text = QColor(base)
+    for _ in range(40):                                     # links and accent text on cards and the page
+        if contrast_ratio(text.name(), t.card) >= 4.5 and contrast_ratio(text.name(), t.window) >= 4.5:
+            break
+        text = text.lighter(108) if t.dark else text.darker(108)
+    background = QColor(t.card)
+    return dataclasses.replace(
+        t, accent=base.name().upper(), accent_hover=base.lighter(110).name().upper(),
+        accent_pressed=base.darker(115).name().upper(), accent_text=text.name().upper(), on_accent=on,
+        accent_soft=_mix(background, base, 0.35 if t.dark else 0.14))
 
 
 def tokens() -> Tokens:
@@ -701,6 +751,9 @@ def apply_style(mode: str) -> Tokens:
     else:
         dark = mode == "dark"
     _current = DARK if dark else LIGHT
+    accent = windows_accent() if _system_accent else None
+    if accent:
+        _current = with_accent(_current, accent)
     if high_contrast_active():
         app.setStyleSheet("")
         return _current

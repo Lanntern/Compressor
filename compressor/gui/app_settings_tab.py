@@ -86,6 +86,17 @@ class AppSettingsTab(Page):
         self.theme.setCurrentIndex(max(0, self.theme.findData(self.qs.value("theme", "system", str))))
         self.theme.currentIndexChanged.connect(self._theme_changed)
         card.lay.addWidget(setting_row("Theme", "Follow the system, or always use light or dark.", self.theme))
+        from . import style as _style
+
+        if _style.windows_accent() is not None:
+            card.lay.addWidget(separator())
+            self.system_accent = ToggleSwitch("Use the Windows accent colour")
+            self.system_accent.setChecked(self.qs.value("accent/system", False, bool))
+            self.system_accent.toggled.connect(self._accent_toggled)
+            card.lay.addWidget(setting_row("Use the Windows accent colour",
+                                           "Buttons, links and selections take the colour chosen in Windows' "
+                                           "Personalisation settings (adjusted where needed so text stays easy "
+                                           "to read).", self.system_accent))
         card.lay.addWidget(separator())
         self.hover = ToggleSwitch("Preview on hover")
         self.hover.setChecked(self.qs.value("hover_preview", True, bool))
@@ -417,6 +428,13 @@ class AppSettingsTab(Page):
     def _taskbar_setting(self, key: str, on: bool) -> None:
         self.qs.setValue(key, on)
         self.win.taskbar._apply()             # show or hide it at once (during a job)
+
+    def _accent_toggled(self, on: bool) -> None:
+        from . import style as _style
+
+        self.qs.setValue("accent/system", on)
+        _style.set_system_accent(on)
+        self.win.apply_theme(self.qs.value("theme", "system", str))
 
     def _theme_changed(self) -> None:
         mode = self.theme.currentData()

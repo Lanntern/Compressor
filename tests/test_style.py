@@ -52,3 +52,16 @@ def test_controls_share_one_height(mode):
                for c in controls}
     assert set(heights.values()) == {style.Size.CONTROL}, heights
     w.close()
+
+
+@pytest.mark.parametrize("accent", ["#0078D4", "#FFB900", "#E3008C", "#00CC6A", "#744DA9", "#FFFFFF", "#101010"])
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_windows_accent_colours_stay_readable(accent, theme):
+    """Any Windows accent (even pale yellow or near-black) gives buttons and accent text AA contrast."""
+    from compressor.gui.style import DARK, LIGHT, with_accent
+
+    base = LIGHT if theme == "light" else DARK
+    t = with_accent(base, accent)
+    assert contrast_ratio(t.on_accent, t.accent) >= 4.5
+    assert contrast_ratio(t.accent_text, t.card) >= 4.5 and contrast_ratio(t.accent_text, t.window) >= 4.5
+    assert t.accent_soft != t.card and t.window == base.window          # only accent colours change
