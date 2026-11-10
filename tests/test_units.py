@@ -673,3 +673,22 @@ def test_thumbnails_from_windows(tmp_path):
         assert img.pixelColor(img.width() // 2, img.height() // 2).red() > 150      # the red picture, not black
     data = thumbs.make_thumbnail(src, PNG, 160)
     assert data and data[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_limits_against_bombs(tmp_path, monkeypatch):
+    """A comic book that would unpack to more than the limit is refused before anything is read; encoders get a
+    per-process memory limit of 3/4 of the computer's memory (at least 2 GB), and on Windows the job carries it."""
+    import zipfile
+
+    from compressor import convert, tools
+
+    cbz = tmp_path / "bomb.cbz"
+    with zipfile.ZipFile(cbz, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("001.png", b"\0" * (3 * 1024 * 1024))          # 3 MB of zeros: a few KB compressed
+    monkeypatch.setattr(convert, "MAX_COMIC_BYTES", 1024 * 1024)
+    with pytest.raises(ValueError, match="would unpack to"):
+        convert.convert_comic(cbz, convert.ConvertOptions())
+    monkeypatch.setattr(tools, "total_memory_gb", lambda: 16.0)
+    assert tools.encoder_memory_limit() == 12 * 1024 ** 3
+    monkeypatch.setattr(tools, "total_memory_gb", lambda: 1.0)
+    assert tools.encoder_memory_limit() == 2 * 1024 ** 3

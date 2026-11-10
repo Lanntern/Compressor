@@ -80,9 +80,22 @@ def _windows_job():
                 return 0
             info = Extended()
             info.BasicLimitInformation.LimitFlags = 0x2000 | 0x800   # KILL_ON_JOB_CLOSE | BREAKAWAY_OK
+            # Each encoder may use at most 3/4 of the computer's memory (at least 2 GB): far above any normal
+            # encode, but a damaged or malicious file can't make one swallow it all and freeze the computer;
+            # that file fails instead (its original kept).
+            limit = encoder_memory_limit()
+            if limit:
+                info.BasicLimitInformation.LimitFlags |= 0x100       # JOB_OBJECT_LIMIT_PROCESS_MEMORY
+                info.ProcessMemoryLimit = limit
             ok = k.SetInformationJobObject(wintypes.HANDLE(job), 9, ctypes.byref(info), ctypes.sizeof(info))
             _job = job if ok else 0
         return _job
+
+
+def encoder_memory_limit() -> int:
+    """Bytes one encoder process may commit (0: no limit, when the computer's memory is unknown)."""
+    total = total_memory_gb()
+    return int(max(2.0, total * 0.75) * 1024 ** 3) if total else 0
 
 
 def _considerate(proc: subprocess.Popen) -> None:

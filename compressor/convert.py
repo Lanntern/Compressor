@@ -13,7 +13,7 @@ from . import metadata as md
 from . import steps, tools
 from .fileops import link_or_copy, remove_quietly, temp_name
 from .formats import (
-    ARCHIVE, AUDIO, COMIC, DOC, DOCUMENT, FONT, HEIC, JXL, PANDOC_INPUTS, PDF, RAW, SVG, VIDEO, read_jxl_info,
+    ARCHIVE, AUDIO, COMIC, DOC, DOCUMENT, FONT, HEIC, JXL, PANDOC_INPUTS, PDF, RAW, SVG, VIDEO, human, read_jxl_info,
     register_heif,
 )
 from .images import Ctx, VerificationFailed, _decoded_path, _filtered_meta, _load_frames, _load_static, _open
@@ -22,6 +22,8 @@ from .probe import VideoInfo, probe_video
 from .settings import Settings
 
 # id: (label, extension, supports animation, supports lossless, lossy quality applies)
+MAX_COMIC_BYTES = 4 * 1024 ** 3     # the most a comic book may unpack to (its pages are read into memory)
+
 IMAGE_TARGETS = {
     "png": ("PNG", ".png", True, True, False),
     "jpeg": ("JPEG", ".jpg", False, False, True),
@@ -1007,21 +1009,34 @@ def comic_pages(src: Path, folder: Path) -> list[Path]:
     pictures = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".avif", ".jxl")
     items: list[tuple[str, bytes]] = []
     ext = src.suffix.lower()
+    def check_size(total: int) -> None:
+        # The pages are read into memory: refuse a comic that would unpack to more than any real one does (an
+        # "archive bomb" could otherwise make it fill the memory).
+        if total > MAX_COMIC_BYTES:
+            raise ValueError(f"This comic book would unpack to {human(total)}, more than the {human(MAX_COMIC_BYTES)} "
+                             "allowed, so it was left as it is")
+
     if ext == ".cbz":
         with zipfile.ZipFile(src) as z:
-            items = [(i.filename, z.read(i)) for i in z.infolist()
+            pages = [i for i in z.infolist()
                      if not i.is_dir() and i.filename.lower().endswith(pictures) and "__macosx" not in i.filename.lower()]
+            check_size(sum(i.file_size for i in pages))
+            items = [(i.filename, z.read(i)) for i in pages]
     elif ext == ".cbt":
         with tarfile.open(src) as t:
-            for m in t.getmembers():
-                f = t.extractfile(m) if m.isfile() and m.name.lower().endswith(pictures) else None
+            members = [m for m in t.getmembers() if m.isfile() and m.name.lower().endswith(pictures)]
+            check_size(sum(m.size for m in members))
+            for m in members:
+                f = t.extractfile(m)
                 if f is not None:
                     items.append((m.name, f.read()))
     else:
         import py7zr
 
         with py7zr.SevenZipFile(src) as z:
-            names = [n for n in z.getnames() if n.lower().endswith(pictures)]
+            infos = [i for i in z.list() if not i.is_directory and i.filename.lower().endswith(pictures)]
+            check_size(sum(int(i.uncompressed or 0) for i in infos))
+            names = [i.filename for i in infos]
             items = [(n, b.read()) for n, b in (z.read(names) or {}).items()]
     if not items:
         raise ValueError("This comic book has no pictures")
