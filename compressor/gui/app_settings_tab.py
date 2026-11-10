@@ -312,6 +312,23 @@ class AppSettingsTab(Page):
         keys.clicked.connect(self.win.show_shortcuts)
         card.lay.addWidget(setting_row("Keyboard shortcuts", "Every page can be used without a mouse.", keys))
         col.addWidget(card)
+
+        # developer (hidden unless switched on: see devmode)
+        self.dev_section = QWidget()
+        dl = QVBoxLayout(self.dev_section)
+        dl.setContentsMargins(0, 0, 0, 0)
+        dl.setSpacing(col.spacing())
+        dl.addWidget(text("Developer", Type.HEADLINE, bold=True, name="sectionTitle"))
+        card = Card()
+        self.fluent_icons = ToggleSwitch("Use Windows' icons")
+        self.fluent_icons.setChecked(self.qs.value("dev/fluent_icons", False, bool))
+        self.fluent_icons.toggled.connect(self._fluent_toggled)
+        card.lay.addWidget(setting_row("Use Windows' icons", "Draw icons with Segoe Fluent Icons (Windows 11) or "
+                                       "Segoe MDL2 Assets (Windows 10) where they have one; Compressor's own "
+                                       "icons otherwise.", self.fluent_icons))
+        dl.addWidget(card)
+        col.addWidget(self.dev_section)
+        self.update_dev_section()
         col.addSpacing(Space.XL)   # the page's bottom margin, inside the scroll area
         col.addStretch(1)
 
@@ -353,6 +370,7 @@ class AppSettingsTab(Page):
     def showEvent(self, e) -> None:
         super().showEvent(e)
         self._update_index_stats()
+        self.update_dev_section()
 
     def _update_index_stats(self) -> None:
         n, size = index.stats()
@@ -428,6 +446,18 @@ class AppSettingsTab(Page):
     def _taskbar_setting(self, key: str, on: bool) -> None:
         self.qs.setValue(key, on)
         self.win.taskbar._apply()             # show or hide it at once (during a job)
+
+    def update_dev_section(self) -> None:
+        from . import devmode
+
+        self.dev_section.setVisible(devmode.enabled(self.qs))
+
+    def _fluent_toggled(self, on: bool) -> None:
+        from . import devmode
+
+        self.qs.setValue("dev/fluent_icons", on)
+        devmode.apply(self.qs)
+        self.win.refresh_colors()
 
     def _accent_toggled(self, on: bool) -> None:
         from . import style as _style

@@ -456,12 +456,8 @@ class Section(QWidget):
 
     def _set(self, on: bool) -> None:
         self.content.setVisible(on)
-        pm = icon_pixmap("chevron", tokens().text2, Size.ICON_S - 4)
-        if on:
-            from PySide6.QtGui import QTransform
-
-            pm = pm.transformed(QTransform().rotate(90), Qt.SmoothTransformation)
-        self.toggle.setIcon(pm)
+        self.toggle.setIcon(icon("chevron_down" if on else "chevron", tokens().text2))
+        self.toggle.setIconSize(QSize(Size.ICON_S - 4, Size.ICON_S - 4))
         self.toggle.setAccessibleDescription("expanded" if on else "collapsed")
 
     def refresh(self) -> None:

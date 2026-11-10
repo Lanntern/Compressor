@@ -50,6 +50,9 @@ def main(argv: list[str] | None = None) -> int:
     from . import style
 
     style.set_system_accent(bool(open_qsettings().value("accent/system", False, bool)))
+    from . import devmode
+
+    devmode.apply(open_qsettings())
     apply_theme(cast(str, open_qsettings().value("theme", "system", str)))
     server = integration.InstanceServer()
     win = MainWindow()

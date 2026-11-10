@@ -1609,3 +1609,45 @@ def test_convert_presets_from_the_page_and_the_context_menu(win, tmp_path, monke
     assert "Web pictures" not in convert_presets.load(conv.qs)
     conv.originals.setCurrentIndex(conv.originals.findData("keep"))
     conv.clear()
+
+
+def test_icons_drawn_at_display_scale(win):
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QIcon
+
+    from compressor.gui import style
+
+    ic = style.icon("home")
+    for scale in (1.0, 1.25, 2.5):
+        pm = ic.pixmap(QSize(20, 20), scale)
+        assert pm.width() == round(20 * scale) and pm.devicePixelRatio() == scale
+    assert not ic.pixmap(QSize(16, 16), 1.0, QIcon.Disabled).isNull()
+    assert style.icon_pixmap("home", "#fff", 16, 1.75).width() == 28
+
+
+def test_developer_settings_hidden_until_switched_on(win, monkeypatch):
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    from compressor.gui import style
+    from compressor.gui.about_dialog import AboutDialog
+    from compressor.gui.devmode import CLICKS
+
+    monkeypatch.delenv("COMPRESSOR_DEV", raising=False)
+    win.qsettings.remove("dev/enabled")
+    page = win.app_settings
+    page.update_dev_section()
+    assert page.dev_section.isHidden()
+    d = AboutDialog(win)
+    for _ in range(CLICKS):
+        ev = QMouseEvent(QEvent.MouseButtonRelease, QPointF(2, 2), QPointF(2, 2), Qt.LeftButton, Qt.NoButton,
+                         Qt.NoModifier)
+        QApplication.sendEvent(d._version, ev)
+    assert not page.dev_section.isHidden()
+    page.fluent_icons.setChecked(True)      # (no icon font here: the app's own icons are still drawn)
+    assert not style.icon("home").pixmap(20, 20).isNull()
+    page.fluent_icons.setChecked(False)
+    d._toggle_dev()
+    assert page.dev_section.isHidden()
+    d.deleteLater()
