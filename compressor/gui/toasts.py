@@ -32,9 +32,12 @@ def link(target: str) -> str:
 
 def target_from_link(url: str) -> str:
     """``compressor:open/history`` -> ``history`` ("" for anything else)."""
+    import re
+
     prefix = f"{SCHEME}:open/"
     url = url.strip().strip('"')
-    return url[len(prefix):].strip("/") if url.lower().startswith(prefix) else ""
+    target = url[len(prefix):].strip("/") if url.lower().startswith(prefix) else ""
+    return target if re.fullmatch(r"[a-z]+(-[a-z]+)?", target) else ""     # a page name, nothing else
 
 
 def toast_xml(title: str, message: str, actions=(), launch: str = "") -> str:
@@ -89,7 +92,9 @@ def unregister() -> None:
 
     for sub in (rf"Software\Classes\{SCHEME}\shell\open\command", rf"Software\Classes\{SCHEME}\shell\open",
                 rf"Software\Classes\{SCHEME}\shell", rf"Software\Classes\{SCHEME}\DefaultIcon",
-                rf"Software\Classes\{SCHEME}", rf"Software\Classes\AppUserModelId\{APP_ID}"):
+                rf"Software\Classes\{SCHEME}", rf"Software\Classes\AppUserModelId\{APP_ID}",
+                # (Windows' own record of this app's notification settings, made when the first one was shown)
+                rf"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\{APP_ID}"):
         try:
             winreg.DeleteKey(winreg.HKEY_CURRENT_USER, sub)
         except OSError:

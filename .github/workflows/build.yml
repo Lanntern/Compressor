@@ -163,7 +163,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
-      contents: write  # attach the .zip and installer to releases on version tags
+      contents: write      # attach the .zip and installer to releases on version tags
+      id-token: write      # build provenance (attestations) for those files
+      attestations: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -325,10 +327,28 @@ jobs:
           name: Compressor-setup
           path: dist/Compressor-setup.exe
           retention-days: 30
+      - name: Checksums for the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Copy-Item dist/Compressor-setup.exe .
+          Get-FileHash Compressor-setup.exe, Compressor-windows.zip -Algorithm SHA256 |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
+            Set-Content -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+      - name: Record where the release files came from (build provenance)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            Compressor-setup.exe
+            Compressor-windows.zip
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v3
+        # (Pinned to a commit: a third-party action with write access. Dependabot proposes updates.)
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           files: |
             Compressor-windows.zip
-            dist/Compressor-setup.exe
+            Compressor-setup.exe
+            SHA256SUMS.txt

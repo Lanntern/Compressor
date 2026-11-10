@@ -605,3 +605,14 @@ def test_default_apps_and_open_with():
     finally:
         integration.unregister_file_types("CompressorTest.exe")
     assert not integration.file_types_registered()
+
+
+def test_a_link_cannot_smuggle_in_files_or_options():
+    """compressor: links come from notifications but could come from any web page: they open a page, nothing more."""
+    from compressor.gui.app import open_target, parse_args
+
+    crafted = ["--url", 'compressor:open/history" "C:\\Users\\me\\Pictures', "--preset", "Maximum savings",
+               "C:\\Users\\me\\Videos"]
+    assert parse_args(crafted) == (False, "", "", [])
+    assert open_target(crafted) == ""                     # not a well-formed page name: ignored
+    assert open_target(["--url", "compressor:open/compress-files"]) == "compress-files"

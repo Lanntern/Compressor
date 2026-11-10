@@ -181,4 +181,24 @@ def update(exe: str | None = None, args_prefix: str = "") -> bool:
             ole32.CoUninitialize()
 
 
-__all__ = ["APP_ID", "TASKS", "set_process_app_id", "update"]
+def clear() -> bool:
+    """Remove the jump list Windows keeps for this app (the uninstaller's clean-up)."""
+    if not IS_WINDOWS:
+        return False
+    ole32 = ctypes.windll.ole32  # type: ignore[attr-defined]
+    hr_init = ole32.CoInitializeEx(None, 2)
+    dest = None
+    try:
+        dest = _create(CLSID_DestinationList, IID_ICustomDestinationList)
+        dest.call(10, (ctypes.c_wchar_p,), APP_ID)                                     # DeleteList
+        return True
+    except OSError:
+        return False
+    finally:
+        if dest is not None:
+            dest.release()
+        if hr_init in (0, 1):
+            ole32.CoUninitialize()
+
+
+__all__ = ["APP_ID", "TASKS", "set_process_app_id", "update", "clear"]

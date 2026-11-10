@@ -100,6 +100,11 @@ Get the latest version from the **[Releases page](https://github.com/Lanntern/Co
 
 Everything it needs, encoders included, comes in the download. Compressor isn't code-signed yet, so the first time you run it Windows may say "Windows protected your PC": choose **More info → Run anyway**.
 
+**Checking a download (optional):** each release lists the files' SHA-256 checksums in `SHA256SUMS.txt`
+(compare with `Get-FileHash Compressor-setup.exe` in PowerShell), and carries GitHub's build provenance, so
+`gh attestation verify Compressor-setup.exe -R Lanntern/Compressor` confirms it was built by this repository's
+workflow from its source.
+
 To view `.jxl` files in Windows 11 Photos/Explorer, install Microsoft's free **[JPEG XL Image Extension](https://apps.microsoft.com/detail/9MZPRTH5C0TB)** from the Microsoft Store. Browsers and most chat apps don't open JPEG XL yet; use WebP for images you share.
 
 ## Run from source

@@ -347,10 +347,10 @@ def icon(name: str, color: str | None = None, size: int = 20) -> QIcon:
 
 def _asset(name: str, svg: str) -> str:
     import hashlib
-    import tempfile
-    from pathlib import Path
 
-    folder = Path(tempfile.gettempdir()) / "compressor-ui"
+    from ..journal import data_dir
+
+    folder = data_dir() / "ui"            # (in the app's own folder: removed with it, never left in %TEMP%)
     folder.mkdir(exist_ok=True)
     path = folder / f"{name}-{hashlib.sha1(svg.encode()).hexdigest()[:10]}.svg"
     if not path.exists():

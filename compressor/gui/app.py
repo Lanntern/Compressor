@@ -113,6 +113,10 @@ def parse_args(argv: list[str]) -> tuple[bool, str, str, list[str]]:
     --convert (Explorer's "Convert with Compressor" menu): a Convert format id such as jpeg or mp4_h264, or
     "choose" to open Convert with the files and let you pick."""
     background, preset, convert_to, paths = False, "", "", []
+    if "--url" in argv:
+        # A compressor: link (a notification's button, or any web page) only ever opens a page (open_target):
+        # nothing else from its command line is used, so a crafted link can't slip in files or options.
+        return background, preset, convert_to, paths
     it = iter(argv)
     for a in it:
         if a == "--background":

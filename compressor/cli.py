@@ -307,8 +307,16 @@ def main(argv: list[str] | None = None) -> int:
 
         from .gui import toasts
 
+        from .gui import jumplist
+
+        def old_temp_files() -> None:          # (versions before 0.1.1 kept their UI images in %TEMP%)
+            import shutil
+            import tempfile
+
+            shutil.rmtree(os.path.join(tempfile.gettempdir(), "compressor-ui"), ignore_errors=True)
+
         for undo in (lambda: integration.uninstall_context_menu(wait=True), lambda: integration.set_autostart(False),
-                     toasts.unregister, integration.unregister_file_types):
+                     toasts.unregister, integration.unregister_file_types, jumplist.clear, old_temp_files):
             try:
                 undo()
             except Exception:  # noqa: BLE001 - remove what can be removed
