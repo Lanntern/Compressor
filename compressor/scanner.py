@@ -74,6 +74,7 @@ class ScanResult:
 
 
 ProgressFn = Callable[[str, int, int], None]  # (message, done, total)
+PARTS_PREFIX = ".compressor-parts-"   # a video being encoded scene by scene (chunked.py): never scanned
 
 
 def _is_hidden(entry: os.DirEntry) -> bool:
@@ -247,7 +248,7 @@ def walk_listing(result: ScanResult, root: Path, listing, root_index: int, setti
         subdirs = []
         for sub in listing.subdirs.get(d, []):
             _p, sattrs, _m, sname = listing.dirs[sub]
-            if sattrs & REPARSE or sname.lower() in EXCLUDED_DIR_NAMES:
+            if sattrs & REPARSE or sname.lower() in EXCLUDED_DIR_NAMES or sname.startswith(PARTS_PREFIX):
                 continue
             if not settings.include_hidden and (sname.startswith(".") or sattrs & (HIDDEN | SYSTEM)):
                 continue
@@ -304,7 +305,7 @@ def _walk(result: ScanResult, root: Path, settings: Settings, progress: Progress
                 if c.is_symlink():
                     continue
                 if c.is_dir(follow_symlinks=False):
-                    if c.name.lower() in EXCLUDED_DIR_NAMES:
+                    if c.name.lower() in EXCLUDED_DIR_NAMES or c.name.startswith(PARTS_PREFIX):
                         continue
                     if not settings.include_hidden and _is_hidden(c):
                         continue

@@ -259,7 +259,8 @@ class AppSettingsTab(Page):
                     "cjxl": "JPEG XL encoder", "djxl": "JPEG XL decoder (verification, undo)",
                     "cjpegli": "Best-in-class lossy JPEG encoder", "gifsicle": "GIF optimiser",
                     "ssimulacra2": "Fast image quality metric for Smart quality (a built-in one is used "
-                                   "otherwise)"}.get(name, "")
+                                   "otherwise)",
+                    "butteraugli_main": "Butteraugli, an optional quality measure for videos"}.get(name, "")
             card.lay.addWidget(setting_row(name, desc, state))
             if i < len(status) - 1:
                 card.lay.addWidget(separator())

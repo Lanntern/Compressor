@@ -53,7 +53,7 @@ WINDOWS = [
              "https://github.com/libjxl/libjxl/releases/download/v0.12.0/jxl-x64-windows-static.zip",
              "3025d7e308390796d20492322e606bc92decaee7b6bc99d3f7547870ae5db7de",
              {"cjxl.exe": "cjxl.exe", "djxl.exe": "djxl.exe", "ssimulacra2.exe": "?ssimulacra2.exe",
-              "LICENSE.libjxl": "LICENSE-libjxl.txt"}),
+              "butteraugli_main.exe": "?butteraugli_main.exe", "LICENSE.libjxl": "LICENSE-libjxl.txt"}),
     # jpegli moved out of libjxl after 0.11; 0.11.2 is the newest release with a Windows cjpegli.
     Download("jpegli", "0.11.2",
              "https://github.com/libjxl/libjxl/releases/download/v0.11.2/jxl-x64-windows-static.zip",
@@ -70,7 +70,8 @@ LINUX_LIBJXL = Download(
     "libjxl", "0.11.1",
     "https://github.com/libjxl/libjxl/releases/download/v0.11.1/jxl-linux-x86_64-static-v0.11.1.tar.gz",
     "7ba87d09f220568a7e84c2a62e9fa8be608443930dec10b2799271d4cf032293",
-    {"cjxl": "cjxl", "djxl": "djxl", "cjpegli": "cjpegli", "ssimulacra2": "?ssimulacra2"},
+    {"cjxl": "cjxl", "djxl": "djxl", "cjpegli": "cjpegli", "ssimulacra2": "?ssimulacra2",
+     "butteraugli_main": "?butteraugli_main"},
     held="libjxl publishes no static Linux builds after 0.11.1 (Linux users get libjxl from their distribution)")
 
 # Pandoc (documents): on Windows the app downloads it when first needed (compressor/addons.py pins the same

@@ -546,6 +546,16 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
         QTimer.singleShot(5000, index.prune)
+
+        def prune_parts() -> None:              # videos stopped part-way and not carried on for two weeks
+            from .. import chunked
+
+            try:
+                chunked.prune()
+            except OSError:
+                pass
+
+        QTimer.singleShot(7000, prune_parts)
         self._recompress: QThread | None = None
         if self.qsettings.value("appcompress/recompress", True, bool):
             QTimer.singleShot(3 * 60 * 1000, self.recompress_updated_games)   # after start-up settles
