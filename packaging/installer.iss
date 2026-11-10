@@ -45,7 +45,8 @@ PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0
+; Windows 10 version 1809 or later (Qt 6's minimum): older versions get a clear message instead of a broken app.
+MinVersion=10.0.17763
 OutputDir=..\dist
 OutputBaseFilename=Compressor-setup
 Compression=lzma2/max
@@ -320,9 +321,15 @@ begin
   if (CurUninstallStep = usPostUninstall) and IsAdminInstallMode then
     RegisterCleanupForOtherUsers();
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
-    if MsgBox('Also remove your Compressor settings and History?' + #13#10#13#10 +
-              'History is how compressed files can be undone. Keep it if you might reinstall.',
-              mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+    // (Command links: each choice says what it does. Keeping is the default, and the safe answer.)
+    if TaskDialogMsgBox('Keep your settings and History?',
+         'Compressor has been removed. Your settings and History are still on this PC.',
+         mbConfirmation, MB_YESNO,
+         ['Keep them' + #13#10 + 'If you install Compressor again, it carries on where you left off, and ' +
+            'you can still undo past compressions from History.',
+          'Remove them' + #13#10 + 'Deletes Compressor''s settings, History and log. Your files aren''t ' +
+            'touched, but compressions can no longer be undone from History.'],
+         0) = IDNO then
     begin
       DelTree(ExpandConstant('{localappdata}\Compressor'), True, True, True);
       RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Compressor');

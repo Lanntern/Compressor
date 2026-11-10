@@ -186,7 +186,8 @@ files or anything about them anywhere. It goes online only to:
 * **download Pandoc**, only when you convert a document and only after you agree, from Pandoc's own release page.
 
 Your settings, history (what can be undone), presets and a small log stay in `%LOCALAPPDATA%\Compressor`
-(`~/.local/share/compressor` on Linux). Uninstalling asks whether to remove them.
+(`~/.local/share/compressor` on Linux). Uninstalling asks whether to remove them. The full
+[privacy policy](PRIVACY.md) has the details.
 
 ## Support Compressor
 
