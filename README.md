@@ -95,8 +95,8 @@ A second page finds space Windows doesn't free for you. Each tool scans first, p
 
 Get the latest version from the **[Releases page](https://github.com/Lanntern/Compressor/releases/latest)** (Windows 10 or 11, 64-bit):
 
-* **`Compressor-setup-x64.exe`**: the installer (recommended). It can add Start menu and desktop shortcuts and the right-click menu in File Explorer, and uninstalls cleanly from Settings → Apps.
-* **`Compressor-windows-x64.zip`**: the portable version. Unzip it anywhere and run `Compressor.exe`.
+* **`Compressor-setup.exe`**: the installer (recommended). It can add Start menu and desktop shortcuts and the right-click menu in File Explorer, and uninstalls cleanly from Settings → Apps.
+* **`Compressor-windows.zip`**: the portable version. Unzip it anywhere and run `Compressor.exe`.
 
 Everything it needs, encoders included, comes in the download. Compressor isn't code-signed yet, so the first time you run it Windows may say "Windows protected your PC": choose **More info → Run anyway**.
 

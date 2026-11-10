@@ -47,13 +47,12 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir=..\dist
-OutputBaseFilename=Compressor-setup-x64
+OutputBaseFilename=Compressor-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-; The licence, shown before installing. An information page rather than "I accept the agreement": the GPL asks
-; nothing of people who just use the app (it covers sharing and changing it).
-InfoBeforeFile=..\LICENSE
+; The licence, accepted before installing.
+LicenseFile=..\LICENSE
 UninstallDisplayIcon={app}\Compressor.exe
 UninstallDisplayName={#AppName}
 CloseApplications=yes
@@ -66,10 +65,9 @@ SetupIconFile={#IconFile}
 ; The page's title says it all: no subtitle, no instructions.
 SelectTasksDesc=
 SelectTasksLabel2=
-; The licence page: one line above the text instead of two "please read" lines.
-WizardInfoBefore=License
-InfoBeforeLabel=Compressor is free, open-source software.
-InfoBeforeClickLabel=You don't need to accept anything to use it. The GNU General Public License below covers sharing and changing Compressor, and explains that it comes with no warranty.
+; The licence page: a subtitle and one instruction, instead of two "please read" lines saying the same thing.
+LicenseLabel=Compressor is free, open-source software.
+LicenseLabel3=Please read the license below. You must accept its terms to continue with the installation.
 ; Shortcuts are optional (off by default), so don't send people looking for them.
 FinishedLabel=Setup has finished installing [name] on your computer.
 FinishedLabelNoIcons=Setup has finished installing [name] on your computer.
@@ -97,7 +95,8 @@ Filename: "{app}\Compressor.exe"; Parameters: "--installer-setup {code:SetupArgs
 Filename: "ms-windows-store://pdp/?ProductId=9MZPRTH5C0TB"; Flags: shellexec nowait skipifsilent runasoriginaluser; Tasks: jxlext
 Filename: "{app}\Compressor.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 ; The downloaded installer isn't needed any more (removed a few seconds after Setup closes).
-Filename: "{cmd}"; Parameters: "/c ping -n 4 127.0.0.1 >nul & del /f /q ""{srcexe}"""; Description: "Delete the installer"; Flags: postinstall runhidden nowait skipifsilent runasoriginaluser
+; (Also the folder it was unzipped into, and that .zip, when both are named after the installer: see CleanupCommand.)
+Filename: "{cmd}"; Parameters: "{code:CleanupCommand}"; WorkingDir: "{sys}"; Description: "Delete the installer"; Flags: postinstall runhidden nowait skipifsilent runasoriginaluser
 
 [UninstallRun]
 ; Remove the Explorer context menu and start-at-sign-in (both point at this copy of the app).
@@ -108,6 +107,7 @@ var
   Upgrading: Boolean;
   UpdatesLabel: TNewStaticText;
   UpdatesCombo: TNewComboBox;
+  JxlChecked, JxlInstalled: Boolean;
 
 function InitializeSetup(): Boolean;
 begin
@@ -182,12 +182,62 @@ begin
     Result := UpdateKey(UpdatesCombo.ItemIndex);
 end;
 
-procedure CurPageChanged(CurPageID: Integer);
+// Is Microsoft's JPEG XL Image Extension already installed (for this user)? Asked once, the first time the
+// tasks page needs it.
+function JxlExtensionInstalled(): Boolean;
+var
+  Code: Integer;
 begin
+  if not JxlChecked then
+  begin
+    JxlChecked := True;
+    JxlInstalled := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -NonInteractive -Command "if (Get-AppxPackage -Name ''*JpegXL*'') { exit 0 } else { exit 1 }"',
+      '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0);
+  end;
+  Result := JxlInstalled;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+var
+  I: Integer;
+begin
+  // Already have the JPEG XL extension: show that option greyed out and unticked.
+  if CurPageID = wpSelectTasks then
+    for I := 0 to WizardForm.TasksList.Items.Count - 1 do
+      if Pos('JPEG XL Image Extension', WizardForm.TasksList.ItemCaption[I]) > 0 then
+        if JxlExtensionInstalled() then
+        begin
+          WizardForm.TasksList.Checked[I] := False;
+          WizardForm.TasksList.ItemEnabled[I] := False;
+          if Pos('(Already installed)', WizardForm.TasksList.ItemCaption[I]) = 0 then
+            WizardForm.TasksList.ItemCaption[I] := WizardForm.TasksList.ItemCaption[I] + ' (Already installed)';
+        end;
   // The last page has no Cancel: put Finish where the main button sits on every other page (bottom right),
   // not in the middle.
   if CurPageID = wpFinished then
     WizardForm.NextButton.Left := WizardForm.CancelButton.Left;
+end;
+
+// "Delete the installer": the setup .exe, a few seconds after Setup closes. When it was unzipped from a download
+// (e.g. Compressor-setup.zip extracted to a Compressor-setup folder), that folder goes too if nothing else is in
+// it (rmdir refuses otherwise), and so does the .zip beside it. Only names starting with "Compressor-setup", so a
+// Downloads or Desktop folder is never touched.
+function CleanupCommand(Param: String): String;
+var
+  Exe, Dir, Name, Zip: String;
+begin
+  Exe := ExpandConstant('{srcexe}');
+  Dir := ExtractFileDir(Exe);
+  Name := ExtractFileName(Dir);
+  Result := '/c ping -n 4 127.0.0.1 >nul & del /f /q "' + Exe + '"';
+  if Pos('compressor-setup', Lowercase(Name)) = 1 then
+  begin
+    Result := Result + ' & rmdir "' + Dir + '"';
+    Zip := ExtractFileDir(Dir) + '\' + Name + '.zip';
+    if FileExists(Zip) then
+      Result := Result + ' & del /f /q "' + Zip + '"';
+  end;
 end;
 
 function Flag(const Task: String): String;

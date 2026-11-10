@@ -215,7 +215,7 @@ jobs:
           foreach ($f in "LICENSE-ffmpeg.txt", "LICENSE-libjxl.txt", "LICENSE-gifsicle.txt") {
             if (-not (Test-Path "dist/Compressor/tools/$f")) { throw "tools/$f is missing from the build" }
           }
-          Compress-Archive -Path dist/Compressor -DestinationPath Compressor-windows-x64.zip
+          Compress-Archive -Path dist/Compressor -DestinationPath Compressor-windows.zip
       - name: Build the installer (Inno Setup)
         shell: pwsh
         run: |
@@ -224,7 +224,7 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=$version" `
             "/DSourceDir=..\dist\Compressor" "/DIconFile=..\build\Compressor.ico" packaging\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
-          Get-Item dist\Compressor-setup-x64.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
+          Get-Item dist\Compressor-setup.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
       - name: Install, check, and uninstall (silently, for this user)
         shell: pwsh
         run: |
@@ -237,7 +237,7 @@ jobs:
             if (Test-Path "$dir\Compressor.exe") { throw "Uninstall left Compressor.exe behind" }
           }
           # 1. Every option ticked: each one takes effect, and uninstalling takes each one away again.
-          Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
+          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir", `
             "/TASKS=startmenu,contextmenu,autostart", "/UPDATES=monthly"
           if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed" }
@@ -253,7 +253,7 @@ jobs:
           python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu left behind'"
           if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Start at sign-in left behind" }
           # 2. The defaults: a Start menu shortcut, and nothing else optional.
-          Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
+          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"
           if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed (defaults)" }
           if (-not (Test-Path $menu)) { throw "No Start menu entry by default" }
@@ -263,7 +263,7 @@ jobs:
           if (Test-Path $menu) { throw "Uninstall left the default Start menu entry" }
           # 3. For everyone (the recommended mode; the runner is an administrator): into a protected folder.
           $all = Join-Path $env:ProgramFiles "CompressorCI"
-          Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
+          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS", "/DIR=`"$all`""   # (quoted: it has a space)
           if (-not (Test-Path "$all\Compressor.exe")) { throw "Compressor.exe wasn't installed for everyone" }
           $machine = Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
@@ -275,18 +275,18 @@ jobs:
           "Installed, checked and uninstalled cleanly (all options, the defaults, and for everyone)."
       - uses: actions/upload-artifact@v7
         with:
-          name: Compressor-windows-x64
+          name: Compressor-windows
           path: dist/Compressor
           retention-days: 30
       - uses: actions/upload-artifact@v7
         with:
-          name: Compressor-setup-x64
-          path: dist/Compressor-setup-x64.exe
+          name: Compressor-setup
+          path: dist/Compressor-setup.exe
           retention-days: 30
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            Compressor-windows-x64.zip
-            dist/Compressor-setup-x64.exe
+            Compressor-windows.zip
+            dist/Compressor-setup.exe
