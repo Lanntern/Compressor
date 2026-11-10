@@ -134,6 +134,21 @@ class AppSettingsTab(Page):
         card.lay.addWidget(setting_row("Keep running in the tray", "When folders are being watched, closing the "
                                                                    "window keeps Compressor in the tray.",
                                        self.close_to_tray))
+        if integration.IS_WINDOWS:
+            card.lay.addWidget(separator())
+            self.taskbar_progress = ToggleSwitch("Progress on the taskbar")
+            self.taskbar_progress.setChecked(self.qs.value("taskbar/progress", True, bool))
+            self.taskbar_progress.toggled.connect(lambda on: self._taskbar_setting("taskbar/progress", on))
+            card.lay.addWidget(setting_row("Progress on the taskbar", "Compressor's taskbar icon fills up while a "
+                                                                      "job runs: yellow when paused, red if "
+                                                                      "something failed.", self.taskbar_progress))
+            card.lay.addWidget(separator())
+            self.taskbar_buttons = ToggleSwitch("Pause and Stop in the taskbar preview")
+            self.taskbar_buttons.setChecked(self.qs.value("taskbar/buttons", True, bool))
+            self.taskbar_buttons.toggled.connect(lambda on: self._taskbar_setting("taskbar/buttons", on))
+            card.lay.addWidget(setting_row("Pause and Stop in the taskbar preview",
+                                           "While a job runs, hovering Compressor's taskbar icon shows Pause and "
+                                           "Stop buttons under the window's preview.", self.taskbar_buttons))
         col.addWidget(card)
 
         # power
@@ -390,6 +405,10 @@ class AppSettingsTab(Page):
 
         QGuiApplication.clipboard().setText(diagnostics())
         inform(self, "Diagnostics copied", "Paste them into an email or bug report.")
+
+    def _taskbar_setting(self, key: str, on: bool) -> None:
+        self.qs.setValue(key, on)
+        self.win.taskbar._apply()             # show or hide it at once (during a job)
 
     def _theme_changed(self) -> None:
         mode = self.theme.currentData()

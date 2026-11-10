@@ -6,7 +6,7 @@ import json
 import os
 import time
 
-from PySide6.QtCore import QPointF, QRectF, QSettings, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QDialog, QGridLayout, QHBoxLayout, QMainWindow, QMenu, QStackedWidget, QSystemTrayIcon,
@@ -163,6 +163,9 @@ class MainWindow(QMainWindow):
         self.resize(1320, 840)
         self.setAcceptDrops(True)
         self.qsettings = open_qsettings()
+        from .taskbar import Taskbar
+
+        self.taskbar = Taskbar(self, self.qsettings)     # progress and Pause/Stop on the taskbar button
         self._housekeeping()
         self._quitting = False
         self._tray_hint_shown = False
@@ -204,6 +207,9 @@ class MainWindow(QMainWindow):
         from . import support
 
         support.note_start(self.qsettings)
+        hints = QApplication.styleHints()
+        if hasattr(hints, "colorSchemeChanged"):          # Windows switched light/dark: follow it at once
+            hints.colorSchemeChanged.connect(lambda *_: self._system_theme_changed())
         self.sidebar.support_btn.clicked.connect(lambda: self.show_support())
         self.compress.hover.enabled = self.qsettings.value("hover_preview", True, bool)
         self.compress.update_summary()
@@ -224,6 +230,11 @@ class MainWindow(QMainWindow):
         self._setup_power()
         self._setup_monthly()
         self.watch.state_changed.connect(self._update_tray)
+        from .. import power
+
+        # Watching folders in the background: come back after Windows restarts the computer for updates.
+        self.watch.state_changed.connect(lambda on: power.set_restart_after_update(on))
+        power.set_restart_after_update(self.watch.watching)
         self._update_tray(self.watch.watching)
         self.history.refresh()
 
@@ -401,7 +412,9 @@ class MainWindow(QMainWindow):
         from . import support
 
         lazy = [p for p in (self.built("cleanup"), self.built("converter"), self.built("metadata")) if p is not None]
-        busy = self.compress.busy() or any(p.busy() for p in lazy)
+        from .. import power
+
+        busy = self.compress.busy() or any(p.busy() for p in lazy) or power.user_busy()
         if not support.due(self.qsettings) or busy or not self.isVisible() or self.isMinimized() \
                 or QApplication.activeModalWidget() is not None:
             return                          # (checked again the next time the History total changes)
@@ -424,6 +437,16 @@ class MainWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
 
+    def _system_theme_changed(self) -> None:
+        """Windows' light/dark setting changed: restyle now if the theme is "System" (and it really differs:
+        restyling itself can echo this signal)."""
+        if self.qsettings.value("theme", "system", str) != "system":
+            return
+        hints = QApplication.styleHints()
+        dark = hints.colorScheme() == Qt.ColorScheme.Dark
+        if dark != style.tokens().dark:
+            self.apply_theme("system")
+
     def refresh_colors(self) -> None:
         refresh_icons(self)
         self.sidebar.refresh()
@@ -440,6 +463,11 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ own title bar (Windows)
     def nativeEvent(self, event_type, message):  # noqa: N802
+        if os.name == "nt" and getattr(self, "taskbar", None) is not None:
+            from ctypes import wintypes
+
+            if self.taskbar.native_event(wintypes.MSG.from_address(int(message))):
+                return True, 0
         if getattr(self, "frame", None) is not None:
             handled, result = self.frame.native_event(message)
             if handled:
@@ -450,6 +478,8 @@ class MainWindow(QMainWindow):
         super().changeEvent(e)
         if getattr(self, "frame", None) is not None:
             self.frame.changed(e)
+        if e.type() == QEvent.ActivationChange and self.isActiveWindow() and getattr(self, "taskbar", None):
+            self.taskbar.clear_error()        # a failed job's red taskbar bar has been seen
 
     def resizeEvent(self, e) -> None:
         super().resizeEvent(e)

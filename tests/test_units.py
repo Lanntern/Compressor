@@ -458,3 +458,63 @@ def test_support_prompt_rules(tmp_path):
     support.note_start(fresh, now=0.0)
     support.note_saved(fresh, 9 * gb)
     assert not support.due(fresh, now=10 * day)              # under 10 GB
+
+
+def test_downloaded_mark_is_kept(tmp_path):
+    """Windows: a converted download keeps the "from the internet" mark (Zone.Identifier) of its original."""
+    from compressor import fileops
+
+    a, b = tmp_path / "a.png", tmp_path / "b.webp"
+    a.write_bytes(b"x")
+    b.write_bytes(b"y")
+    if os.name != "nt":
+        assert fileops.read_zone_mark(a) is None
+        fileops.write_zone_mark(b, b"[ZoneTransfer]\r\nZoneId=3\r\n")       # does nothing, raises nothing
+        return
+    assert fileops.read_zone_mark(a) is None
+    (tmp_path / "a.png:Zone.Identifier").write_bytes(b"[ZoneTransfer]\r\nZoneId=3\r\n")
+    mark = fileops.read_zone_mark(a)
+    assert mark and b"ZoneId=3" in mark
+    fileops.write_zone_mark(b, mark)
+    assert fileops.read_zone_mark(b) == mark
+    fileops.notify_shell(created=[b], updated=[a])                          # tells Explorer; never raises
+
+
+def test_encoders_run_in_a_job_that_closes_with_the_app():
+    """Windows: every encoder joins a kill-on-close job object (so a crash never leaves ffmpeg running), and
+    tools.run behaves as before (output, exit code, ToolError, timeout)."""
+    import subprocess
+    import sys
+
+    from compressor import tools
+
+    out = tools.run([sys.executable, "-c", "print('hi')"])
+    assert out.returncode == 0 and out.stdout.strip() == "hi"
+    with pytest.raises(tools.ToolError):
+        tools.run([sys.executable, "-c", "import sys; sys.exit(3)"])
+    with pytest.raises(subprocess.TimeoutExpired):
+        tools.run([sys.executable, "-c", "import time; time.sleep(30)"], timeout=1)
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"])
+    try:
+        tools._considerate(p)
+        inside = wintypes.BOOL()
+        ctypes.windll.kernel32.IsProcessInJob(wintypes.HANDLE(int(p._handle)), wintypes.HANDLE(tools._windows_job()),
+                                              ctypes.byref(inside))
+        assert inside.value
+    finally:
+        p.kill()
+        p.wait()
+
+
+def test_quiet_when_full_screen_and_restart_after_updates():
+    """Off Windows both are harmless no-ops; on Windows they answer without raising."""
+    from compressor import power
+
+    assert power.user_busy() in (True, False)
+    assert power.set_restart_after_update(True) is (os.name == "nt")
+    assert power.set_restart_after_update(False) is (os.name == "nt")

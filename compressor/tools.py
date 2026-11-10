@@ -44,6 +44,82 @@ def _popen_kwargs() -> dict:
     return kw
 
 
+# ---------------------------------------------------------------- Windows: tidy, considerate child processes
+
+_job = None              # a job object that closes every encoder when Compressor exits, even after a crash
+_job_lock = threading.Lock()
+
+
+def _windows_job():
+    """The job object (created on first use): JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, so when the last handle to it
+    closes (Compressor exits, crashes or is killed) Windows ends every encoder still in it, instead of leaving
+    ffmpeg running orphaned in the background."""
+    global _job
+    with _job_lock:
+        if _job is None:
+            import ctypes
+            from ctypes import wintypes
+
+            class Basic(ctypes.Structure):
+                _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                            ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                            ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                            ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                            ("SchedulingClass", wintypes.DWORD)]
+
+            class Extended(ctypes.Structure):
+                _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", ctypes.c_uint64 * 6),
+                            ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                            ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+            k = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            k.CreateJobObjectW.restype = wintypes.HANDLE
+            job = k.CreateJobObjectW(None, None)
+            if not job:
+                _job = 0
+                return 0
+            info = Extended()
+            info.BasicLimitInformation.LimitFlags = 0x2000 | 0x800   # KILL_ON_JOB_CLOSE | BREAKAWAY_OK
+            ok = k.SetInformationJobObject(wintypes.HANDLE(job), 9, ctypes.byref(info), ctypes.sizeof(info))
+            _job = job if ok else 0
+        return _job
+
+
+def _considerate(proc: subprocess.Popen) -> None:
+    """Windows: put a just-started encoder in the job object, and in low-priority mode also give it low disk
+    and memory priority (so the computer stays responsive while it works), plus Windows' efficiency mode while
+    Compressor runs hidden in the tray (power.set_efficiency_mode). Best effort: never stops an encode."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        handle = wintypes.HANDLE(int(proc._handle))  # type: ignore[attr-defined]
+        k = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        job = _windows_job()
+        if job:
+            k.AssignProcessToJobObject(wintypes.HANDLE(job), handle)
+        if not LOW_PRIORITY:
+            return
+        low = wintypes.ULONG(2)                                              # MEMORY_PRIORITY_LOW
+        k.SetProcessInformation(handle, 0, ctypes.byref(low), ctypes.sizeof(low))   # ProcessMemoryPriority
+        io_low = wintypes.ULONG(1)                                           # IoPriorityLow
+        ctypes.windll.ntdll.NtSetInformationProcess(  # type: ignore[attr-defined]
+            handle, 33, ctypes.byref(io_low), ctypes.sizeof(io_low))         # ProcessIoPriority
+        from . import power
+
+        if power.efficiency_mode():
+            class Throttle(ctypes.Structure):
+                _fields_ = [("Version", wintypes.ULONG), ("ControlMask", wintypes.ULONG),
+                            ("StateMask", wintypes.ULONG)]
+
+            eco = Throttle(1, 0x1, 0x1)                     # PROCESS_POWER_THROTTLING_EXECUTION_SPEED: on
+            k.SetProcessInformation(handle, 4, ctypes.byref(eco), ctypes.sizeof(eco))   # ProcessPowerThrottling
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _nice() -> None:  # pragma: no cover - runs in the child
     try:
         os.nice(10)
@@ -160,17 +236,26 @@ def run(
     check: bool = True,
     text: bool = True,
 ) -> subprocess.CompletedProcess:
-    proc = subprocess.run(
-        [str(a) for a in args],
+    cmd = [str(a) for a in args]
+    with subprocess.Popen(
+        cmd,
         cwd=cwd,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=text,
         encoding="utf-8" if text else None,
         errors="replace" if text else None,
-        timeout=timeout,
         stdin=subprocess.DEVNULL,
         **_popen_kwargs(),
-    )
+    ) as p:
+        _considerate(p)
+        try:
+            out, err = p.communicate(timeout=timeout)
+        except BaseException:                       # (timeout, Ctrl+C: as subprocess.run does)
+            p.kill()
+            p.communicate()
+            raise
+    proc = subprocess.CompletedProcess(cmd, p.returncode, out, err)
     if check and proc.returncode != 0:
         stderr = proc.stderr if text else proc.stderr.decode("utf-8", "replace")
         raise ToolError([str(a) for a in args], proc.returncode, stderr)
@@ -195,6 +280,7 @@ def run_ffmpeg_progress(
             stdin=subprocess.DEVNULL,
             **_popen_kwargs(),
         )
+        _considerate(proc)
         cancelled = False
         try:
             assert proc.stdout is not None

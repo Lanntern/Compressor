@@ -259,6 +259,38 @@ def test_support_link_and_one_time_prompt(win):
     qs.remove(support.FIRST_SEEN)
 
 
+def test_taskbar_mirrors_the_job(win):
+    """The taskbar button follows a job panel: moving, paused, finished or failed; its Pause and Stop buttons
+    press the panel's own. On Windows the real taskbar calls must succeed too."""
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from compressor.engine import DONE, FAILED
+    from compressor.gui import taskbar as tbmod
+
+    tb, panel = win.taskbar, win.compress.job_status
+    panel.start(2, 2000)
+    assert tb._jobs[id(panel)][1] == "indeterminate" and tb.active_panel() is panel
+    tb.clicked(tbmod.PAUSE_ID)                                    # the Pause button in the taskbar preview
+    assert panel.pause_btn.isChecked() and tb._jobs[id(panel)][1] == "paused"
+    tb.clicked(tbmod.PAUSE_ID)
+    assert not panel.pause_btn.isChecked()
+    entry = SimpleNamespace(path=Path("a.jpg"), size=1000)
+    ok = SimpleNamespace(entry=entry, status=DONE, output=None, message="", step="", new_size=500, saved=500)
+    panel.finish([ok])
+    assert id(panel) not in tb._jobs and tb.active_panel() is None
+    panel.start(1, 1000)
+    bad = SimpleNamespace(entry=entry, status=FAILED, output=None, message="boom", step="Encoding", new_size=0,
+                          saved=0)
+    panel.finish([bad])
+    assert tb._jobs[id(panel)][1] == "error"                      # red until the window is looked at
+    tb.clear_error()
+    assert not tb._jobs
+    if os.name == "nt":
+        assert tb._list is not None and not tb._failed            # ITaskbarList3 answered
+    panel.hide()
+
+
 def test_tray_menu(win):
     if win.tray is None:
         pytest.skip("no system tray here")

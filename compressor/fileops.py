@@ -211,6 +211,54 @@ def move_to_trash(path: Path, size: int | None = None) -> None:
         send2trash(str(path))
 
 
+def read_zone_mark(path: Path) -> bytes | None:
+    """Windows: the "downloaded from the internet" mark on ``path`` (its Zone.Identifier stream), or None."""
+    if not _IS_WINDOWS:
+        return None
+    try:
+        with open(f"{path}:Zone.Identifier", "rb") as f:
+            return f.read(64 * 1024)
+    except OSError:
+        return None                             # no mark (or not NTFS)
+
+
+def write_zone_mark(path: Path, mark: bytes | None) -> None:
+    """Give ``path`` a mark read by read_zone_mark, so SmartScreen and Office's Protected View treat a converted
+    download the same as the original."""
+    if not mark or not _IS_WINDOWS:
+        return
+    try:
+        with open(f"{path}:Zone.Identifier", "wb") as f:
+            f.write(mark)
+    except OSError:
+        pass
+
+
+_SHCNE_CREATE, _SHCNE_DELETE, _SHCNE_UPDATEITEM, _SHCNE_UPDATEDIR = 0x2, 0x4, 0x2000, 0x1000
+_SHCNF_PATHW, _SHCNF_FLUSHNOWAIT = 0x5, 0x3000
+
+
+def notify_shell(created=(), updated=(), deleted=()) -> None:
+    """Windows: tell Explorer which files changed, so open windows show new thumbnails and icons straight away
+    instead of stale ones until F5 (Explorer caches thumbnails by name, and a file replaced under the same name
+    often keeps its old one)."""
+    if not _IS_WINDOWS:
+        return
+    try:
+        import ctypes
+
+        shell32 = ctypes.windll.shell32  # type: ignore[attr-defined]
+        folders = set()
+        for event, paths in ((_SHCNE_CREATE, created), (_SHCNE_UPDATEITEM, updated), (_SHCNE_DELETE, deleted)):
+            for p in paths:
+                shell32.SHChangeNotify(event, _SHCNF_PATHW | _SHCNF_FLUSHNOWAIT, ctypes.c_wchar_p(str(p)), None)
+                folders.add(str(Path(p).parent))
+        for d in folders:
+            shell32.SHChangeNotify(_SHCNE_UPDATEDIR, _SHCNF_PATHW | _SHCNF_FLUSHNOWAIT, ctypes.c_wchar_p(d), None)
+    except Exception:  # noqa: BLE001 - cosmetic: never fails a job
+        pass
+
+
 def atomic_write_text(path: Path, text: str) -> None:
     """Replace ``path`` with ``text`` so that a crash or power cut leaves either the old file or the new one,
     never half of one: written to a temporary file beside it, flushed to disk, then renamed over it."""

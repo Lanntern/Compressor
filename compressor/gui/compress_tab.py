@@ -21,6 +21,7 @@ from .file_model import (
     C_CHECK, C_CREATED, C_EST, C_FOLDER, C_INFO, C_MODIFIED, C_NAME, C_SIZE, C_STATUS, C_TYPE, FileFilterProxy,
     FileTableModel,
     open_in_file_manager,
+    open_in_file_manager_many,
 )
 from .preview import PreviewDialog
 from .thumbs import HoverPreviewer
@@ -744,7 +745,8 @@ class CompressTab(QWidget):
             extra.append(("Preview\tSpace", lambda: self.preview_row(idx)))
         outputs = [x.result.output for x in rows if x.result and x.result.status == DONE and x.result.output]
         if outputs:
-            extra.append(("Show Result", lambda: open_in_file_manager(str(outputs[0]))))
+            extra.append(("Show Result" if len(outputs) == 1 else f"Show {len(outputs)} Results",
+                          lambda: open_in_file_manager_many(outputs)))
         pickable = [x for x in rows if x.plan.convert and not (x.result and x.result.status == DONE)]
         if pickable and not self.busy():
             def check(on: bool):
