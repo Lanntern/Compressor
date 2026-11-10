@@ -15,7 +15,7 @@ Compressor runs these as separate programs; it does not link to them.
 | Tool | Licence | Binary from | Source code |
 |---|---|---|---|
 | FFmpeg, ffprobe (with x265, SVT-AV1, libopus, LAME, libvmaf and the other libraries of the build) | GPL-3.0 (this build; the libraries inside are GPL-2.0+, LGPL or BSD) | [Gyan.dev "full" shared build](https://www.gyan.dev/ffmpeg/builds/) | FFmpeg: `https://ffmpeg.org/releases/ffmpeg-<version>.tar.xz`; the build's libraries and their versions: listed on the Gyan.dev builds page and in `ffmpeg -version` |
-| cjxl, djxl, ssimulacra2 (libjxl); cjpegli (libjxl 0.11.2) | BSD-3-Clause | [libjxl releases](https://github.com/libjxl/libjxl/releases) | https://github.com/libjxl/libjxl |
+| cjxl, djxl, ssimulacra2, butteraugli_main (libjxl); cjpegli (libjxl 0.11.2) | BSD-3-Clause | [libjxl releases](https://github.com/libjxl/libjxl/releases) | https://github.com/libjxl/libjxl |
 | gifsicle | GPL-2.0 | [eternallybored.org](https://eternallybored.org/misc/gifsicle/) | `https://github.com/kohler/gifsicle/archive/refs/tags/v<version>.tar.gz` |
 | Pandoc (downloaded from its own release page when you first convert a document; not shipped) | GPL-2.0-or-later | [Pandoc releases](https://github.com/jgm/pandoc/releases) | https://github.com/jgm/pandoc |
 

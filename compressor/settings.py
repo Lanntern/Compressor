@@ -49,6 +49,12 @@ class Settings:
     video_max_fps: int = 0           # 0 = keep; else cap (e.g. 60 / 30)
     video_fix_cadence: bool = True   # drop frames that were only repeated to pad the frame rate (24 -> 30 fps)
     video_crop_bars: bool = False    # remove black bars (letterboxing) found in the picture
+    video_grain: str = "auto"        # AV1 film-grain synthesis: auto (grainy videos: grain removed, re-created on
+    #                                  playback, far smaller) | off
+    video_chunked: bool = True       # processor encodes: scene by scene, several parts at once (faster; Smart quality
+    #                                  per scene; an interrupted video carries on where it stopped)
+    video_metric: str = "auto"       # how Smart quality measures videos: auto (VMAF) | vmaf | ssimulacra2 | xpsnr |
+    #                                  butteraugli
     audio_bitrate: int = 0           # 0 = copy audio as-is; else kbps (AAC for MP4, Opus for MKV/WebM)
     video_tracks: str = "all"        # all | mine (audio and subtitle tracks only in my languages + the main soundtrack)
     languages: str = ""              # my languages, ISO 639-1 comma list ("sv,en"); "" = from this computer
@@ -149,6 +155,8 @@ class Settings:
         self.video_encoder = pick(self.video_encoder, VIDEO_ENCODERS, "auto")
         self.video_quality = pick(self.video_quality, VIDEO_QUALITIES, "balanced")
         self.video_tracks = pick(self.video_tracks, VIDEO_TRACKS, "all")
+        self.video_grain = pick(self.video_grain, ("auto", "off"), "auto")
+        self.video_metric = pick(self.video_metric, ("auto", "vmaf", "ssimulacra2", "xpsnr", "butteraugli"), "auto")
         self.documents = pick(self.documents, DOCUMENT_MODES, "lossless")
         self.languages = ",".join(x for x in (p.strip() for p in str(self.languages or "").split(",")) if x)
         self.image_quality = max(1, min(100, int(self.image_quality)))

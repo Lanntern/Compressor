@@ -43,6 +43,12 @@ def _add_settings_args(p: argparse.ArgumentParser) -> None:
                    help="limit video resolution (short side, e.g. 1080); 0 = keep")
     g.add_argument("--max-fps", type=int, default=0, help="cap the video frame rate; 0 = keep")
     g.add_argument("--audio-bitrate", type=int, default=0, metavar="KBPS", help="re-encode audio; 0 = copy")
+    g.add_argument("--no-film-grain", action="store_true",
+                   help="AV1: don't store grainy videos without their grain (re-created on playback)")
+    g.add_argument("--whole", action="store_true",
+                   help="encode videos as a whole, not scene by scene (no parts side by side, no carrying on)")
+    g.add_argument("--video-metric", choices=("auto", "vmaf", "ssimulacra2", "xpsnr", "butteraugli"),
+                   default="auto", help="how Smart quality measures videos")
     g = p.add_argument_group("music and audio")
     g.add_argument("--audio-lossless", choices=AUDIO_LOSSLESS_MODES, default="flac",
                    help="WAV/AIFF/FLAC/ALAC/APE: flac (lossless, verified), lossy (--audio-format) or keep")
@@ -98,7 +104,8 @@ def _settings(a: argparse.Namespace) -> Settings:
         smart_quality=bool(a.smart), smart_target=a.smart or "identical",
         audio_lossless=a.audio_lossless, audio_lossy=a.audio_lossy, audio_format=a.audio_format,
         audio_quality=a.audio_quality, audio_mono=not a.keep_stereo, audio_cd_quality=a.cd_quality,
-        min_audio_kb=a.min_audio_kb,
+        min_audio_kb=a.min_audio_kb, video_grain="off" if a.no_film_grain else "auto",
+        video_chunked=not a.whole, video_metric=a.video_metric,
     )
     if a.resize_long_edge:
         s.resize_mode, s.resize_long_edge = "long_edge", a.resize_long_edge

@@ -19,9 +19,9 @@ from collections.abc import Callable, Iterator, Sequence
 from functools import lru_cache
 from pathlib import Path
 
-TOOL_NAMES = ("ffmpeg", "ffprobe", "cjxl", "djxl", "cjpegli", "gifsicle", "ssimulacra2")
+TOOL_NAMES = ("ffmpeg", "ffprobe", "cjxl", "djxl", "cjpegli", "gifsicle", "ssimulacra2", "butteraugli_main")
 # Optional: cjpegli (better lossy JPEG; else Pillow + mozjpeg), ssimulacra2 (Smart quality; else SSIM).
-OPTIONAL_TOOLS = ("cjpegli", "ssimulacra2")
+OPTIONAL_TOOLS = ("cjpegli", "ssimulacra2", "butteraugli_main")
 
 # Set by the engine from Settings.low_priority.
 LOW_PRIORITY = False

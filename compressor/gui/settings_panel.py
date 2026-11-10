@@ -303,6 +303,26 @@ class SettingsPanel(QWidget):
                                    "the encoder stops spending space on them. Only bars that stay black through "
                                    "the whole video are removed.")
         f.addRow(self.video_crop)
+        self.video_grain = QCheckBox("Re-create film grain")
+        self.video_grain.setToolTip("AV1 on the processor: grainy videos (film, low light) are stored without their "
+                                    "grain, and similar grain is added back when they play. Grain takes a lot of "
+                                    "space and nobody sees the difference, so these videos get much smaller. Clean "
+                                    "videos are left as they are.")
+        f.addRow(self.video_grain)
+        self.video_chunked = QCheckBox("Encode scene by scene")
+        self.video_chunked.setToolTip("Processor encodes of videos over 90 seconds: the video is split at scene "
+                                      "changes and the parts encoded side by side (faster on many-core "
+                                      "processors). With Smart quality each scene gets the quality it needs. A "
+                                      "video that's stopped or interrupted carries on where it was next time.")
+        f.addRow(self.video_chunked)
+        from .. import quality as _quality
+
+        self.video_metric = _combo([(_quality.VIDEO_METRIC_LABELS[k], k) for k in _quality.VIDEO_METRICS],
+                                   "How Smart quality judges videos. VMAF (automatic) is made for video; "
+                                   "SSIMULACRA2 and Butteraugli judge sharp detail, XPSNR is quick. One that isn't "
+                                   "available here is replaced by VMAF.")
+        self.video_metric.setAccessibleName("Video quality measure")
+        f.addRow("Quality measure", self.video_metric)
         f.addRow(self.gpu_label)
         self.sections.append(Section("Videos", g, True))
         lay.addWidget(self.sections[-1])
@@ -493,13 +513,14 @@ class SettingsPanel(QWidget):
                   self.resize_mode, self.metadata, self.video_codec, self.video_encoder, self.video_quality,
                   self.output_mode, self.smart_target, self.video_height, self.video_fps, self.audio,
                   self.audio_lossless, self.audio_lossy, self.audio_format, self.audio_quality, self.video_jobs,
-                  self.video_tracks, self.documents)
+                  self.video_tracks, self.documents, self.video_metric)
         spins = (self.quality, self.effort, self.resize_long, self.resize_w, self.resize_h, self.resize_pct,
                  self.min_savings, self.min_savings_kb, self.min_image_kb, self.min_video_mb, self.workers,
                  self.min_audio_kb, self.video_crf)
         checks = (self.allow_delete, self.keep_structure, self.skip_programs, self.include_hidden,
                   self.low_priority, self.preserve_dates, self.require_savings, self.smart, self.audio_mono,
-                  self.audio_cd, self.video_cadence, self.fit_on, self.video_crop)
+                  self.audio_cd, self.video_cadence, self.fit_on, self.video_crop, self.video_grain,
+                  self.video_chunked)
         return ([c.currentIndexChanged for c in combos] + [s.valueChanged for s in spins]
                 + [c.toggled for c in checks] + [self.suffix.textChanged, self.output_dir.textChanged,
                                                  self.fit_mb.valueChanged])
@@ -611,6 +632,9 @@ class SettingsPanel(QWidget):
         self.audio_cd.setChecked(s.audio_cd_quality)
         self.video_cadence.setChecked(s.video_fix_cadence)
         self.video_crop.setChecked(s.video_crop_bars)
+        self.video_grain.setChecked(s.video_grain == "auto")
+        self.video_chunked.setChecked(s.video_chunked)
+        _set_combo(self.video_metric, s.video_metric)
         _set_combo(self.video_jobs, s.video_jobs)
         self.min_audio_kb.setValue(s.min_audio_kb)
         self.refresh_presets()
@@ -652,6 +676,8 @@ class SettingsPanel(QWidget):
             audio_mono=self.audio_mono.isChecked(), audio_cd_quality=self.audio_cd.isChecked(),
             min_audio_kb=self.min_audio_kb.value(), video_fix_cadence=self.video_cadence.isChecked(),
             video_crop_bars=self.video_crop.isChecked(),
+            video_grain="auto" if self.video_grain.isChecked() else "off", video_chunked=self.video_chunked.isChecked(),
+            video_metric=self.video_metric.currentData(),
             video_jobs=int(self.video_jobs.currentData()), documents=self.documents.currentData(),
         )
         s.validate()
