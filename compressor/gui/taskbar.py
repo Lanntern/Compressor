@@ -18,7 +18,7 @@ IS_WINDOWS = os.name == "nt"
 
 # ITaskbarList3
 CLSID_TaskbarList = "56fdf344-fd6d-11d0-958a-006097c9a090"
-IID_ITaskbarList3 = "ea1afb91-9e28-4b86-90e9-9e9f8a5eee6f"
+IID_ITaskbarList3 = "ea1afb91-9e28-4b86-90e9-9e9f8a5eefaf"
 _HR_INIT, _SET_VALUE, _SET_STATE, _THUMB_ADD, _THUMB_UPDATE = 3, 9, 10, 15, 16
 STATES = {"none": 0, "indeterminate": 1, "normal": 2, "error": 4, "paused": 8}
 
