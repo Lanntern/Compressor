@@ -229,3 +229,32 @@ def test_arguments_from_the_mcpb_host():
         (["D:\\A", "D:\\B"], False, 50)
     assert mcp_server.parse_args(["--keep-originals", "true", "D:\\A"]) == (["D:\\A"], True, 1000)
     assert mcp_server.parse_args(["D:\\A"]) == (["D:\\A"], False, 1000)
+
+
+def test_extension_manifest():
+    """The Claude Desktop extension's manifest follows the MCPB 0.3 schema (strict: no unknown fields), lists
+    exactly the server's tools with the same descriptions, passes every setting to the server, and links the
+    privacy policy."""
+    sys.path.insert(0, str(Path(__file__).parent.parent / "packaging"))
+    import make_mcpb
+
+    m = make_mcpb.manifest()
+    schema = json.loads((Path(__file__).parent.parent / "packaging" / "mcp" /
+                         "mcpb-manifest-v0.3.schema.json").read_text("utf-8"))
+    assert set(m) <= set(schema["properties"]) and set(schema.get("required", [])) <= set(m)
+    try:
+        import jsonschema
+    except ImportError:
+        pass
+    else:
+        errors = [e.message for e in jsonschema.Draft7Validator(schema).iter_errors(m)]
+        assert not errors, errors
+    server_tools = Server([], out=None, forbidden=[]).tools()
+    assert m["tools"] == [{"name": t["name"], "description": t["description"]} for t in server_tools]
+    passed = " ".join(m["server"]["mcp_config"]["args"]) + " " + json.dumps(m["server"]["mcp_config"]["env"])
+    assert all(f"${{user_config.{k}}}" in passed for k in m["user_config"])
+    assert m["user_config"]["allowed_directories"]["required"] and "default" not in m["user_config"]["allowed_directories"]
+    assert m["user_config"]["keep_originals"]["default"] is False
+    assert any(u.endswith("PRIVACY.md") for u in m["privacy_policies"]) and m["support"] and m["documentation"]
+    assert mcp_server.parse_args(["--keep-originals=false", "--max-files=1000", "--", "C:\\A B"]) == \
+        (["C:\\A B"], False, 1000)

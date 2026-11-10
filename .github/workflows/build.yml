@@ -257,6 +257,29 @@ jobs:
             "/DSourceDir=..\dist\Compressor" "/DIconFile=..\build\Compressor.ico" packaging\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
           Get-Item dist\Compressor-setup.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
+      - name: "Claude Desktop extension (MCP): build, and test it against the installed app"
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          New-Item -ItemType Directory -Force build\mcp | Out-Null
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && cl /nologo /O2 /MT /W4 /WX packaging\mcp\compressor-mcp.c /Fo:build\mcp\ /link advapi32.lib /OUT:build\mcp\compressor-mcp.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Building compressor-mcp.exe failed" }
+          # The installed app, found through its App Paths entry (as the extension does on people's PCs): proves the
+          # windowed app serves MCP over the pipes it's handed.
+          $dir = Join-Path $env:RUNNER_TEMP "CompressorMcp"
+          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"
+          python packaging\mcp\check_extension.py "$env:RUNNER_TEMP\mcp-check\installed" -- build\mcp\compressor-mcp.exe
+          if ($LASTEXITCODE -ne 0) { throw "The extension didn't work with the installed app" }
+          Start-Process "$dir\unins000.exe" -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+          for ($i = 0; $i -lt 60 -and (Test-Path "$dir\Compressor.exe"); $i++) { Start-Sleep 1 }
+          # The portable zip: "Compressor.exe location" set in the extension's settings.
+          $env:COMPRESSOR_EXE = (Resolve-Path dist\Compressor\Compressor.exe).Path
+          python packaging\mcp\check_extension.py "$env:RUNNER_TEMP\mcp-check\portable" -- build\mcp\compressor-mcp.exe
+          if ($LASTEXITCODE -ne 0) { throw "The extension didn't work with the portable app" }
+          Remove-Item Env:COMPRESSOR_EXE
+          python packaging\make_mcpb.py build\mcp\compressor-mcp.exe dist\Compressor.mcpb
+          python -m pytest -q tests\test_mcp.py -k manifest
       - name: Install, check, and uninstall (silently, for this user)
         shell: pwsh
         run: |
@@ -341,12 +364,17 @@ jobs:
           name: Compressor-setup
           path: dist/Compressor-setup.exe
           retention-days: 30
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Compressor-mcpb
+          path: dist/Compressor.mcpb
+          retention-days: 30
       - name: Checksums for the release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
-          Copy-Item dist/Compressor-setup.exe .
-          Get-FileHash Compressor-setup.exe, Compressor-windows.zip -Algorithm SHA256 |
+          Copy-Item dist/Compressor-setup.exe, dist/Compressor.mcpb .
+          Get-FileHash Compressor-setup.exe, Compressor-windows.zip, Compressor.mcpb -Algorithm SHA256 |
             ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
             Set-Content -Encoding ascii SHA256SUMS.txt
           Get-Content SHA256SUMS.txt
@@ -357,6 +385,7 @@ jobs:
           subject-path: |
             Compressor-setup.exe
             Compressor-windows.zip
+            Compressor.mcpb
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
         # (Pinned to a commit: a third-party action with write access. Dependabot proposes updates.)
@@ -365,4 +394,5 @@ jobs:
           files: |
             Compressor-windows.zip
             Compressor-setup.exe
+            Compressor.mcpb
             SHA256SUMS.txt
