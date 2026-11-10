@@ -87,7 +87,7 @@ def _png(img: QImage) -> bytes:
     ba = QByteArray()
     buf = QBuffer(ba)
     buf.open(QIODevice.WriteOnly)
-    img.save(buf, "PNG")
+    img.save(buf, "PNG")       # type: ignore[call-overload]  # (the stubs say bytes; PySide6 6.12 only takes str)
     return bytes(ba.data())
 
 
