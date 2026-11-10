@@ -9,7 +9,7 @@ from __future__ import annotations
 import dataclasses
 
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QSpinBox, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QSpinBox, QVBoxLayout, QWidget,
 )
 
 from .. import convert
@@ -45,6 +45,18 @@ def _combo(items, current) -> QComboBox:
         c.addItem(label, value)
     c.setCurrentIndex(max(0, c.findData(current)))
     return c
+
+
+def _name_fields(form: QFormLayout) -> None:
+    """Each field takes its row's label as its name for screen readers (dropdowns otherwise read out only their
+    current value)."""
+    for row in range(form.rowCount()):
+        label = form.itemAt(row, QFormLayout.LabelRole)
+        field = form.itemAt(row, QFormLayout.FieldRole)
+        text = label.widget().text() if label is not None and isinstance(label.widget(), QLabel) else ""
+        target = field.widget() if field is not None else None
+        if text and target is not None and not target.accessibleName():
+            target.setAccessibleName(text.replace("&", ""))
 
 
 class ConvertSettingsDialog(QDialog):
@@ -217,6 +229,7 @@ class ConvertSettingsDialog(QDialog):
                                            "smaller is thrown away.")
             form.addRow("Repack as", self.archive_target)
         lay.addStretch(1)
+        _name_fields(self.form)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Ok).setText("Apply")
         buttons.accepted.connect(self.accept)

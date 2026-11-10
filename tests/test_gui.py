@@ -1651,3 +1651,46 @@ def test_developer_settings_hidden_until_switched_on(win, monkeypatch):
     d._toggle_dev()
     assert page.dev_section.isHidden()
     d.deleteLater()
+
+
+def test_every_control_has_a_name_for_screen_readers(win):
+    """Everything Tab can reach on every page (and in About) has a name Narrator reads out, a dropdown's list and a
+    number field's text box included; symbol-only buttons ("…") say what they do, and dropdowns are named rather
+    than read out as just their current value."""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QAccessible, QFocusEvent
+    from PySide6.QtWidgets import (QAbstractButton, QAbstractSpinBox, QApplication, QComboBox, QScrollArea, QScrollBar,
+                                   QWidget)
+
+    from compressor.gui.about_dialog import AboutDialog
+    from compressor.gui.main_window import LAZY_PAGES
+
+    for name in LAZY_PAGES:
+        getattr(win, name)
+    assert win.cleanup.sections                 # (builds every Clean Up tool)
+    about = AboutDialog(win)
+    problems = []
+    for root in (win, about):
+        for w in root.findChildren(QWidget):
+            w.ensurePolished()
+        for w in root.findChildren(QWidget):          # (what Narrator sees when a list opens or a field is focused)
+            if isinstance(w, QComboBox):
+                QApplication.sendEvent(w.view(), QEvent(QEvent.Show))
+            elif isinstance(w, QAbstractSpinBox) and w.lineEdit() is not None:
+                QApplication.sendEvent(w.lineEdit(), QFocusEvent(QEvent.FocusIn))
+        for w in root.findChildren(QWidget):
+            if not (w.focusPolicy() & Qt.TabFocus) or isinstance(w, (QScrollBar, QScrollArea)):
+                continue
+            if w.objectName() == "updateLink":        # (named when it appears, with the version)
+                continue
+            iface = QAccessible.queryAccessibleInterface(w)
+            label = (iface.text(QAccessible.Name) if iface else "") or ""
+            what = f"{type(w).__name__} {w.objectName()!r} tip={w.toolTip()[:40]!r}"
+            if not label.strip():
+                problems.append("no name: " + what)
+            elif isinstance(w, QComboBox) and not w.accessibleName():
+                problems.append(f"named only by its value {label!r}: " + what)
+            elif isinstance(w, QAbstractButton) and not any(ch.isalnum() for ch in label):
+                problems.append(f"symbol only {label!r}: " + what)
+    about.deleteLater()
+    assert not problems, "\n".join(sorted(set(problems)))

@@ -143,6 +143,25 @@ def high_contrast_active() -> bool:
     return False
 
 
+def high_contrast_tokens(pal: QPalette) -> Tokens:
+    """The app's colours taken from Windows' contrast theme (the user's own choices), for everything the app
+    draws itself: icons, switches, the sidebar, charts. No colour coding of its own: success, warning and
+    danger use the theme's text colour (the words and icons still say which is which)."""
+    def c(role, group=QPalette.Active) -> str:
+        return pal.color(group, role).name().upper()
+
+    bg, fg = c(QPalette.Window), c(QPalette.WindowText)
+    hi, on_hi = c(QPalette.Highlight), c(QPalette.HighlightedText)
+    button, button_text = c(QPalette.Button), c(QPalette.ButtonText)
+    return Tokens(
+        dark=QColor(bg).lightness() < 128, window=bg, sidebar=bg, card=c(QPalette.Base), card_alt=c(QPalette.Base),
+        border=fg, separator=fg, text=fg, text2=fg, text3=c(QPalette.WindowText, QPalette.Disabled),
+        accent=hi, accent_hover=hi, accent_pressed=hi, accent_text=c(QPalette.Link), on_accent=on_hi,
+        accent_soft=hi, control=button, control_hover=button, control_border=button_text,
+        success=fg, success_soft=bg, danger=fg, danger_soft=bg, warning=fg, warning_soft=bg, neutral_soft=bg,
+        canvas=bg)
+
+
 def contrast_ratio(fg: str, bg: str) -> float:
     def lum(hex_color: str) -> float:
         c = QColor(hex_color)
@@ -698,7 +717,9 @@ def _polish_widget(obj: QWidget) -> None:
 
     * popups (dropdown lists, menus, tooltips) get rounded corners without a dark rectangle behind them;
     * dropdowns get a styled-item delegate so their rows follow the stylesheet;
-    * number fields get the same text inset as other fields.
+    * number fields get the same text inset as other fields;
+    * the parts screen readers land on inside a dropdown (its list) or a number field (its text box) carry
+      the control's own name, so Narrator says "Quality" rather than nothing.
     """
     cls = obj.metaObject().className()
     if cls not in _POLISH_CLASSES and not isinstance(obj, _POLISH_TYPES()):
@@ -708,8 +729,11 @@ def _polish_widget(obj: QWidget) -> None:
     if isinstance(obj, QComboBox):
         if type(obj.itemDelegate()).__name__ != "QStyledItemDelegate":
             obj.setItemDelegate(QStyledItemDelegate(obj))
+        obj.view().installEventFilter(_inner_names())
     elif isinstance(obj, QAbstractSpinBox):
         le = obj.findChild(QLineEdit)
+        if le is not None:
+            le.installEventFilter(_inner_names())
         css = f"background: transparent; border: none; margin: 0; padding: 0 0 0 {Space.S - 2}px;"
         if le is not None and le.styleSheet() != css:
             # Qt ignores the spin box's own padding for its text field; inset the field itself.
@@ -740,6 +764,33 @@ class _PopupFilter(QObject):
         if ev.type() == QEvent.Show:
             _native_round_corners(obj, small=obj.metaObject().className() == "QTipLabel")
         return False
+
+
+class _InnerNames(QObject):
+    """A dropdown's list and a number field's text box take their control's name when they're shown or
+    focused (names are often set after the widget is styled, so this is done when it matters)."""
+
+    @safe_filter
+    def eventFilter(self, obj, ev):  # noqa: N802
+        if ev.type() in (QEvent.Show, QEvent.FocusIn) and not obj.accessibleName():
+            from PySide6.QtWidgets import QAbstractSpinBox, QComboBox
+
+            owner = obj.parent()
+            while owner is not None and not isinstance(owner, (QComboBox, QAbstractSpinBox)):
+                owner = owner.parent()
+            if owner is not None and owner.accessibleName():
+                obj.setAccessibleName(owner.accessibleName())
+        return False
+
+
+_inner_names_obj: _InnerNames | None = None
+
+
+def _inner_names() -> _InnerNames:
+    global _inner_names_obj
+    if _inner_names_obj is None:
+        _inner_names_obj = _InnerNames()
+    return _inner_names_obj
 
 
 _popup_filter_obj: _PopupFilter | None = None
@@ -812,6 +863,7 @@ class _WrapLongTooltips(QObject):
 
 
 _tooltip_wrap: _WrapLongTooltips | None = None
+_system_palette: QPalette | None = None
 
 
 def apply_style(mode: str) -> Tokens:
@@ -838,8 +890,15 @@ def apply_style(mode: str) -> Tokens:
     accent = windows_accent() if _system_accent else None
     if accent:
         _current = with_accent(_current, accent)
+    global _system_palette
+    if _system_palette is None:
+        _system_palette = QPalette(app.palette())          # (Windows' own colours, before ours are applied)
     if high_contrast_active():
+        # The user's contrast theme wins: Windows draws the controls in its colours, and what the app draws
+        # itself (icons, switches, charts) takes the same colours.
         app.setStyleSheet("")
+        app.setPalette(_system_palette)
+        _current = high_contrast_tokens(_system_palette)
         return _current
     global _style_obj
     if _style_obj is None:

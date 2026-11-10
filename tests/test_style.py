@@ -65,3 +65,24 @@ def test_windows_accent_colours_stay_readable(accent, theme):
     assert contrast_ratio(t.on_accent, t.accent) >= 4.5
     assert contrast_ratio(t.accent_text, t.card) >= 4.5 and contrast_ratio(t.accent_text, t.window) >= 4.5
     assert t.accent_soft != t.card and t.window == base.window          # only accent colours change
+
+
+def test_high_contrast_uses_the_users_colours():
+    """In a Windows contrast theme, everything the app draws itself takes the theme's colours."""
+    from PySide6.QtGui import QColor, QPalette
+    from PySide6.QtWidgets import QApplication
+
+    from compressor.gui.style import contrast_ratio, high_contrast_tokens
+
+    QApplication.instance() or QApplication([])
+    pal = QPalette()
+    for role, colour in ((QPalette.Window, "#000000"), (QPalette.Base, "#000000"), (QPalette.WindowText, "#FFFF00"),
+                         (QPalette.Highlight, "#1AEBFF"), (QPalette.HighlightedText, "#000000"),
+                         (QPalette.Button, "#000000"), (QPalette.ButtonText, "#FFFFFF"),
+                         (QPalette.Link, "#75E9FC")):
+        pal.setColor(QPalette.Active, role, QColor(colour))
+    t = high_contrast_tokens(pal)
+    assert t.dark and t.window == "#000000" and t.text == t.text2 == "#FFFF00"
+    assert t.accent == "#1AEBFF" and t.on_accent == "#000000" and t.accent_text == "#75E9FC"
+    assert t.danger == t.success == t.text                       # no colours of the app's own
+    assert contrast_ratio(t.text, t.window) >= 7 and contrast_ratio(t.on_accent, t.accent) >= 7
