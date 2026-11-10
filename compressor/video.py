@@ -630,6 +630,13 @@ def smart_quality(src: Path, info: VideoInfo, s: Settings, encoder: str,
     try:
         ladder = SMART_STEPS[encoder]
         chosen = quality.search(ladder, attempt)
+        if chosen is None and grain:
+            # Some textures don't survive the denoising: if the target can't be reached with grain re-created,
+            # keep the grain instead (the caller sees grain 0 in the choice).
+            grain = 0
+            chosen = quality.search(ladder, attempt)
+            if chosen is not None:
+                return chosen[0], f"{quality_label(encoder)} {chosen[0]} (grain kept)"
     finally:
         remove_quietly(*samples)
     name = quality_label(encoder)
@@ -850,6 +857,9 @@ def convert_video(
     if measures_quality(s):
         steps.report("Encoding short samples to choose the quality")
         q, choice = smart_quality(src, info, s, encoder, cancel, grain)
+        if choice.endswith("(grain kept)"):
+            grain = 0
+            notes = [n for n in notes if not n.startswith("film grain")]
         notes.append(choice)
     hw = s.video_encoder != "cpu" and HW_DECODE    # ("CPU only" keeps the graphics card out of it entirely)
     try:

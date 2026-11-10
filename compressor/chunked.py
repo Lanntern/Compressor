@@ -233,40 +233,50 @@ def encode(src: Path, out: Path, info: VideoInfo, s: Settings, encoder: str, gra
                 got = sum(lengths[i] * f for i, f in progress.items())
             on_progress(min(1.0, got / max(0.001, info.duration)))
 
-    def choose(i: int) -> int:
+    def choose(i: int) -> tuple[int, int]:
+        """(quality setting, grain level) for part ``i``. A part whose target can't be reached with grain
+        re-created (some textures don't survive the denoising) is encoded with its grain kept instead."""
         if not smart:
-            return encoder_quality(s, encoder)
+            return encoder_quality(s, encoder), grain
         if str(i) in state["q"]:
-            return int(state["q"][str(i)])
+            return int(state["q"][str(i)]), int(state.get("grain", {}).get(str(i), grain))
         start, end = parts[i]
         length = lengths[i]
         probe = folder / f"probe-{i:04d}.mkv"
-
-        def attempt(q: int):
-            if stop.is_set():
-                raise tools.Cancelled()
-            try:
-                tools.run(build_args(src, probe, info, s, encoder, q, segment=(start, end - start if end else 0),
-                                     progress=False, grain=grain, threads=threads, probe=True), timeout=3600)
-                score = quality.score_video_segment(src, start, length, probe, size, crop_filter(info), metric,
-                                                    grain, subsample=4)
-            finally:
-                remove_quietly(probe)
-            return score.meets(target), score
-
         target = "identical" if s.video_quality == "identical" else s.smart_target
         ladder = SMART_STEPS[encoder]
-        chosen = quality.search(ladder, attempt)
+
+        def search(level: int):
+            def attempt(q: int):
+                if stop.is_set():
+                    raise tools.Cancelled()
+                try:
+                    tools.run(build_args(src, probe, info, s, encoder, q, segment=(start, end - start if end else 0),
+                                         progress=False, grain=level, threads=threads, probe=True), timeout=3600)
+                    score = quality.score_video_segment(src, start, length, probe, size, crop_filter(info), metric,
+                                                        level, subsample=4)
+                finally:
+                    remove_quietly(probe)
+                return score.meets(target), score
+
+            return quality.search(ladder, attempt)
+
+        level = grain
+        chosen = search(level)
+        if chosen is None and level:
+            level = 0
+            chosen = search(0)
         q = chosen[0] if chosen else ladder[0]
         with lock:
             state["q"][str(i)] = q
+            state.setdefault("grain", {})[str(i)] = level
         save()
-        return q
+        return q, level
 
     def one(i: int) -> None:
         if stop.is_set():
             raise tools.Cancelled()
-        q = choose(i)
+        q, level = choose(i)
         start, end = parts[i]
         target = folder / f"part-{i:04d}.mkv"
         tmp = folder / f"part-{i:04d}.tmp.mkv"
@@ -277,7 +287,7 @@ def encode(src: Path, out: Path, info: VideoInfo, s: Settings, encoder: str, gra
             report()
 
         tools.run_ffmpeg_progress(build_args(src, tmp, info, s, encoder, q, segment=(start, end - start if end else 0),
-                                             grain=grain, threads=threads), lengths[i], moved, stop)
+                                             grain=level, threads=threads), lengths[i], moved, stop)
         got = probe_video(tmp)
         if got is None or abs(got.duration - lengths[i]) > 1.5 / info.fps:
             remove_quietly(tmp)
@@ -333,6 +343,9 @@ def encode(src: Path, out: Path, info: VideoInfo, s: Settings, encoder: str, gra
     steps.report("Adding the soundtrack, subtitles and chapters")
     tools.run_ffmpeg_progress(build_args(src, out, info, s, encoder, video_from=joined), info.duration, None, cancel)
     notes = [f"encoded scene by scene in {len(parts)} parts" + (f", {resumed} carried over" if resumed else "")]
+    kept = sum(1 for v in state.get("grain", {}).values() if grain and not int(v))
+    if kept:
+        notes.append(f"grain kept in {kept} part{'s' if kept != 1 else ''} (needed for the quality target)")
     if smart and state["q"]:
         qs = [int(v) for v in state["q"].values()]
         from .video import quality_label
