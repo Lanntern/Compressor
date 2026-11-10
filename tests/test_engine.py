@@ -279,3 +279,44 @@ def test_a_file_you_pick_ignores_the_size_minimums(tmp_path):
     assert not plan_entry(found, s).convert and plan_entry(found, s).reason.startswith("Smaller than")
     watched = scan([clip], s).entries[0]                 # Watch Folders passes new files one by one: minimums apply
     assert not plan_entry(watched, s).convert
+
+
+def test_same_named_results_finishing_together_get_their_own_names(tmp_path, monkeypatch):
+    """photo.png and photo.gif both become photo.webp: when they finish at the same moment, each gets its own
+    free name (choosing it and putting the file there is one step), and nothing is overwritten."""
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    from compressor import engine
+    from compressor.settings import Settings
+
+    s = Settings(output_mode="beside")
+    s.validate()
+    real = engine.output_path
+
+    def slow(entry, plan, settings):
+        dest = real(entry, plan, settings)
+        time.sleep(0.3)                     # the other file finishes meanwhile
+        return dest
+
+    monkeypatch.setattr(engine, "output_path", slow)
+    results = []
+
+    def finish(name: str, data: bytes) -> None:
+        src = tmp_path / name
+        src.write_bytes(b"original")
+        tmp = tmp_path / f"{name}.tmp"
+        tmp.write_bytes(data)
+        entry = SimpleNamespace(path=src, kind="png", root=None, size=8)
+        plan = SimpleNamespace(dest=None, target_ext=".webp")
+        results.append(engine._place(entry, src.stat(), tmp, lambda: engine.output_path(entry, plan, s), s, None,
+                                     "test"))
+
+    threads = [threading.Thread(target=finish, args=(n, n.encode())) for n in ("photo.png", "photo.gif")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(p.name for p in results) == ["photo (1).webp", "photo.webp"]
+    assert {p.read_bytes() for p in results} == {b"photo.png", b"photo.gif"}

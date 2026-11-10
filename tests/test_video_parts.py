@@ -13,10 +13,12 @@ from compressor.settings import Settings
 from tests.conftest import have
 
 pytestmark = pytest.mark.skipif(not have("ffmpeg", "ffprobe"), reason="needs ffmpeg")
+FFMPEG = tools.find_tool("ffmpeg") or "ffmpeg"     # (on Windows: the app's tools folder, not PATH)
+FFPROBE = tools.find_tool("ffprobe") or "ffprobe"
 
 
 def _frames(path: Path) -> int:
-    out = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
+    out = subprocess.run([FFPROBE, "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
                           "stream=nb_read_frames", "-of", "csv=p=0", str(path)], capture_output=True, text=True)
     return int(out.stdout.strip())
 
@@ -25,7 +27,7 @@ def _frames(path: Path) -> int:
 def scenes(tmp_path: Path) -> Path:
     """12 s, 25 fps, 320x180: four 3-second scenes that look nothing alike, with sound."""
     src = tmp_path / "scenes.mp4"
-    subprocess.run(["ffmpeg", "-v", "error", "-y",
+    subprocess.run([FFMPEG, "-v", "error", "-y",
                     "-f", "lavfi", "-i", "testsrc2=s=320x180:r=25:d=3",
                     "-f", "lavfi", "-i", "mandelbrot=s=320x180:r=25",
                     "-f", "lavfi", "-i", "smptebars=s=320x180:r=25:d=3",
@@ -93,7 +95,7 @@ def test_scene_by_scene_is_frame_exact_and_carries_on(scenes, small_parts, monke
     assert _frames(out) == _frames(scenes) == 300
     assert len(probe_video(out).audio_streams()) == 1
     stamps = sorted(float(t) for t in subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0",
+        [FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0",
          str(out)], capture_output=True, text=True).stdout.split())
     assert {round(b - a, 3) for a, b in zip(stamps, stamps[1:], strict=False)} == {0.04}   # no gap or overlap
     assert not folder.exists()                                     # parts removed once the video is done
@@ -123,7 +125,7 @@ def test_grain_is_measured(tmp_path):
     levels = []
     for strength in (0, 5, 12):
         p = tmp_path / f"g{strength}.mp4"
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+        subprocess.run([FFMPEG, "-v", "error", "-y", "-f", "lavfi", "-i",
                         f"color=c=0x707070:s=640x360:d=2,drawbox=x=100:y=80:w=200:h=120:color=0xc0a080:t=fill,"
                         f"noise=alls={strength}:allf=t", "-c:v", "libx264", "-crf", "2", "-pix_fmt", "yuv420p",
                         str(p)], check=True)
@@ -156,7 +158,7 @@ def test_frame_measures_compare_the_same_moments(scenes):
     same = quality.score_video_output(scenes, scenes, 1.0, 2.0, size, metric="Butteraugli")
     assert same.value < 0.05
     blurred = scenes.with_name("blurred.mp4")
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(scenes), "-vf", "gblur=sigma=3", "-c:a", "copy",
+    subprocess.run([FFMPEG, "-v", "error", "-y", "-i", str(scenes), "-vf", "gblur=sigma=3", "-c:a", "copy",
                     str(blurred)], check=True)
     assert quality.score_video_output(scenes, blurred, 1.0, 2.0, size, metric="Butteraugli").value > 2
     if quality.image_metric() == "SSIMULACRA2":
@@ -164,7 +166,7 @@ def test_frame_measures_compare_the_same_moments(scenes):
     # A result whose picture starts a little later in its file (room made for an audio encoder's lead-in) is
     # still compared frame for frame, not with the neighbouring frame.
     late = scenes.with_name("late.mkv")
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-itsoffset", "0.023", "-i", str(scenes), "-i", str(scenes),
+    subprocess.run([FFMPEG, "-v", "error", "-y", "-itsoffset", "0.023", "-i", str(scenes), "-i", str(scenes),
                     "-map", "0:v", "-map", "1:a", "-c", "copy", str(late)], check=True)
     assert quality.score_video_output(scenes, late, 1.0, 2.0, size, metric="Butteraugli").value < 0.05
 

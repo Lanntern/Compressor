@@ -139,6 +139,16 @@ def output_path(entry: FileEntry, plan: Plan, s: Settings) -> Path:
     return _unique(target)
 
 
+_PLACE_LOCK = threading.Lock()
+
+
+def _place(entry: FileEntry, st: os.stat_result, tmp: Path, choose: Callable[[], Path], *args) -> Path:
+    """Choose the output's name and put it there as one step: files finishing at the same moment (photo.png and
+    photo.gif both becoming photo.webp) would otherwise both pick the same free name."""
+    with _PLACE_LOCK:
+        return place_output(entry, st, tmp, choose(), *args)
+
+
 def place_output(entry: FileEntry, st: os.stat_result, tmp: Path, dest: Path, s: Settings,
                  writer: journal.RunWriter | None, method: str, reversible: bool = False, sha: str = "") -> Path:
     """Move a finished temp file into place according to the output mode, and journal it.
@@ -266,8 +276,8 @@ def process_file(
                               if new_size < st.st_size else "Result would be larger; original kept")
 
         sha = _sha256(src) if plan.reversible else ""
-        dest = place_output(entry, st, tmp, output_path(entry, plan, s), s, writer,
-                            _method(entry, plan, encoder), plan.reversible, sha)
+        dest = _place(entry, st, tmp, lambda: output_path(entry, plan, s), s, writer,
+                      _method(entry, plan, encoder), plan.reversible, sha)
         tmp = None
         return FileResult(entry, DONE, f"Saved {saved_pct:.0f}%" + (f" · {plan.outcome}" if plan.outcome else ""),
                           dest, new_size)
@@ -350,9 +360,9 @@ def process_convert(entry: FileEntry, plan: Plan, s: Settings, writer, cancel=No
             new_size = _size(tmp)
             if (opts.only_if_smaller or entry.kind == ARCHIVE) and new_size >= st.st_size and not tmp.is_dir():
                 return FileResult(entry, SKIPPED, f"Result would be {human(new_size)} (not smaller); original kept")
-            dest = place_output(entry, st, tmp, folder_output_path(entry, s) if tmp.is_dir() else
-                                output_path(entry, plan, s), s, writer,
-                                f"{KIND_LABEL.get(entry.kind, entry.kind)} → {plan.reason}")
+            made = tmp
+            dest = _place(entry, st, tmp, lambda: folder_output_path(entry, s) if made.is_dir() else
+                          output_path(entry, plan, s), s, writer, f"{KIND_LABEL.get(entry.kind, entry.kind)} → {plan.reason}")
             tmp = None
             delta = new_size - st.st_size
             change = f"{'+' if delta > 0 else '−'}{human(abs(delta))}"
@@ -393,8 +403,8 @@ def process_metadata(entry: FileEntry, plan: Plan, s: Settings, writer, cancel=N
         tmp = None
         try:
             tmp = metaclean.clean(entry.path, policy, entry.video)
-            dest = place_output(entry, st, tmp, output_path(entry, plan, s), s, writer,
-                                f"Metadata removed: {metaclean.POLICY_LABELS.get(policy, policy).lower()}")
+            dest = _place(entry, st, tmp, lambda: output_path(entry, plan, s), s, writer,
+                          f"Metadata removed: {metaclean.POLICY_LABELS.get(policy, policy).lower()}")
             tmp = None
             return FileResult(entry, DONE, "Metadata removed", dest, dest.stat().st_size)
         finally:
