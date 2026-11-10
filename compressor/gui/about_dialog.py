@@ -10,7 +10,8 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QAbstractItemView, QDialog, QFrame, QHBoxLayout, QLabel, QTreeWidget, QVBoxLayout
 
 from .. import APP_NAME, __version__
-from ..about import CREDITS, DONATE_URL, LICENCE_NOTE, PRIVACY
+from ..about import CREDITS, DONATE_URL, LICENCE_NOTE, PRIVACY, PRIVACY_URL
+from .devmode import CLICKS
 from .filelist import SortItem, make_sortable
 from .style import Size, Space, Type
 from .widgets import button, text
@@ -43,6 +44,35 @@ def version_for(name: str, v: dict[str, str]) -> tuple[str, str]:
 
 
 class AboutDialog(QDialog):
+    def eventFilter(self, obj, e) -> bool:
+        from PySide6.QtCore import QEvent
+
+        if obj is getattr(self, "_version", None) and e.type() == QEvent.MouseButtonRelease:
+            self._clicks += 1
+            if self._clicks == CLICKS:
+                self._clicks = 0
+                self._toggle_dev()
+        return super().eventFilter(obj, e)
+
+    def _toggle_dev(self) -> None:
+        from PySide6.QtWidgets import QToolTip
+
+        from . import devmode
+        from .main_window import open_qsettings
+
+        qs = open_qsettings()
+        on = devmode.toggle(qs)
+        devmode.apply(qs)
+        win = self.parent()
+        page = win.built("app_settings") if hasattr(win, "built") else None
+        if page is not None:
+            page.update_dev_section()
+        if hasattr(win, "refresh_colors"):
+            win.refresh_colors()
+        QToolTip.showText(self._version.mapToGlobal(self._version.rect().bottomLeft()),
+                          "Developer settings are on (Settings, at the bottom)." if on else
+                          "Developer settings are hidden.", self._version)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"About {APP_NAME}")
@@ -65,9 +95,17 @@ class AboutDialog(QDialog):
         titles.addWidget(text(APP_NAME, Type.TITLE2, bold=True))
         from PySide6.QtCore import qVersion
 
-        titles.addWidget(text(f"Version {__version__} · Python {platform.python_version()} · Qt {qVersion()}",
-                              Type.FOOTNOTE, secondary=True))
+        version = text(f"Version {__version__} · Python {platform.python_version()} · Qt {qVersion()}",
+                       Type.FOOTNOTE, secondary=True)
+        version.installEventFilter(self)      # (clicked seven times: developer settings, see devmode)
+        self._version, self._clicks = version, 0
+        titles.addWidget(version)
         titles.addWidget(text(PRIVACY, Type.BODY, wrap=True))
+        policy = QLabel(f'<a href="{PRIVACY_URL}">Read the full privacy policy</a>')
+        policy.setOpenExternalLinks(True)
+        policy.setTextInteractionFlags(Qt.TextBrowserInteraction)        # (Tab reaches it; Enter opens it)
+        policy.setToolTip("Everything Compressor keeps and when it goes online (opens GitHub)")
+        titles.addWidget(policy)
         head.addLayout(titles, 1)
         lay.addLayout(head)
 

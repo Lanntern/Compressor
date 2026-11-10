@@ -345,6 +345,54 @@ class FileFilterProxy(QSortFilterProxyModel):
         return r.plan.convert or r.result is not None
 
 
+def open_in_file_manager_many(paths) -> None:
+    """Show several files in the file manager with all of them selected: on Windows one Explorer window per
+    folder (at most 5), the way Explorer itself does it; elsewhere the first one's folder."""
+    paths = [os.path.normpath(str(p)) for p in paths]
+    if not paths:
+        return
+    if os.name != "nt" or len(paths) == 1 or not _explorer_select(paths):
+        open_in_file_manager(paths[0])
+
+
+def _explorer_select(paths: list[str]) -> bool:
+    """SHOpenFolderAndSelectItems for each folder of ``paths``. False if Windows refused (the caller falls back)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        shell32, ole32 = ctypes.windll.shell32, ctypes.windll.ole32  # type: ignore[attr-defined]
+        shell32.ILFindLastID.restype = ctypes.c_void_p
+        shell32.ILFindLastID.argtypes = [ctypes.c_void_p]
+        ole32.CoInitializeEx(None, 2)
+
+        def pidl(path: str) -> ctypes.c_void_p | None:
+            out = ctypes.c_void_p()
+            hr = shell32.SHParseDisplayName(ctypes.c_wchar_p(path), None, ctypes.byref(out), 0, None)
+            return out if hr == 0 and out.value else None
+
+        groups: dict[str, list[str]] = {}
+        for p in paths:
+            groups.setdefault(os.path.dirname(p), []).append(p)
+        opened = False
+        for folder, items in list(groups.items())[:5]:
+            fp = pidl(folder)
+            if fp is None:
+                continue
+            children = [c for c in (pidl(p) for p in items) if c is not None]
+            try:
+                if children:
+                    arr = (ctypes.c_void_p * len(children))(*[shell32.ILFindLastID(c) for c in children])
+                    opened |= shell32.SHOpenFolderAndSelectItems(fp, wintypes.UINT(len(children)), arr, 0) == 0
+            finally:
+                for c in children:
+                    ole32.CoTaskMemFree(c)
+                ole32.CoTaskMemFree(fp)
+        return opened
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def open_in_file_manager(path: str) -> None:
     import subprocess
     import sys

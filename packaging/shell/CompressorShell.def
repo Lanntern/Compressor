@@ -1,0 +1,4 @@
+LIBRARY CompressorShell
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE

@@ -163,6 +163,7 @@ class HistoryTab(Page):
         self.tile_runs.set(f"{len(self.runs):,}")
         self.tile_files.set(f"{files:,}")
         self.win.sidebar.set_saved(human(total_saved) if total_saved > 0 else None)
+        self.win.note_saved_total(total_saved)
         self._stale = True
         if self.isVisible():
             self._build()

@@ -48,6 +48,7 @@ class FileEntry:
     audio: AudioInfo | None = None
     live_pair: bool = False         # photo or video half of an Apple Live Photo (same name, .HEIC/.JPG + .MOV)
     real_ext: str = ""              # its contents are another type than its name says (".png" for a PNG named .jpg)
+    picked: bool = False            # chosen by itself (dropped or picked, not found in a folder): no size minimums
 
     @property
     def info(self):
@@ -97,8 +98,10 @@ def scan(
     progress: ProgressFn | None = None,
     cancel: threading.Event | None = None,
     probe: bool = True,
+    picked: bool = False,
 ) -> ScanResult:
-    """Scan folders and/or individual files. Files given directly are always included."""
+    """Scan folders and/or individual files. Files given directly are always included; with ``picked`` (someone
+    chose them, rather than Watch Folders finding them) the size minimums don't apply to them either."""
     if isinstance(paths, (str, os.PathLike)):
         paths = [Path(paths)]
     roots = [Path(os.path.abspath(p)) for p in paths]
@@ -108,6 +111,8 @@ def scan(
     for root in roots:
         if root.is_file():
             _add_file(result, root, None, seen, settings)
+            if picked and result.entries and result.entries[-1].path == root:
+                result.entries[-1].picked = True
         elif root.is_dir():
             listing = _fast_listing(root, progress, cancel)
             if listing is not None:

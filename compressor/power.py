@@ -180,6 +180,11 @@ def background():
 _efficiency = False
 
 
+def efficiency_mode() -> bool:
+    """Whether the app is in Windows' efficiency mode right now (hidden in the tray, only watching)."""
+    return bool(_efficiency)
+
+
 def set_efficiency_mode(on: bool) -> bool:
     """Windows 11's efficiency mode for the whole app (EcoQoS: efficient cores, lower clock; idle priority),
     for while it runs hidden in the tray with nothing you started. Returns whether it changed."""
@@ -200,4 +205,39 @@ def set_efficiency_mode(on: bool) -> bool:
         _efficiency = on
         return True
     except Exception:  # noqa: BLE001 - older Windows: nothing to do
+        return False
+
+
+def user_busy() -> bool:
+    """Windows: is something full-screen running (a game, a video, a presentation) or presentation mode on? Then
+    background work waits and nothing pops up. False elsewhere, or when it can't be told."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        state = ctypes.c_int()
+        if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) != 0:  # type: ignore[attr-defined]
+            return False
+        # QUNS_BUSY (a full-screen app), QUNS_RUNNING_D3D_FULL_SCREEN (a game), QUNS_PRESENTATION_MODE
+        return state.value in (2, 3, 4)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def set_restart_after_update(on: bool, args: str = "--background") -> bool:
+    """Windows: if Windows restarts the computer (for updates) while this is on, start Compressor again with
+    ``args`` when you sign back in (only for people who have "Restart apps" turned on in Windows' sign-in
+    options). Not after a crash or hang. Returns whether Windows accepted it."""
+    if os.name != "nt":
+        return False
+    try:
+        import ctypes
+
+        k = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        if not on:
+            return k.UnregisterApplicationRestart() == 0
+        # RESTART_NO_CRASH | RESTART_NO_HANG | RESTART_NO_PATCH: only a reboot brings it back
+        return k.RegisterApplicationRestart(ctypes.c_wchar_p(args), 1 | 2 | 4) == 0
+    except Exception:  # noqa: BLE001
         return False

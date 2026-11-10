@@ -21,6 +21,7 @@ from .file_model import (
     C_CHECK, C_CREATED, C_EST, C_FOLDER, C_INFO, C_MODIFIED, C_NAME, C_SIZE, C_STATUS, C_TYPE, FileFilterProxy,
     FileTableModel,
     open_in_file_manager,
+    open_in_file_manager_many,
 )
 from .preview import PreviewDialog
 from .thumbs import HoverPreviewer
@@ -672,7 +673,8 @@ class CompressTab(QWidget):
                     else f"The original{'s were' if many else ' was'} kept.")
         self.job_status.finish(results, note, replaced=self._job_settings.output_mode == "replace")
         if not self.window().isActiveWindow():      # finished in the background: say so
-            self.win.tray_message(self.job_status.title.text())
+            self.win.tray_message(self.job_status.title.text(), actions=[("Show in History", "history")],
+                                  launch="compress")
             QApplication.alert(self.window())
 
     def _job_error(self, message: str) -> None:
@@ -687,14 +689,27 @@ class CompressTab(QWidget):
     def busy(self) -> bool:
         return any(t is not None and t.isRunning() for t in (self.scan_thread, self.job_thread))
 
+    def _why_nothing(self) -> str:
+        """Every file was skipped: say why (the commonest reasons), not just that."""
+        from collections import Counter
+
+        rows = self.model.rows
+        reasons = Counter(r.plan.reason for r in rows if not r.plan.convert)
+        hint = (" Change the minimum sizes in Options › Rules." if any(k.startswith("Smaller than") for k in reasons)
+                else "")
+        if len(rows) == 1:
+            return f"{rows[0].entry.path.name} won't be compressed: {rows[0].plan.reason}.{hint}"
+        top = "; ".join(f"{reason} ({n})" for reason, n in reasons.most_common(3))
+        more = " Turn on Show skipped to see every file's reason." if len(reasons) > 3 else ""
+        return f"Nothing here can be made smaller with the current options: {top}.{hint}{more}"
+
     def _thread_finished(self) -> None:
         self.model.locked = False
         self._set_busy(False)
         if self.proxy.rowCount():
             self.placeholder.clear()
         elif self.model.rows:
-            self.placeholder.show_message("Nothing here can be made smaller with the current options. "
-                                          "Turn on Show skipped to see why.")
+            self.placeholder.show_message(self._why_nothing())
         else:
             self.placeholder.clear()
         if self._rescan_after:
@@ -744,7 +759,8 @@ class CompressTab(QWidget):
             extra.append(("Preview\tSpace", lambda: self.preview_row(idx)))
         outputs = [x.result.output for x in rows if x.result and x.result.status == DONE and x.result.output]
         if outputs:
-            extra.append(("Show Result", lambda: open_in_file_manager(str(outputs[0]))))
+            extra.append(("Show Result" if len(outputs) == 1 else f"Show {len(outputs)} Results",
+                          lambda: open_in_file_manager_many(outputs)))
         pickable = [x for x in rows if x.plan.convert and not (x.result and x.result.status == DONE)]
         if pickable and not self.busy():
             def check(on: bool):

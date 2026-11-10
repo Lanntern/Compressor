@@ -47,6 +47,12 @@ def main(argv: list[str] | None = None) -> int:
     setup_log()
     _report_unexpected_errors()
     app.setWindowIcon(app_icon())
+    from . import style
+
+    style.set_system_accent(bool(open_qsettings().value("accent/system", False, bool)))
+    from . import devmode
+
+    devmode.apply(open_qsettings())
     apply_theme(cast(str, open_qsettings().value("theme", "system", str)))
     server = integration.InstanceServer()
     win = MainWindow()
@@ -110,6 +116,10 @@ def parse_args(argv: list[str]) -> tuple[bool, str, str, list[str]]:
     --convert (Explorer's "Convert with Compressor" menu): a Convert format id such as jpeg or mp4_h264, or
     "choose" to open Convert with the files and let you pick."""
     background, preset, convert_to, paths = False, "", "", []
+    if "--url" in argv:
+        # A compressor: link (a notification's button, or any web page) only ever opens a page (open_target):
+        # nothing else from its command line is used, so a crafted link can't slip in files or options.
+        return background, preset, convert_to, paths
     it = iter(argv)
     for a in it:
         if a == "--background":
@@ -120,7 +130,7 @@ def parse_args(argv: list[str]) -> tuple[bool, str, str, list[str]]:
                 preset = value
             else:
                 convert_to = value
-        elif a == "--open":
+        elif a in ("--open", "--url"):
             next(it, "")                                   # (see open_target)
         elif a.startswith(("--preset=", "--convert=")):
             key, value = a.split("=", 1)
@@ -142,6 +152,10 @@ def open_target(argv: list[str]) -> str:
             return a.split("=", 1)[1]
         if a == "--open" and i + 1 < len(argv):
             return argv[i + 1]
+        if a == "--url" and i + 1 < len(argv):           # a notification's button: compressor:open/history
+            from .toasts import target_from_link
+
+            return target_from_link(argv[i + 1])
     return ""
 
 

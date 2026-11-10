@@ -59,7 +59,8 @@ LICENCE_NOTE = ("Compressor is free software, © Lanntern, licensed under the GN
                 "THIRD-PARTY-NOTICES.md.")
 
 
+PRIVACY_URL = "https://github.com/Lanntern/Compressor/blob/main/PRIVACY.md"
 DONATE_URL = "https://ko-fi.com/lanntern"     # Compressor is free; donations are welcome, never required
 
 
-__all__ = ["Credit", "CREDITS", "PRIVACY", "LICENCE_NOTE", "DONATE_URL"]
+__all__ = ["Credit", "CREDITS", "PRIVACY", "PRIVACY_URL", "LICENCE_NOTE", "DONATE_URL"]

@@ -259,3 +259,23 @@ def test_black_bars_are_found_and_removed(media_dir):
     assert results[0].status == DONE, results[0].message
     out = probe_video(results[0].output)
     assert (out.width, out.height) == (w, h) and "black bars removed" in results[0].message
+
+
+@needs_ffmpeg
+def test_a_file_you_pick_ignores_the_size_minimums(tmp_path):
+    """Minimum sizes keep folder scans (and Watch Folders) off tiny files, but a video you drop or pick by itself
+    is compressed whatever its size, instead of "1 file found, 0 can be compressed"."""
+    from compressor.plan import plan_entry
+    from compressor.scanner import scan
+
+    clip = tmp_path / "clip.mp4"
+    ffmpeg("-f", "lavfi", "-i", "testsrc=duration=2:size=320x240:rate=25", "-c:v", "libx264", "-b:v", "2M",
+           str(clip))
+    s = Settings()                                       # the default minimum for videos is 10 MB
+    picked = scan([clip], s, picked=True).entries[0]
+    found = scan([tmp_path], s).entries[0]
+    assert picked.picked and not found.picked
+    assert plan_entry(picked, s).convert
+    assert not plan_entry(found, s).convert and plan_entry(found, s).reason.startswith("Smaller than")
+    watched = scan([clip], s).entries[0]                 # Watch Folders passes new files one by one: minimums apply
+    assert not plan_entry(watched, s).convert

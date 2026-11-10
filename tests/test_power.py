@@ -1,5 +1,6 @@
 """Keeping the computer awake, telling battery from mains, and pausing a job."""
 
+import os
 import threading
 import time
 from pathlib import Path
@@ -119,3 +120,21 @@ def test_an_interrupted_job_starts_nothing_new(tmp_path):
     with pytest.raises(KeyboardInterrupt):
         run_job(items, s, tmp_path, Events(), cancel)
     assert cancel.is_set() and len(started) < len(items)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the internet mark is an NTFS stream")
+def test_converted_download_keeps_the_internet_mark(tmp_path):
+    from compressor import fileops
+    from compressor.engine import DONE, run_job
+    from compressor.plan import plan_entry
+    from compressor.scanner import scan
+    from compressor.settings import Settings
+
+    src = tmp_path / "download.png"
+    Image.effect_noise((64, 48), 40).convert("RGB").save(src)
+    (tmp_path / "download.png:Zone.Identifier").write_bytes(b"[ZoneTransfer]\r\nZoneId=3\r\n")
+    s = Settings(image_format="webp", png_mode="lossy", min_image_kb=0, require_savings=False, output_mode="suffix")
+    items = [(e, plan_entry(e, s)) for e in scan([tmp_path], s).entries]
+    results, _ = run_job(items, s, tmp_path)
+    assert results and results[0].status == DONE
+    assert b"ZoneId=3" in (fileops.read_zone_mark(results[0].output) or b"")

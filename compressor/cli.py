@@ -125,7 +125,8 @@ def _plan(a: argparse.Namespace):
     missing = [str(p) for p in a.paths if not p.exists()]
     if missing:
         sys.exit("Not found: " + ", ".join(missing))
-    result = scan(a.paths, s, progress=lambda m, d, t: print(f"\r{m[:100]:<100}", end="", file=sys.stderr))
+    result = scan(a.paths, s, progress=lambda m, d, t: print(f"\r{m[:100]:<100}", end="", file=sys.stderr),
+                  picked=True)              # (files named on the command line were chosen: no size minimums)
     print("\r" + " " * 100 + "\r", end="", file=sys.stderr)
     items = [(e, plan_entry(e, s)) for e in result.entries]
     return s, result, items
@@ -260,6 +261,10 @@ def _installer_setup(args: list[str]) -> int:
 
     opts = dict(a.split("=", 1) for a in args if "=" in a)
     on = {k: v == "1" for k, v in opts.items()}
+    try:
+        integration.register_file_types()        # Default apps and Open with (never the default for anything)
+    except OSError:
+        pass
     for key, add in (("context", integration.install_context_menu), ("autostart", lambda: integration.set_autostart(True))):
         if on.get(key):
             try:
@@ -300,7 +305,18 @@ def main(argv: list[str] | None = None) -> int:
     if argv and argv[0] == "--uninstall-cleanup":   # the uninstaller: undo what the app added to Windows
         from .gui import integration
 
-        for undo in (integration.uninstall_context_menu, lambda: integration.set_autostart(False)):
+        from .gui import toasts
+
+        from .gui import jumplist
+
+        def old_temp_files() -> None:          # (versions before 0.1.1 kept their UI images in %TEMP%)
+            import shutil
+            import tempfile
+
+            shutil.rmtree(os.path.join(tempfile.gettempdir(), "compressor-ui"), ignore_errors=True)
+
+        for undo in (lambda: integration.uninstall_context_menu(wait=True), lambda: integration.set_autostart(False),
+                     toasts.unregister, integration.unregister_file_types, jumplist.clear, old_temp_files):
             try:
                 undo()
             except Exception:  # noqa: BLE001 - remove what can be removed
@@ -314,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
         return ntfs_main(argv)
     commands = {"scan", "run", "history", "undo", "tools", "presets", "speedtest", "gui", "-h", "--help", "--version"}
     opens_app = not argv or (argv[0] not in commands and (
-        argv[0] in ("--background", "--preset", "--convert", "--open")
+        argv[0] in ("--background", "--preset", "--convert", "--open", "--url")
         or argv[0].startswith(("--preset=", "--convert=", "--open="))
         or not argv[0].startswith("-")))
     if opens_app:

@@ -834,3 +834,32 @@ def test_the_same_video_is_found_in_other_sizes(tmp_path):
     r = videos.find_similar_videos([tmp_path], min_size=0)
     assert [(c.path.name, c.keeper.name) for c in r.items] == [("small.mkv", "best.mp4")]
     assert r.items[0].selected and r.items[0].detail.startswith("180p, H.264")
+
+
+def test_block_clone_on_refs():
+    """ReFS (CI makes a small drive and sets COMPRESSOR_REFS_DIR): a clone has the same contents, stays a separate
+    file (changing it leaves the original alone), and the volume reports block cloning."""
+    import os
+    import pytest
+
+    from compressor import fileops
+
+    root = os.environ.get("COMPRESSOR_REFS_DIR")
+    if os.name != "nt":
+        assert not fileops.supports_block_clone(Path("."))
+    if os.name != "nt" or not root:
+        pytest.skip("needs a ReFS drive (COMPRESSOR_REFS_DIR)")
+    folder = Path(root) / "clone-test"
+    folder.mkdir(exist_ok=True)
+    a, b = folder / "a.bin", folder / "b.bin"
+    for p in (a, b):
+        if p.exists():
+            p.unlink()
+    data = os.urandom(3 * 1024 * 1024 + 12345)            # not a whole number of clusters
+    a.write_bytes(data)
+    assert fileops.supports_block_clone(a)
+    fileops.clone_file(a, b)
+    assert b.read_bytes() == data
+    with open(b, "r+b") as f:
+        f.write(b"changed")
+    assert a.read_bytes() == data                          # independent: unlike a hard link

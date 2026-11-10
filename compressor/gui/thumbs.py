@@ -20,7 +20,21 @@ CACHE_SIZE = 96
 
 
 def make_thumbnail(path: Path, kind: str, max_px: int) -> bytes | None:
-    """PNG bytes of a small preview, or None if it can't be decoded."""
+    """PNG bytes of a small preview, or None if it can't be decoded. On Windows, Explorer's own cached thumbnail
+    first (instant); then our decoders; then Windows making one, for types they can't read."""
+    from . import winthumbs
+
+    cached = winthumbs.thumbnail(path, max_px, cache_only=True)
+    if cached is not None:
+        return _png(cached)
+    own = _own_thumbnail(path, kind, max_px)
+    if own is None and winthumbs.IS_WINDOWS:
+        made = winthumbs.thumbnail(path, max_px, cache_only=False)
+        return _png(made) if made is not None else None
+    return own
+
+
+def _own_thumbnail(path: Path, kind: str, max_px: int) -> bytes | None:
     try:
         if kind == AUDIO:  # album art, if the file has any
             ffmpeg = tools.find_tool("ffmpeg")
@@ -73,7 +87,7 @@ def _png(img: QImage) -> bytes:
     ba = QByteArray()
     buf = QBuffer(ba)
     buf.open(QIODevice.WriteOnly)
-    img.save(buf, b"PNG")
+    img.save(buf, "PNG")       # type: ignore[call-overload]  # (the stubs say bytes; PySide6 6.12 only takes str)
     return bytes(ba.data())
 
 

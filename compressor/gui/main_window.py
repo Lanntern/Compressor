@@ -6,10 +6,10 @@ import json
 import os
 import time
 
-from PySide6.QtCore import QPointF, QRectF, QSettings, Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QDialog, QGridLayout, QHBoxLayout, QMainWindow, QMenu, QStackedWidget, QSystemTrayIcon,
+    QApplication, QDialog, QGridLayout, QHBoxLayout, QMainWindow, QMenu, QStackedWidget, QSystemTrayIcon,
     QVBoxLayout, QWidget,
 )
 
@@ -163,6 +163,9 @@ class MainWindow(QMainWindow):
         self.resize(1320, 840)
         self.setAcceptDrops(True)
         self.qsettings = open_qsettings()
+        from .taskbar import Taskbar
+
+        self.taskbar = Taskbar(self, self.qsettings)     # progress and Pause/Stop on the taskbar button
         self._housekeeping()
         self._quitting = False
         self._tray_hint_shown = False
@@ -200,7 +203,18 @@ class MainWindow(QMainWindow):
             self.pages.addWidget(self._placeholders.get(name) or getattr(self, name))
         self.sidebar.page_selected.connect(self._go)
         self.sidebar.list.setCurrentRow(0)
-        self.compress.set_inputs_text(self.qsettings.value("last_inputs", "", str))
+        # ...and then built anyway, one at a time once the window has settled, so the first visit doesn't hitch.
+        self._prebuild = QTimer(self, interval=400)
+        self._prebuild.timeout.connect(self._prebuild_next)
+        QTimer.singleShot(2500, self._prebuild.start)
+        self.qsettings.remove("last_inputs")   # (older versions reopened the last session's files: no longer)
+        from . import support
+
+        support.note_start(self.qsettings)
+        hints = QApplication.styleHints()
+        if hasattr(hints, "colorSchemeChanged"):          # Windows switched light/dark: follow it at once
+            hints.colorSchemeChanged.connect(lambda *_: self._system_theme_changed())
+        self.sidebar.support_btn.clicked.connect(lambda: self.show_support())
         self.compress.hover.enabled = self.qsettings.value("hover_preview", True, bool)
         self.compress.update_summary()
 
@@ -220,6 +234,11 @@ class MainWindow(QMainWindow):
         self._setup_power()
         self._setup_monthly()
         self.watch.state_changed.connect(self._update_tray)
+        from .. import power
+
+        # Watching folders in the background: come back after Windows restarts the computer for updates.
+        self.watch.state_changed.connect(lambda on: power.set_restart_after_update(on))
+        power.set_restart_after_update(self.watch.watching)
         self._update_tray(self.watch.watching)
         self.history.refresh()
 
@@ -235,6 +254,9 @@ class MainWindow(QMainWindow):
         self.compress.panel.presets_changed.connect(self._presets_changed)
         from . import integration
         QTimer.singleShot(2000, integration.refresh_context_menu)  # keep the menu's preset list current
+        if integration.installed_copy() and not integration.file_types_registered():
+            # (an install for everyone: each user gets Default apps / Open with at their first start)
+            QTimer.singleShot(2500, lambda: integration.register_file_types())
         QTimer.singleShot(200, self.probe.start)
 
     # ------------------------------------------------------------------ pages built on demand
@@ -263,6 +285,14 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(current)
         self._page_shortcuts(name, page)
         return page
+
+    def _prebuild_next(self) -> None:
+        """Build one not-yet-opened page while nothing is happening (not mid-click or drag, window shown)."""
+        waiting = list(self.__dict__.get("_placeholders", {}))
+        if not waiting:
+            self._prebuild.stop()
+        elif self.isVisible() and QApplication.mouseButtons() == Qt.NoButton:
+            self._build_page(waiting[0])
 
     def _go(self, index: int) -> None:
         if 0 <= index < self.pages.count():
@@ -376,6 +406,36 @@ class MainWindow(QMainWindow):
     def show_shortcuts(self) -> None:
         ShortcutsDialog(self).exec()
 
+    def show_support(self, asked: bool = False) -> None:
+        """The "star on GitHub / donate" window (the sidebar's Support link, or the one-time prompt)."""
+        from . import support
+
+        dlg = support.SupportDialog(int(self.qsettings.value(support.SAVED_MOST, 0, int)), self, asked=asked)
+        dlg.show()
+        self._support_dialog = dlg
+
+    def note_saved_total(self, total: int) -> None:
+        """History's total changed (or was read at start-up): maybe it's time for the one-time support prompt."""
+        from . import support
+
+        support.note_saved(self.qsettings, total)
+        if support.due(self.qsettings):
+            QTimer.singleShot(5000, self._maybe_ask_support)
+
+    def _maybe_ask_support(self) -> None:
+        """Ask once, and only at a quiet moment: the window on screen and nothing running."""
+        from . import support
+
+        lazy = [p for p in (self.built("cleanup"), self.built("converter"), self.built("metadata")) if p is not None]
+        from .. import power
+
+        busy = self.compress.busy() or any(p.busy() for p in lazy) or power.user_busy()
+        if not support.due(self.qsettings) or busy or not self.isVisible() or self.isMinimized() \
+                or QApplication.activeModalWidget() is not None:
+            return                          # (checked again the next time the History total changes)
+        self.qsettings.setValue(support.ASKED, True)
+        self.show_support(asked=True)
+
     def show_about(self) -> None:
         from .about_dialog import AboutDialog
 
@@ -391,6 +451,16 @@ class MainWindow(QMainWindow):
             self.refresh_colors()
         finally:
             QApplication.restoreOverrideCursor()
+
+    def _system_theme_changed(self) -> None:
+        """Windows' light/dark setting changed: restyle now if the theme is "System" (and it really differs:
+        restyling itself can echo this signal)."""
+        if self.qsettings.value("theme", "system", str) != "system":
+            return
+        hints = QApplication.styleHints()
+        dark = hints.colorScheme() == Qt.ColorScheme.Dark
+        if dark != style.tokens().dark:
+            self.apply_theme("system")
 
     def refresh_colors(self) -> None:
         refresh_icons(self)
@@ -408,6 +478,11 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ own title bar (Windows)
     def nativeEvent(self, event_type, message):  # noqa: N802
+        if os.name == "nt" and getattr(self, "taskbar", None) is not None:
+            from ctypes import wintypes
+
+            if self.taskbar.native_event(wintypes.MSG.from_address(int(message))):
+                return True, 0
         if getattr(self, "frame", None) is not None:
             handled, result = self.frame.native_event(message)
             if handled:
@@ -418,6 +493,8 @@ class MainWindow(QMainWindow):
         super().changeEvent(e)
         if getattr(self, "frame", None) is not None:
             self.frame.changed(e)
+        if e.type() == QEvent.ActivationChange and self.isActiveWindow() and getattr(self, "taskbar", None):
+            self.taskbar.clear_error()        # a failed job's red taskbar bar has been seen
 
     def resizeEvent(self, e) -> None:
         super().resizeEvent(e)
@@ -436,7 +513,6 @@ class MainWindow(QMainWindow):
 
     def save_settings(self) -> None:
         self.qsettings.setValue("settings", json.dumps(self.compress.panel.settings().to_dict()))
-        self.qsettings.setValue("last_inputs", self.compress.inputs_text())
 
     # ------------------------------------------------------------------ drag & drop / other instances
     def dragEnterEvent(self, e) -> None:
@@ -601,7 +677,8 @@ class MainWindow(QMainWindow):
                 settings_page.show_update_status()
             if release and not manual:
                 self.tray_message(f"{APP_NAME} {release.version} is available"
-                                  + (" with security fixes." if release.security else "."))
+                                  + (" with security fixes." if release.security else "."),
+                                  actions=[("Details", "update")], launch="update")
             if manual and release:
                 self._show_update()
 
@@ -687,6 +764,9 @@ class MainWindow(QMainWindow):
     def open_target(self, target: str) -> None:
         """Show a page (jump list, tray), or pick files on one: compress-files, convert-files."""
         self.show_window()
+        if target == "update":                         # a notification's "Details" button
+            self._show_update()
+            return
         page_name, _, action = target.partition("-")
         attr = self.OPEN_PAGES.get(page_name)
         if attr is None:
@@ -790,8 +870,15 @@ class MainWindow(QMainWindow):
         self.tray.setToolTip(f"{APP_NAME}: {'watching folders' if watching else 'idle'}")
         self.tray.setVisible(watching or not self.isVisible())
 
-    def tray_message(self, message: str, force: bool = False) -> None:
-        """A notification. ``force``: show the tray icon for it if it's hidden (the window is open)."""
+    def tray_message(self, message: str, force: bool = False, actions=(), launch: str = "") -> None:
+        """A notification: a Windows notification when that's on (Settings › Integration; ``actions``:
+        (label, open target) buttons, ``launch``: where clicking it goes), else a tray balloon. ``force``: show
+        the tray icon for the balloon if it's hidden (the window is open)."""
+        if self.qsettings.value("notifications/native", True, bool):
+            from . import toasts
+
+            if toasts.show(APP_NAME, message, actions, launch):
+                return
         if self.tray is None:
             return
         if not self.tray.isVisible() and force:

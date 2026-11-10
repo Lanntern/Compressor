@@ -128,6 +128,19 @@ jobs:
           Start-Process $exe -ArgumentList "-startup"
           Start-Sleep 20
           "Everything started."
+      - name: Make a small ReFS drive, to test block cloning
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $vhd = Join-Path $env:RUNNER_TEMP "refs.vhdx"
+          $script = Join-Path $env:RUNNER_TEMP "refs.txt"
+          @(
+            "create vdisk file=`"$vhd`" maximum=4096 type=expandable", "select vdisk file=`"$vhd`"", "attach vdisk",
+            "convert gpt", "create partition primary", "format fs=refs quick label=ReFSTest", "assign letter=R"
+          ) | Set-Content -Encoding ascii $script
+          diskpart /s $script
+          if (-not (Test-Path R:\)) { throw "No ReFS drive" }
+          "COMPRESSOR_REFS_DIR=R:\" >> $env:GITHUB_ENV
       - name: Test (uses the real Recycle Bin)
         env:
           COMPRESSOR_SHOTS_DIR: ${{ runner.temp }}/window-shots
@@ -150,7 +163,9 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     permissions:
-      contents: write  # attach the .zip and installer to releases on version tags
+      contents: write      # attach the .zip and installer to releases on version tags
+      id-token: write      # build provenance (attestations) for those files
+      attestations: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -195,6 +210,23 @@ jobs:
             $_.Name -match '^(opengl32sw\.dll|Qt6Quick.*\.dll|Qt6Qml.*\.dll|Qt6VirtualKeyboard.*\.dll)$' }
           "{0} files, {1:N0} MB removed" -f $gone.Count, (($gone | Measure-Object Length -Sum).Sum / 1MB)
           $gone | Remove-Item
+      - name: Build the Windows 11 menu (shell extension DLL and its sparse package)
+        shell: pwsh
+        run: |
+          # The DLL (static runtime: nothing extra to install) with the Visual Studio on the runner.
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          New-Item -ItemType Directory -Force dist/Compressor/shell | Out-Null
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && cl /nologo /O2 /MT /EHsc /std:c++17 /W4 /LD packaging\shell\CompressorShell.cpp /Fo:build\ /link /DEF:packaging\shell\CompressorShell.def shlwapi.lib ole32.lib uuid.lib advapi32.lib /OUT:dist\Compressor\shell\CompressorShell.dll"
+          if ($LASTEXITCODE -ne 0) { throw "Building CompressorShell.dll failed" }
+          Remove-Item dist/Compressor/shell/*.exp, dist/Compressor/shell/*.lib -ErrorAction SilentlyContinue
+          # The package that gives it an identity (unsigned; the app registers it per user).
+          python packaging/make_shell_package.py build/shell-package
+          $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          & $makeappx.FullName pack /d build\shell-package /p dist\Compressor\shell\CompressorShell.msix /nv /o
+          if ($LASTEXITCODE -ne 0) { throw "makeappx failed" }
+          Get-ChildItem dist/Compressor/shell | Select-Object Name, Length
       - name: Report bundle size (what a cold start has to load)
         shell: pwsh
         run: |
@@ -215,7 +247,7 @@ jobs:
           foreach ($f in "LICENSE-ffmpeg.txt", "LICENSE-libjxl.txt", "LICENSE-gifsicle.txt") {
             if (-not (Test-Path "dist/Compressor/tools/$f")) { throw "tools/$f is missing from the build" }
           }
-          Compress-Archive -Path dist/Compressor -DestinationPath Compressor-windows-x64.zip
+          Compress-Archive -Path dist/Compressor -DestinationPath Compressor-windows.zip
       - name: Build the installer (Inno Setup)
         shell: pwsh
         run: |
@@ -224,7 +256,7 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=$version" `
             "/DSourceDir=..\dist\Compressor" "/DIconFile=..\build\Compressor.ico" packaging\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
-          Get-Item dist\Compressor-setup-x64.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
+          Get-Item dist\Compressor-setup.exe | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
       - name: Install, check, and uninstall (silently, for this user)
         shell: pwsh
         run: |
@@ -237,7 +269,7 @@ jobs:
             if (Test-Path "$dir\Compressor.exe") { throw "Uninstall left Compressor.exe behind" }
           }
           # 1. Every option ticked: each one takes effect, and uninstalling takes each one away again.
-          Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
+          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir", `
             "/TASKS=startmenu,contextmenu,autostart", "/UPDATES=monthly"
           if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed" }
@@ -246,14 +278,26 @@ jobs:
             Where-Object DisplayName -eq "Compressor"
           if (-not $uninst) { throw "Not listed in Apps & features" }
           python -c "from compressor.gui import integration; assert integration.context_menu_installed(), 'no context menu'"
+          # Win+R "compressor", the Modify item in Installed apps, Default apps / Open with.
+          if (-not (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe")) { throw "No App Paths entry" }
+          if ($uninst.NoModify -ne 0 -or -not $uninst.ModifyPath) { throw "No Modify entry in Installed apps" }
+          if ((Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name Compressor -ErrorAction SilentlyContinue).Compressor -ne "Software\Lanntern\Compressor\Capabilities") { throw "Not in Default apps" }
+          if (-not (Get-ItemProperty "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Compressor.Picture -ErrorAction SilentlyContinue)) { throw "Not in Open with for .jpg" }
+          for ($i = 0; $i -lt 30 -and -not (Get-AppxPackage -Name Lanntern.Compressor.ContextMenu); $i++) { Start-Sleep 1 }
+          "Windows 11 menu package registered: " + [bool](Get-AppxPackage -Name Lanntern.Compressor.ContextMenu)
           if (-not (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue)) { throw "Not started at sign-in" }
           python -c "from PySide6.QtCore import QSettings; assert QSettings('Compressor', 'Compressor').value('updates/frequency') == 'monthly', 'update check frequency not saved'"
           Uninstall
           if (Test-Path $menu) { throw "Uninstall left the Start menu entry" }
           python -c "from compressor.gui import integration; assert not integration.context_menu_installed(), 'context menu left behind'"
           if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Start at sign-in left behind" }
+          if (Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe") { throw "App Paths entry left behind" }
+          if (Get-ItemProperty "HKCU:\Software\RegisteredApplications" -Name Compressor -ErrorAction SilentlyContinue) { throw "Default apps entry left behind" }
+          # (Windows 11's main menu: the package is registered in the background; reported, not required, since the
+          # runner is Windows Server, whose Explorer may not take unsigned sparse packages.)
+          "Windows 11 menu package after uninstall: " + [bool](Get-AppxPackage -Name Lanntern.Compressor.ContextMenu)
           # 2. The defaults: a Start menu shortcut, and nothing else optional.
-          Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
+          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/DIR=$dir"
           if (-not (Test-Path "$dir\Compressor.exe")) { throw "Compressor.exe wasn't installed (defaults)" }
           if (-not (Test-Path $menu)) { throw "No Start menu entry by default" }
@@ -263,7 +307,7 @@ jobs:
           if (Test-Path $menu) { throw "Uninstall left the default Start menu entry" }
           # 3. For everyone (the recommended mode; the runner is an administrator): into a protected folder.
           $all = Join-Path $env:ProgramFiles "CompressorCI"
-          Start-Process dist\Compressor-setup-x64.exe -Wait -ArgumentList `
+          Start-Process dist\Compressor-setup.exe -Wait -ArgumentList `
             "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS", "/DIR=`"$all`""   # (quoted: it has a space)
           if (-not (Test-Path "$all\Compressor.exe")) { throw "Compressor.exe wasn't installed for everyone" }
           $machine = Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" |
@@ -272,21 +316,53 @@ jobs:
           Start-Process "$all\unins000.exe" -Wait -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
           for ($i = 0; $i -lt 60 -and (Test-Path "$all\Compressor.exe"); $i++) { Start-Sleep 1 }
           if (Test-Path "$all\Compressor.exe") { throw "Uninstall (for everyone) left Compressor.exe behind" }
+          # Other users' leftovers: Active Setup runs the clean-up once per user at their next sign-in. Simulate one
+          # user's leftovers here and run the registered command as Windows would.
+          $setup = Get-ItemProperty "HKLM:\Software\Microsoft\Active Setup\Installed Components\{6E3B5C1A-2F44-4C1E-9B8A-0C6D2E7F4A31}"
+          if (-not $setup.StubPath) { throw "No clean-up registered for other users" }
+          New-Item -Force "HKCU:\Software\Classes\Compressor.Picture\shell\open\command" | Out-Null
+          New-Item -Force "HKCU:\Software\Classes\.jpg\OpenWithProgids" | Out-Null
+          New-ItemProperty -Force "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Compressor.Picture -Value "" | Out-Null
+          New-ItemProperty -Force $run -Name Compressor -Value "x" | Out-Null
+          $exe, $rest = $setup.StubPath -split ' ', 2              # (Windows starts it the same way: program + arguments)
+          Start-Process -Wait -WindowStyle Hidden -FilePath $exe -ArgumentList $rest
+          if (Test-Path "HKCU:\Software\Classes\Compressor.Picture") { throw "Clean-up left the ProgID" }
+          if (Get-ItemProperty "HKCU:\Software\Classes\.jpg\OpenWithProgids" -Name Compressor.Picture -ErrorAction SilentlyContinue) { throw "Clean-up left Open with" }
+          if (Get-ItemProperty $run -Name Compressor -ErrorAction SilentlyContinue) { throw "Clean-up left start at sign-in" }
+          "Other users' clean-up: version $($setup.Version), works."
           "Installed, checked and uninstalled cleanly (all options, the defaults, and for everyone)."
       - uses: actions/upload-artifact@v7
         with:
-          name: Compressor-windows-x64
+          name: Compressor-windows
           path: dist/Compressor
           retention-days: 30
       - uses: actions/upload-artifact@v7
         with:
-          name: Compressor-setup-x64
-          path: dist/Compressor-setup-x64.exe
+          name: Compressor-setup
+          path: dist/Compressor-setup.exe
           retention-days: 30
+      - name: Checksums for the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Copy-Item dist/Compressor-setup.exe .
+          Get-FileHash Compressor-setup.exe, Compressor-windows.zip -Algorithm SHA256 |
+            ForEach-Object { "{0}  {1}" -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
+            Set-Content -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+      - name: Record where the release files came from (build provenance)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            Compressor-setup.exe
+            Compressor-windows.zip
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v3
+        # (Pinned to a commit: a third-party action with write access. Dependabot proposes updates.)
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           files: |
-            Compressor-windows-x64.zip
-            dist/Compressor-setup-x64.exe
+            Compressor-windows.zip
+            Compressor-setup.exe
+            SHA256SUMS.txt

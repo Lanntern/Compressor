@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from PySide6.QtCore import QByteArray, QEvent, QObject, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPalette, QPixmap
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon, QIconEngine, QPainter, QPalette, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QLineEdit, QWidget
 
@@ -70,6 +70,56 @@ DARK = Tokens(
 )
 
 _current: Tokens = LIGHT
+_system_accent = False      # Settings › Appearance › "Use the Windows accent colour"
+
+
+def set_system_accent(on: bool) -> None:
+    """Use Windows' accent colour instead of the app's blue (from the next apply_style)."""
+    global _system_accent
+    _system_accent = bool(on)
+
+
+def windows_accent() -> str | None:
+    """The accent colour chosen in Windows' Settings › Personalisation › Colours ("#RRGGBB"), or None."""
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\DWM") as key:
+            abgr = int(winreg.QueryValueEx(key, "AccentColor")[0]) & 0xFFFFFFFF
+        return f"#{abgr & 0xFF:02X}{(abgr >> 8) & 0xFF:02X}{(abgr >> 16) & 0xFF:02X}"
+    except (OSError, ValueError):
+        return None
+
+
+def _mix(a: QColor, b: QColor, t: float) -> str:
+    """``a`` moved ``t`` (0..1) of the way towards ``b``."""
+    return QColor(round(a.red() + (b.red() - a.red()) * t), round(a.green() + (b.green() - a.green()) * t),
+                  round(a.blue() + (b.blue() - a.blue()) * t)).name().upper()
+
+
+def with_accent(t: Tokens, accent: str) -> Tokens:
+    """``t`` with every accent colour derived from ``accent``, each nudged until it meets the same contrast
+    rules as the app's own blue (AA: 4.5:1 for text on buttons, and for accent-coloured text on cards)."""
+    import dataclasses
+
+    base = QColor(accent)
+    on = "#FFFFFF"                  # as Windows does with light accents: a deeper shade behind white text
+    for _ in range(60):                                     # buttons: text on the accent stays readable
+        if contrast_ratio(on, base.name()) >= 4.5:
+            break
+        base = base.darker(106) if base.value() > 20 else QColor(0, 0, 0)
+    text = QColor(base)
+    for _ in range(40):                                     # links and accent text on cards and the page
+        if contrast_ratio(text.name(), t.card) >= 4.5 and contrast_ratio(text.name(), t.window) >= 4.5:
+            break
+        text = text.lighter(108) if t.dark else text.darker(108)
+    background = QColor(t.card)
+    return dataclasses.replace(
+        t, accent=base.name().upper(), accent_hover=base.lighter(110).name().upper(),
+        accent_pressed=base.darker(115).name().upper(), accent_text=text.name().upper(), on_accent=on,
+        accent_soft=_mix(background, base, 0.35 if t.dark else 0.14))
 
 
 def tokens() -> Tokens:
@@ -245,6 +295,7 @@ _ICONS = {
     "bolt": '<path d="M13 2.5 4.5 13.5h6.5l-1 8 8.5-11h-6.5z"/>',
     "keyboard": '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h1M10.5 10h1M14.5 10h1M6.5 14h11"/>',
     "chevron": '<path d="m9 6 6 6-6 6"/>',
+    "chevron_down": '<path d="m6 9 6 6 6-6"/>',
     "broom": '<path d="M19.5 3.5 12 11"/><path d="M12.5 10.5c1.6 1.6 1.4 3.6.4 5.4L11 19.5c-.4.7-1.3.8-1.9.3l-4.9-4.9c-.6-.6-.4-1.5.3-1.9L8.1 11c1.8-1 3.8-1.2 4.4-.5z"/><path d="M7 14.5l2.5 2.5"/>',
     "home": '<path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5h4v5"/>',
     "convert": '<path d="M4 8h13l-3.5-3.5"/><path d="M20 16H7l3.5 3.5"/>',
@@ -252,6 +303,10 @@ _ICONS = {
     "ellipsis": '<circle cx="6" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18" cy="12" r="1.2"/>',
     "trash": '<path d="M4 7h16M10 11v6M14 11v6M5.5 7l1 12a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2l1-12M9 7V4.5h6V7"/>',
     "lock": '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
+    "heart": '<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/>',
+    "pause": '<rect x="7" y="5" width="3.2" height="14" rx="1"/><rect x="13.8" y="5" width="3.2" height="14" rx="1"/>',
+    "play": '<path d="M8.5 5.5v13l10-6.5z"/>',
+    "star": '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z"/>',
 }
 
 
@@ -261,31 +316,120 @@ def icon_svg(name: str, color: str, stroke: float = 1.8) -> bytes:
             f'stroke-width="{stroke}" stroke-linecap="round" stroke-linejoin="round">{body}</svg>').encode()
 
 
-def icon_pixmap(name: str, color: str, size: int, dpr: float = 2.0, stroke: float = 1.8) -> QPixmap:
-    """Rendered once per name/colour/size (QPixmap copies are cheap and implicitly shared)."""
-    return QPixmap(_icon_pixmap(name, color, size, dpr, stroke))
+# Windows' own icon font (Windows 11; Windows 10 has the older Segoe MDL2 Assets): a developer option for now.
+FLUENT_FONTS = ("Segoe Fluent Icons", "Segoe MDL2 Assets")
+FLUENT_GLYPHS = {
+    "compress": 0xE73F, "watch": 0xE7B3, "history": 0xE81C, "settings": 0xE713, "folder": 0xE8B7,
+    "files": 0xE8A5, "drop": 0xE896, "sidebar": 0xE700, "eye": 0xE890, "refresh": 0xE72C, "retry": 0xE777,
+    "undo": 0xE7A7, "check": 0xE73E, "xmark": 0xE711, "minus": 0xE738, "plus": 0xE710, "stop": 0xE71A,
+    "bolt": 0xE945, "keyboard": 0xE765, "chevron": 0xE76C, "chevron_down": 0xE70D, "broom": 0xEA99,
+    "home": 0xE80F, "convert": 0xE8AB, "tag": 0xE8EC, "ellipsis": 0xE712, "trash": 0xE74D, "lock": 0xE72E,
+    "heart": 0xEB51, "pause": 0xE769, "play": 0xE768, "star": 0xE734,
+}
+_fluent = False
+
+
+def use_fluent_icons(on: bool) -> None:
+    """Draw icons with Windows' icon font where it has them (developer setting; the app's own icons otherwise)."""
+    global _fluent
+    _fluent = on
+    _icon_pixmap.cache_clear()
+
+
+@lru_cache(maxsize=1)
+def _fluent_family() -> str:
+    from PySide6.QtGui import QFontDatabase
+
+    families = set(QFontDatabase.families())
+    return next((f for f in FLUENT_FONTS if f in families), "")
+
+
+def _fluent_char(name: str) -> str:
+    """The icon font's character for ``name``, or "" when the font (or that glyph) isn't there."""
+    if not _fluent or name not in FLUENT_GLYPHS or not _fluent_family():
+        return ""
+    from PySide6.QtGui import QFontMetrics
+
+    code = FLUENT_GLYPHS[name]
+    return chr(code) if QFontMetrics(QFont(_fluent_family())).inFontUcs4(code) else ""
+
+
+def _paint_icon(p: QPainter, rect: QRectF, name: str, color: str, stroke: float) -> None:
+    """Draw the icon into ``rect`` as vectors, so it's sharp at whatever scale the painter has."""
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setRenderHint(QPainter.TextAntialiasing)
+    glyph = _fluent_char(name)
+    if glyph:
+        font = QFont(_fluent_family())
+        font.setPixelSize(max(1, round(rect.height() * 0.84)))   # (the font's glyphs fill ~5/6 of the em)
+        font.setHintingPreference(QFont.PreferNoHinting)
+        p.setFont(font)
+        p.setPen(QColor(color))
+        p.drawText(rect, Qt.AlignCenter, glyph)
+    else:
+        QSvgRenderer(QByteArray(icon_svg(name, color, stroke))).render(p, rect)
+
+
+def screen_scale() -> float:
+    """The highest display scaling among the screens (125% -> 1.25), for pixmaps drawn ahead of time."""
+    screens = QGuiApplication.screens() if QGuiApplication.instance() else []
+    return max((sc.devicePixelRatio() for sc in screens), default=1.0) or 1.0
+
+
+def icon_pixmap(name: str, color: str, size: int, dpr: float | None = None, stroke: float = 1.8) -> QPixmap:
+    """Rendered once per name/colour/size/scale (QPixmap copies are cheap and implicitly shared). ``dpr``:
+    the display scaling to render for (default: the screens' highest, so it's sharp, not stretched)."""
+    return QPixmap(_icon_pixmap(name, color, size, round(dpr or screen_scale(), 3), stroke))
 
 
 @lru_cache(maxsize=512)
 def _icon_pixmap(name: str, color: str, size: int, dpr: float, stroke: float) -> QPixmap:
-    pm = QPixmap(int(size * dpr), int(size * dpr))
+    pm = QPixmap(max(1, round(size * dpr)), max(1, round(size * dpr)))
     pm.fill(Qt.transparent)
-    r = QSvgRenderer(QByteArray(icon_svg(name, color, stroke)))
     p = QPainter(pm)
-    p.setRenderHint(QPainter.Antialiasing)
-    r.render(p, QRectF(0, 0, pm.width(), pm.height()))
+    _paint_icon(p, QRectF(0, 0, pm.width(), pm.height()), name, color, stroke)
     p.end()
     pm.setDevicePixelRatio(dpr)
     return pm
 
 
+class _IconEngine(QIconEngine):
+    """Draws the icon at exactly the size and display scaling it's shown at (Qt asks per screen: 100%, 150%,
+    250%...), instead of stretching one pre-rendered pixmap. Colours per mode: normal, disabled, selected."""
+
+    def __init__(self, name: str, colors: dict, stroke: float = 1.8):
+        super().__init__()
+        self._name, self._colors, self._stroke = name, colors, stroke
+
+    def _color(self, mode) -> str:
+        return self._colors.get(mode) or self._colors[QIcon.Normal]
+
+    def paint(self, painter, rect, mode, state) -> None:
+        _paint_icon(painter, QRectF(rect), self._name, self._color(mode), self._stroke)
+
+    def scaledPixmap(self, size, mode, state, scale) -> QPixmap:
+        side = min(size.width(), size.height())
+        return icon_pixmap(self._name, self._color(mode), side, scale or 1.0, self._stroke)
+
+    def pixmap(self, size, mode, state) -> QPixmap:
+        return self.scaledPixmap(size, mode, state, 1.0)
+
+    def actualSize(self, size, mode, state):
+        return size
+
+    def clone(self) -> QIconEngine:
+        return _IconEngine(self._name, dict(self._colors), self._stroke)
+
+    def key(self) -> str:
+        return "compressor-icon"
+
+
 def icon(name: str, color: str | None = None, size: int = 20) -> QIcon:
+    """The named icon in the theme's colours (``color`` for normal and selected, when given). ``size`` is
+    unused: the icon is drawn at whatever size it's shown."""
     t = tokens()
-    ic = QIcon()
-    ic.addPixmap(icon_pixmap(name, color or t.text2, size), QIcon.Normal)
-    ic.addPixmap(icon_pixmap(name, t.text3, size), QIcon.Disabled)
-    ic.addPixmap(icon_pixmap(name, color or t.accent_text, size), QIcon.Selected)
-    return ic
+    return QIcon(_IconEngine(name, {QIcon.Normal: color or t.text2, QIcon.Disabled: t.text3,
+                                    QIcon.Selected: color or t.accent_text}))
 
 
 # ---------------------------------------------------------------- stylesheet assets
@@ -293,10 +437,10 @@ def icon(name: str, color: str | None = None, size: int = 20) -> QIcon:
 
 def _asset(name: str, svg: str) -> str:
     import hashlib
-    import tempfile
-    from pathlib import Path
 
-    folder = Path(tempfile.gettempdir()) / "compressor-ui"
+    from ..journal import data_dir
+
+    folder = data_dir() / "ui"            # (in the app's own folder: removed with it, never left in %TEMP%)
     folder.mkdir(exist_ok=True)
     path = folder / f"{name}-{hashlib.sha1(svg.encode()).hexdigest()[:10]}.svg"
     if not path.exists():
@@ -374,6 +518,9 @@ QToolTip {{ background: {t.card}; color: {t.text}; border: 1px solid {t.border};
               font-weight: 600; }}
 #updateLink:hover {{ text-decoration: underline; }}
 #updateLink:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
+#supportLink {{ color: {t.text2}; background: transparent; border: none; padding: 0; text-align: left; }}
+#supportLink:hover {{ color: {t.accent_text}; }}
+#supportLink:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
 #sidebar QListWidget {{ background: transparent; border: none; padding: {S.XS}px {S.S}px; }}
 #sidebar QListWidget::item {{ height: {Z.SIDEBAR_ROW}px; padding-left: {S.S}px; border-radius: {R.CONTROL}px;
   color: {t.text}; margin: 1px 0; }}
@@ -694,6 +841,9 @@ def apply_style(mode: str) -> Tokens:
     else:
         dark = mode == "dark"
     _current = DARK if dark else LIGHT
+    accent = windows_accent() if _system_accent else None
+    if accent:
+        _current = with_accent(_current, accent)
     if high_contrast_active():
         app.setStyleSheet("")
         return _current

@@ -464,7 +464,7 @@ def copy_paths(paths: Iterable[Path]) -> None:
 def file_menu(parent: QWidget, paths: list[Path],
               extra: Iterable[tuple[str, Callable[[], None] | list] | None] = ()) -> QMenu:
     """Open · Show in Explorer · Copy Path, then page-specific actions (None = separator)."""
-    from .file_model import open_in_file_manager
+    from .file_model import open_in_file_manager_many
 
     m = QMenu(parent)
     existing = [p for p in paths if p.exists()]
@@ -472,7 +472,7 @@ def file_menu(parent: QWidget, paths: list[Path],
         a = m.addAction("Open", lambda: open_file(paths[0]))
         a.setEnabled(bool(existing))
     if paths:   # none: rows that aren't files (Docker images...) get only the page's own actions
-        a = m.addAction(SHOW_IN_FOLDER, lambda: open_in_file_manager(str(existing[0])))
+        a = m.addAction(SHOW_IN_FOLDER, lambda: open_in_file_manager_many(existing))
         a.setEnabled(bool(existing))
         m.addAction("Copy Path" if len(paths) == 1 else f"Copy {len(paths)} Paths", lambda: copy_paths(paths))
     extra = list(extra)

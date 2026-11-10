@@ -18,7 +18,7 @@ One place for real disk savings. Drop folders or files on it (or right-click the
 | JPEG | **Keep JPEG** (lossless mozjpeg repack, or lossy with jpegli), **JPEG XL** (lossless & reversible, or lossy), WebP, AVIF | mozjpeg, cjpegli, cjxl |
 | PNG / APNG, BMP, TIFF (multi-page), GIF (animated) | **Keep format** (oxipng, libimagequant, gifsicle, Deflate TIFF), **JPEG XL**, WebP, AVIF (animations kept) | oxipng, imagequant, gifsicle, cjxl, libwebp, libavif |
 | HEIC, AVIF, WebP (incl. animated) | Keep format, JPEG XL, WebP, AVIF | libheif, libavif, libwebp, cjxl |
-| Videos (H.264, MPEG-2/4, WMV, …) | **AV1** or **HEVC** | ffmpeg: NVIDIA NVENC on the GPU, or SVT-AV1/x265 on the CPU |
+| Videos (H.264, MPEG-2/4, WMV, …) | **AV1** or **HEVC** | ffmpeg: on the GPU (NVIDIA NVENC, Intel Quick Sync, AMD AMF), or SVT-AV1/x265 on the CPU |
 | Music and audio: WAV, AIFF, FLAC, ALAC, APE, WavPack | **FLAC** (lossless, verified sample for sample), or Opus / AAC / MP3 | ffmpeg (flac, libopus, aac, LAME) |
 | MP3, AAC, Vorbis, WMA, Opus | Kept by default; optionally re-encoded to Opus / AAC / MP3 when the bitrate is well above the target | ffmpeg |
 
@@ -95,10 +95,15 @@ A second page finds space Windows doesn't free for you. Each tool scans first, p
 
 Get the latest version from the **[Releases page](https://github.com/Lanntern/Compressor/releases/latest)** (Windows 10 or 11, 64-bit):
 
-* **`Compressor-setup-x64.exe`**: the installer (recommended). It can add Start menu and desktop shortcuts and the right-click menu in File Explorer, and uninstalls cleanly from Settings → Apps.
-* **`Compressor-windows-x64.zip`**: the portable version. Unzip it anywhere and run `Compressor.exe`.
+* **`Compressor-setup.exe`**: the installer (recommended). It can add Start menu and desktop shortcuts and the right-click menu in File Explorer, and uninstalls cleanly from Settings → Apps.
+* **`Compressor-windows.zip`**: the portable version. Unzip it anywhere and run `Compressor.exe`.
 
 Everything it needs, encoders included, comes in the download. Compressor isn't code-signed yet, so the first time you run it Windows may say "Windows protected your PC": choose **More info → Run anyway**.
+
+**Checking a download (optional):** each release lists the files' SHA-256 checksums in `SHA256SUMS.txt`
+(compare with `Get-FileHash Compressor-setup.exe` in PowerShell), and carries GitHub's build provenance, so
+`gh attestation verify Compressor-setup.exe -R Lanntern/Compressor` confirms it was built by this repository's
+workflow from its source.
 
 To view `.jxl` files in Windows 11 Photos/Explorer, install Microsoft's free **[JPEG XL Image Extension](https://apps.microsoft.com/detail/9MZPRTH5C0TB)** from the Microsoft Store. Browsers and most chat apps don't open JPEG XL yet; use WebP for images you share.
 
@@ -143,14 +148,16 @@ Run `compressor run --help` for all options (image format, lossy quality, AV1/HE
 
 ## Video settings
 
-| Preset | NVENC AV1 (CQ) | NVENC HEVC (CQ) | CPU SVT-AV1 (CRF) | CPU x265 (CRF) |
+| Preset | NVIDIA AV1 / HEVC (CQ) | Intel AV1 / HEVC (ICQ) | AMD AV1 / HEVC (QP) | CPU SVT-AV1 / x265 (CRF) |
 |---|---|---|---|---|
-| High quality | 26 | 22 | 26 | 20 |
-| Balanced | 32 | 27 | 32 | 24 |
-| Smallest | 38 | 32 | 38 | 28 |
+| High quality | 26 / 22 | 24 / 22 | 100 / 22 | 26 / 20 |
+| Balanced | 32 / 27 | 30 / 26 | 124 / 26 | 32 / 24 |
+| Smallest | 38 / 32 | 36 / 30 | 148 / 30 | 38 / 28 |
+
+(AMD's AV1 encoder counts quality on a 0–255 scale, hence the larger numbers.)
 
 AV1 is encoded in 10-bit (better compression, no banding). HEVC stays 8-bit unless the source is 10-bit, and is tagged `hvc1` in MP4 so Windows and Apple players open it. MP4/MOV sources stay `.mp4`. MKV keeps every track, subtitle and attachment. Audio is copied as-is (converted to AAC only when MP4 can't hold it), unless an audio bitrate is set (AAC in MP4, Opus in MKV).
-GPU AV1 encoding needs an NVIDIA RTX 40-series or newer; HEVC works on GTX 10-series and newer. **Auto** picks the GPU when it works and otherwise falls back to the CPU.
+GPU encoding works on NVIDIA (HEVC from GTX 10-series, AV1 from RTX 40-series), Intel (HEVC on most Core CPUs with graphics from 6th generation, AV1 on Arc and Core Ultra) and AMD (HEVC on most Radeon cards, AV1 from RX 7000). **Auto** tries them in that order with a short test encode, using the first that works, and otherwise the CPU.
 
 ## Speed
 
@@ -179,7 +186,8 @@ files or anything about them anywhere. It goes online only to:
 * **download Pandoc**, only when you convert a document and only after you agree, from Pandoc's own release page.
 
 Your settings, history (what can be undone), presets and a small log stay in `%LOCALAPPDATA%\Compressor`
-(`~/.local/share/compressor` on Linux). Uninstalling asks whether to remove them.
+(`~/.local/share/compressor` on Linux). Uninstalling asks whether to remove them. The full
+[privacy policy](PRIVACY.md) has the details.
 
 ## Support Compressor
 

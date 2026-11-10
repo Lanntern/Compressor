@@ -86,6 +86,17 @@ class AppSettingsTab(Page):
         self.theme.setCurrentIndex(max(0, self.theme.findData(self.qs.value("theme", "system", str))))
         self.theme.currentIndexChanged.connect(self._theme_changed)
         card.lay.addWidget(setting_row("Theme", "Follow the system, or always use light or dark.", self.theme))
+        from . import style as _style
+
+        if _style.windows_accent() is not None:
+            card.lay.addWidget(separator())
+            self.system_accent = ToggleSwitch("Use the Windows accent colour")
+            self.system_accent.setChecked(self.qs.value("accent/system", False, bool))
+            self.system_accent.toggled.connect(self._accent_toggled)
+            card.lay.addWidget(setting_row("Use the Windows accent colour",
+                                           "Buttons, links and selections take the colour chosen in Windows' "
+                                           "Personalisation settings (adjusted where needed so text stays easy "
+                                           "to read).", self.system_accent))
         card.lay.addWidget(separator())
         self.hover = ToggleSwitch("Preview on hover")
         self.hover.setChecked(self.qs.value("hover_preview", True, bool))
@@ -117,8 +128,8 @@ class AppSettingsTab(Page):
         self.menu.toggled.connect(self._menu_toggled)
         menu_desc = ("Adds “Compress with Compressor” for files and folders in Explorer, with your current "
                      "options or any preset, and “Convert with Compressor” for pictures, videos and music, with the "
-                     "usual formats (the converted copy is saved next to the original). On Windows 11 they're "
-                     "under Show more options." if integration.IS_WINDOWS
+                     "usual formats (the converted copy is saved next to the original). On Windows 11 they're in "
+                     "the main menu as well as under Show more options." if integration.IS_WINDOWS
                      else "Adds Compressor to your file manager's context menu (Open With).")
         card.lay.addWidget(setting_row("Context menu", menu_desc, self.menu))
         card.lay.addWidget(separator())
@@ -134,6 +145,29 @@ class AppSettingsTab(Page):
         card.lay.addWidget(setting_row("Keep running in the tray", "When folders are being watched, closing the "
                                                                    "window keeps Compressor in the tray.",
                                        self.close_to_tray))
+        if integration.IS_WINDOWS:
+            card.lay.addWidget(separator())
+            self.taskbar_progress = ToggleSwitch("Progress on the taskbar")
+            self.taskbar_progress.setChecked(self.qs.value("taskbar/progress", True, bool))
+            self.taskbar_progress.toggled.connect(lambda on: self._taskbar_setting("taskbar/progress", on))
+            card.lay.addWidget(setting_row("Progress on the taskbar", "Compressor's taskbar icon fills up while a "
+                                                                      "job runs: yellow when paused, red if "
+                                                                      "something failed.", self.taskbar_progress))
+            card.lay.addWidget(separator())
+            self.taskbar_buttons = ToggleSwitch("Pause and Stop in the taskbar preview")
+            self.taskbar_buttons.setChecked(self.qs.value("taskbar/buttons", True, bool))
+            self.taskbar_buttons.toggled.connect(lambda on: self._taskbar_setting("taskbar/buttons", on))
+            card.lay.addWidget(setting_row("Pause and Stop in the taskbar preview",
+                                           "While a job runs, hovering Compressor's taskbar icon shows Pause and "
+                                           "Stop buttons under the window's preview.", self.taskbar_buttons))
+            card.lay.addWidget(separator())
+            self.native_notes = ToggleSwitch("Windows notifications")
+            self.native_notes.setChecked(self.qs.value("notifications/native", True, bool))
+            self.native_notes.toggled.connect(lambda on: self.qs.setValue("notifications/native", on))
+            card.lay.addWidget(setting_row("Windows notifications",
+                                           "Finished jobs and updates appear as Windows notifications, with "
+                                           "buttons like Show in History, and wait in the notification centre. "
+                                           "Off: a small message from the tray icon instead.", self.native_notes))
         col.addWidget(card)
 
         # power
@@ -278,6 +312,23 @@ class AppSettingsTab(Page):
         keys.clicked.connect(self.win.show_shortcuts)
         card.lay.addWidget(setting_row("Keyboard shortcuts", "Every page can be used without a mouse.", keys))
         col.addWidget(card)
+
+        # developer (hidden unless switched on: see devmode)
+        self.dev_section = QWidget()
+        dl = QVBoxLayout(self.dev_section)
+        dl.setContentsMargins(0, 0, 0, 0)
+        dl.setSpacing(col.spacing())
+        dl.addWidget(text("Developer", Type.HEADLINE, bold=True, name="sectionTitle"))
+        card = Card()
+        self.fluent_icons = ToggleSwitch("Use Windows' icons")
+        self.fluent_icons.setChecked(self.qs.value("dev/fluent_icons", False, bool))
+        self.fluent_icons.toggled.connect(self._fluent_toggled)
+        card.lay.addWidget(setting_row("Use Windows' icons", "Draw icons with Segoe Fluent Icons (Windows 11) or "
+                                       "Segoe MDL2 Assets (Windows 10) where they have one; Compressor's own "
+                                       "icons otherwise.", self.fluent_icons))
+        dl.addWidget(card)
+        col.addWidget(self.dev_section)
+        self.update_dev_section()
         col.addSpacing(Space.XL)   # the page's bottom margin, inside the scroll area
         col.addStretch(1)
 
@@ -319,6 +370,7 @@ class AppSettingsTab(Page):
     def showEvent(self, e) -> None:
         super().showEvent(e)
         self._update_index_stats()
+        self.update_dev_section()
 
     def _update_index_stats(self) -> None:
         n, size = index.stats()
@@ -390,6 +442,29 @@ class AppSettingsTab(Page):
 
         QGuiApplication.clipboard().setText(diagnostics())
         inform(self, "Diagnostics copied", "Paste them into an email or bug report.")
+
+    def _taskbar_setting(self, key: str, on: bool) -> None:
+        self.qs.setValue(key, on)
+        self.win.taskbar._apply()             # show or hide it at once (during a job)
+
+    def update_dev_section(self) -> None:
+        from . import devmode
+
+        self.dev_section.setVisible(devmode.enabled(self.qs))
+
+    def _fluent_toggled(self, on: bool) -> None:
+        from . import devmode
+
+        self.qs.setValue("dev/fluent_icons", on)
+        devmode.apply(self.qs)
+        self.win.refresh_colors()
+
+    def _accent_toggled(self, on: bool) -> None:
+        from . import style as _style
+
+        self.qs.setValue("accent/system", on)
+        _style.set_system_accent(on)
+        self.win.apply_theme(self.qs.value("theme", "system", str))
 
     def _theme_changed(self) -> None:
         mode = self.theme.currentData()

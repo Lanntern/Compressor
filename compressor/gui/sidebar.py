@@ -1,4 +1,4 @@
-"""The app's sidebar: brand, pages, the update notice and what's been saved so far."""
+"""The app's sidebar: brand, pages, the update notice, what's been saved so far and a Support link."""
 
 from __future__ import annotations
 
@@ -73,6 +73,14 @@ class Sidebar(QFrame):
         self.update_btn.setFlat(True)
         self.update_btn.hide()
         foot.addWidget(self.update_btn, 0, Qt.AlignLeft)
+        foot.addSpacing(Space.XS)
+        self.support_btn = QPushButton("Support Compressor")
+        self.support_btn.setObjectName("supportLink")
+        self.support_btn.setCursor(Qt.PointingHandCursor)
+        self.support_btn.setFlat(True)
+        self.support_btn.setToolTip("Star Compressor on GitHub or donate on Ko-fi")
+        self.support_btn.setAccessibleName("Support Compressor")
+        foot.addWidget(self.support_btn, 0, Qt.AlignLeft)
         lay.addLayout(foot)
         self._saved: str | None = None
         self._update_foot()
@@ -82,6 +90,7 @@ class Sidebar(QFrame):
         from .main_window import app_icon
 
         self.logo.setPixmap(app_icon().pixmap(Size.ICON_M + 4, Size.ICON_M + 4))
+        self.support_btn.setIcon(icon("heart", None, Size.ICON_S))
         for i, (_label, name, _s) in enumerate(self.items):
             self.list.item(i).setIcon(icon(name, None, Size.ICON_M))
 
@@ -91,6 +100,7 @@ class Sidebar(QFrame):
         self.compact = compact
         self.setFixedWidth(Size.SIDEBAR_COMPACT_W if compact else Size.SIDEBAR_W)
         self.brand_name.setVisible(not compact)
+        self.support_btn.setText("" if compact else "Support Compressor")
         self.brand.setContentsMargins(*self._brand_margins(compact))
         self._update_foot()
         for i, (label, _icon, _s) in enumerate(self.items):

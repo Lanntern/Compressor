@@ -435,3 +435,265 @@ def test_jump_list_tasks():
         return
     jumplist.set_process_app_id()
     assert jumplist.update(exe=sys.executable, args_prefix="-c pass ")     # COM calls all succeeded
+
+
+def test_support_prompt_rules(tmp_path):
+    """Asked once: only after a day and 10 GB saved; the most ever saved counts (History can be pruned later)."""
+    from PySide6.QtCore import QSettings
+
+    from compressor.gui import support
+
+    qs = QSettings(str(tmp_path / "s.ini"), QSettings.IniFormat)
+    day, gb = 86400, 1024 ** 3
+    support.note_start(qs, now=1_000_000.0)
+    support.note_start(qs, now=9_000_000.0)                  # only the first start counts
+    assert support.note_saved(qs, 12 * gb) == 12 * gb
+    assert not support.due(qs, now=1_000_000.0 + day - 60)   # not a day yet
+    assert support.due(qs, now=1_000_000.0 + day + 60)
+    assert support.note_saved(qs, 2 * gb) == 12 * gb         # pruned or undone later: still counts
+    qs.setValue(support.ASKED, True)
+    assert not support.due(qs, now=1_000_000.0 + 30 * day)   # never twice
+
+    fresh = QSettings(str(tmp_path / "t.ini"), QSettings.IniFormat)
+    support.note_start(fresh, now=0.0)
+    support.note_saved(fresh, 9 * gb)
+    assert not support.due(fresh, now=10 * day)              # under 10 GB
+
+
+def test_downloaded_mark_is_kept(tmp_path):
+    """Windows: a converted download keeps the "from the internet" mark (Zone.Identifier) of its original."""
+    from compressor import fileops
+
+    a, b = tmp_path / "a.png", tmp_path / "b.webp"
+    a.write_bytes(b"x")
+    b.write_bytes(b"y")
+    if os.name != "nt":
+        assert fileops.read_zone_mark(a) is None
+        fileops.write_zone_mark(b, b"[ZoneTransfer]\r\nZoneId=3\r\n")       # does nothing, raises nothing
+        return
+    assert fileops.read_zone_mark(a) is None
+    (tmp_path / "a.png:Zone.Identifier").write_bytes(b"[ZoneTransfer]\r\nZoneId=3\r\n")
+    mark = fileops.read_zone_mark(a)
+    assert mark and b"ZoneId=3" in mark
+    fileops.write_zone_mark(b, mark)
+    assert fileops.read_zone_mark(b) == mark
+    fileops.notify_shell(created=[b], updated=[a])                          # tells Explorer; never raises
+
+
+def test_encoders_run_in_a_job_that_closes_with_the_app():
+    """Windows: every encoder joins a kill-on-close job object (so a crash never leaves ffmpeg running), and
+    tools.run behaves as before (output, exit code, ToolError, timeout)."""
+    import subprocess
+    import sys
+
+    from compressor import tools
+
+    out = tools.run([sys.executable, "-c", "print('hi')"])
+    assert out.returncode == 0 and out.stdout.strip() == "hi"
+    with pytest.raises(tools.ToolError):
+        tools.run([sys.executable, "-c", "import sys; sys.exit(3)"])
+    with pytest.raises(subprocess.TimeoutExpired):
+        tools.run([sys.executable, "-c", "import time; time.sleep(30)"], timeout=1)
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"])
+    try:
+        tools._considerate(p)
+        inside = wintypes.BOOL()
+        ctypes.windll.kernel32.IsProcessInJob(wintypes.HANDLE(int(p._handle)), wintypes.HANDLE(tools._windows_job()),
+                                              ctypes.byref(inside))
+        assert inside.value
+    finally:
+        p.kill()
+        p.wait()
+
+
+def test_quiet_when_full_screen_and_restart_after_updates():
+    """Off Windows both are harmless no-ops; on Windows they answer without raising."""
+    from compressor import power
+
+    assert power.user_busy() in (True, False)
+    assert power.set_restart_after_update(True) is (os.name == "nt")
+    assert power.set_restart_after_update(False) is (os.name == "nt")
+
+
+def test_windows_notifications():
+    """Toast XML is escaped and carries the buttons; their compressor: links reach the right page; on Windows the
+    app registers its name and icon for notifications (and the uninstaller's clean-up removes it)."""
+    import xml.dom.minidom
+
+    from compressor.gui import toasts
+    from compressor.gui.app import open_target, parse_args
+
+    x = toasts.toast_xml("Compressor", "Saved 3 GB <& more>", [("Show in History", "history")], launch="compress")
+    doc = xml.dom.minidom.parseString(x)                      # well-formed
+    texts = [t.firstChild.data for t in doc.getElementsByTagName("text")]
+    assert texts == ["Compressor", "Saved 3 GB <& more>"]
+    action = doc.getElementsByTagName("action")[0]
+    assert action.getAttribute("arguments") == "compressor:open/history"
+    assert doc.documentElement.getAttribute("launch") == "compressor:open/compress"
+    assert toasts.target_from_link('"compressor:open/history/"') == "history" and toasts.target_from_link("http://x") == ""
+    assert open_target(["--url", "compressor:open/cleanup"]) == "cleanup"
+    assert parse_args(["--url", "compressor:open/cleanup"])[3] == []     # not taken for a file
+    if os.name != "nt":
+        assert toasts.show("t", "m") is False
+        return
+    import winreg
+
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication([])               # (the icon file is drawn with Qt)
+    assert toasts.register()
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\AppUserModelId\Lanntern.Compressor") as key:
+        assert winreg.QueryValueEx(key, "DisplayName")[0] == "Compressor"
+    toasts.unregister()
+    with pytest.raises(OSError):
+        winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\AppUserModelId\Lanntern.Compressor")
+    toasts._registered = False
+
+
+def test_windows11_menu_package_matches_the_dll():
+    """The sparse package's manifest is valid XML, names the DLL's two command IDs and the package name the app
+    registers, and has an unsigned-package publisher. (CI builds and packs both on Windows.)"""
+    import re
+    import sys
+    import xml.dom.minidom
+
+    root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(root / "packaging"))
+    import make_shell_package as pkg
+
+    from compressor.gui import integration
+
+    doc = xml.dom.minidom.parseString(pkg.manifest("1.2.3"))
+    identity = doc.getElementsByTagName("Identity")[0]
+    assert identity.getAttribute("Name") == integration.MODERN_PACKAGE
+    assert identity.getAttribute("Version") == "1.2.3.0"
+    assert "OID.2.25.311729368913984317654407730594956997722=1" in identity.getAttribute("Publisher")
+    cpp = (root / "packaging" / "shell" / "CompressorShell.cpp").read_text()
+    ids = {m.lower() for m in re.findall(r"// \{([0-9a-f-]{36})\}", cpp)}
+    assert ids == {pkg.CLSID_COMPRESS, pkg.CLSID_CONVERT}
+    classes = {c.getAttribute("Id") for c in doc.getElementsByTagName("com:Class")}
+    assert classes == ids
+    assert integration._modern_menu_files() is None or os.name == "nt"     # (only a Windows build has it)
+
+
+def test_default_apps_and_open_with():
+    """Windows: Compressor is listed in Default apps and Open with for its file types (never made the default),
+    and unregistering removes it. Skipped where a real Compressor is registered, so a real install isn't touched."""
+    from compressor.gui import integration
+
+    if os.name != "nt":
+        integration.register_file_types()                 # no-op elsewhere
+        assert not integration.file_types_registered()
+        return
+    if integration.file_types_registered():
+        pytest.skip("a real Compressor is registered on this computer")
+    import winreg
+
+    exe = r"C:\CompressorTest\CompressorTest.exe"
+    integration.register_file_types(exe)
+    try:
+        assert integration.file_types_registered()
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\.mp4\OpenWithProgids") as k:
+            winreg.QueryValueEx(k, "Compressor.Video")
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Classes\Compressor.Picture\shell\open\command") as k:
+            assert winreg.QueryValueEx(k, "")[0] == f'"{exe}" "%1"'
+    finally:
+        integration.unregister_file_types("CompressorTest.exe")
+    assert not integration.file_types_registered()
+
+
+def test_a_link_cannot_smuggle_in_files_or_options():
+    """compressor: links come from notifications but could come from any web page: they open a page, nothing more."""
+    from compressor.gui.app import open_target, parse_args
+
+    crafted = ["--url", 'compressor:open/history" "C:\\Users\\me\\Pictures', "--preset", "Maximum savings",
+               "C:\\Users\\me\\Videos"]
+    assert parse_args(crafted) == (False, "", "", [])
+    assert open_target(crafted) == ""                     # not a well-formed page name: ignored
+    assert open_target(["--url", "compressor:open/compress-files"]) == "compress-files"
+
+
+def test_gpu_encoders_nvidia_intel_amd(monkeypatch):
+    """Auto tries NVIDIA, then Intel, then AMD (whichever passes its test encode), else the CPU; each gets its
+    own quality settings, and AMD's AV1 scale (0-255) is four times the others'."""
+    from compressor import video
+    from compressor.settings import Settings
+
+    for works, expect in (({"hevc_nvenc"}, "hevc_nvenc"), ({"hevc_qsv", "hevc_amf"}, "hevc_qsv"),
+                          ({"hevc_amf"}, "hevc_amf"), (set(), "libx265")):
+        monkeypatch.setattr(video, "encoder_works", lambda e, w=works: e in w)
+        assert video.choose_encoder("hevc", "auto") == expect
+    monkeypatch.setattr(video, "encoder_works", lambda e: False)
+    with pytest.raises(RuntimeError, match="NVIDIA.*Intel.*AMD"):
+        video.choose_encoder("av1", "gpu")
+    assert "-global_quality" in video._gpu_quality_args("hevc_qsv", 26)
+    assert video._gpu_quality_args("av1_amf", 124)[-4:] == ["-qp_i", "124", "-qp_p", "124"]
+    s = Settings(video_quality="custom", video_crf=30)
+    assert video.encoder_quality(s, "av1_amf") == 120 and video.encoder_quality(s, "hevc_amf") == 30
+    assert [video.quality_label(e) for e in ("hevc_nvenc", "av1_qsv", "av1_amf", "libx265")] == ["CQ", "ICQ", "QP", "CRF"]
+    for encoder in (*video.GPU_ENCODERS["av1"], *video.GPU_ENCODERS["hevc"]):
+        assert encoder in video._QUALITY and encoder in video.SMART_STEPS and encoder in video.CRF_MAX
+
+
+def test_hardware_decoding_is_asked_for_before_the_input():
+    """Encodes ask ffmpeg to decode on the GPU (before -i, so it applies to the source); samples and the CPU retry
+    don't. (The real round trips in test_engine run with it, which on a computer without a GPU decodes normally.)"""
+    from compressor import video
+    from compressor.probe import StreamInfo, VideoInfo
+    from compressor.settings import Settings
+
+    info = VideoInfo("h264", 1920, 1080, "yuv420p", 30, 60, 6_000_000, 0, [StreamInfo(0, "video", "h264")])
+    args = video.build_args(Path("a.mp4"), Path("b.mp4"), info, Settings(), "libx265", 24, hw_decode=True)
+    assert args.index("-hwaccel") < args.index("-i")
+    assert "-hwaccel" not in video.build_args(Path("a.mp4"), Path("b.mp4"), info, Settings(), "libx265", 24)
+
+
+def test_thumbnails_from_windows(tmp_path):
+    """Windows: its own thumbnail (made on request here, since the test file is new) comes back as a picture of the
+    right size; elsewhere there's none and our own decoders are used."""
+    from PIL import Image
+    from PySide6.QtWidgets import QApplication
+
+    from compressor.formats import PNG
+    from compressor.gui import thumbs, winthumbs
+
+    QApplication.instance() or QApplication([])
+    src = tmp_path / "photo.png"
+    Image.new("RGB", (800, 400), (200, 30, 30)).save(src)
+    if os.name != "nt":
+        assert winthumbs.thumbnail(src, 160) is None
+    else:
+        img = winthumbs.thumbnail(src, 160, cache_only=False)
+        assert img is not None and 0 < max(img.width(), img.height()) <= 160
+        assert img.pixelColor(img.width() // 2, img.height() // 2).red() > 150      # the red picture, not black
+    data = thumbs.make_thumbnail(src, PNG, 160)
+    assert data and data[:8] == b"\x89PNG\r\n\x1a\n"
+    from PySide6.QtGui import QImage
+
+    pic = QImage(20, 10, QImage.Format_RGB32)
+    pic.fill(0xFF2030)
+    assert thumbs._png(pic)[:8] == b"\x89PNG\r\n\x1a\n"           # (how Windows' thumbnails are passed on)
+
+
+def test_limits_against_bombs(tmp_path, monkeypatch):
+    """A comic book that would unpack to more than the limit is refused before anything is read; encoders get a
+    per-process memory limit of 3/4 of the computer's memory (at least 2 GB), and on Windows the job carries it."""
+    import zipfile
+
+    from compressor import convert, tools
+
+    cbz = tmp_path / "bomb.cbz"
+    with zipfile.ZipFile(cbz, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("001.png", b"\0" * (3 * 1024 * 1024))          # 3 MB of zeros: a few KB compressed
+    monkeypatch.setattr(convert, "MAX_COMIC_BYTES", 1024 * 1024)
+    with pytest.raises(ValueError, match="would unpack to"):
+        convert.convert_comic(cbz, convert.ConvertOptions())
+    monkeypatch.setattr(tools, "total_memory_gb", lambda: 16.0)
+    assert tools.encoder_memory_limit() == 12 * 1024 ** 3
+    monkeypatch.setattr(tools, "total_memory_gb", lambda: 1.0)
+    assert tools.encoder_memory_limit() == 2 * 1024 ** 3

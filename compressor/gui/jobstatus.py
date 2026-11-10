@@ -99,6 +99,7 @@ class JobStatus(Card):
         self.bar.setValue(done)
         self._color(None)
         self.setVisible(True)
+        self._taskbar("normal" if total else "indeterminate", done / total if total else 0.0)
 
     def stopping(self) -> None:
         self.detail.setText("Stopping after the current file; its original is kept.")
@@ -125,6 +126,7 @@ class JobStatus(Card):
         self.detail.setText("Starting…")
         self.setVisible(True)
         self._tick.start()
+        self._taskbar("indeterminate")
 
     def file_started(self, entry) -> None:
         self._running[id(entry)] = [entry.path.name, entry.size, "Starting", None]
@@ -182,6 +184,9 @@ class JobStatus(Card):
             self.bar.setRange(0, 1000)
             self.bar.setValue(int(1000 * known / self._bytes))
         self.bar.setAccessibleDescription(self.detail.text())
+        moving = self.bar.maximum() == 0
+        self._taskbar("paused" if self._paused_reason else "indeterminate" if moving else "normal",
+                      known / self._bytes)
 
     def finish(self, results, original_note: str = "", replaced: bool = False) -> None:
         """Show the outcome; stays until dismissed. ``original_note``: e.g. "The original is in the Trash"."""
@@ -194,6 +199,7 @@ class JobStatus(Card):
         self._outputs = [r.output for r in done if r.output]
         self._results = list(results)
         self._details = self._describe_failures(failed + skipped)
+        self._taskbar("error" if failed else "none")      # (red until the window is looked at)
         self.bar.setVisible(False)
         self.detail.setVisible(True)
         lines: list[str] = []
@@ -259,6 +265,7 @@ class JobStatus(Card):
         self._tick.stop()
         self.bar.setVisible(False)
         self.title.setText("Stopped by an error")
+        self._taskbar("error")
         self.detail.setText(message)
         self.detail.setVisible(True)
         self._details = message
@@ -267,6 +274,16 @@ class JobStatus(Card):
         self.setVisible(True)
 
     # ---------------------------------------------------------------- helpers
+    def _taskbar(self, state: str, fraction: float = 0.0) -> None:
+        """Mirror this job on the window's taskbar button (gui/taskbar.py)."""
+        tb = getattr(self.window(), "taskbar", None)
+        if tb is not None:
+            tb.report(self, state, fraction)
+
+    def hideEvent(self, e) -> None:  # noqa: N802
+        super().hideEvent(e)
+        self._taskbar("none")
+
     def _describe_failures(self, results) -> str:
         from .. import APP_NAME, __version__
 

@@ -267,9 +267,10 @@ class FileJobPage(Page):
         checkable = [it for it in items if it.flags() & Qt.ItemIsUserCheckable]
         extra: list = []
         if outputs:
-            from .file_model import open_in_file_manager
+            from .file_model import open_in_file_manager_many
 
-            extra.append(("Show Result", lambda: open_in_file_manager(str(outputs[0]))))
+            extra.append(("Show Result" if len(outputs) == 1 else f"Show {len(outputs)} Results",
+                          lambda: open_in_file_manager_many(outputs)))
         if checkable and not self.busy():
             def check(state):
                 for it in checkable:

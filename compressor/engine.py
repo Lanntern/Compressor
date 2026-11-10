@@ -17,7 +17,8 @@ from pathlib import Path
 
 from . import journal, steps, tools, trash_restore
 from .log import log
-from .fileops import BIN_NAME, copy_times, final_path, link_or_copy, move_to_trash, remove_quietly, temp_name, trash_available
+from .fileops import (BIN_NAME, copy_times, final_path, link_or_copy, move_to_trash, notify_shell, read_zone_mark,
+                      remove_quietly, temp_name, trash_available, write_zone_mark)
 from .formats import ARCHIVE, AUDIO, COMIC, DOC, DOCUMENT, FONT, JPEG, KIND_LABEL, PDF, VIDEO, human
 from .images import NotWorthIt, VerificationFailed, convert_image
 from .plan import Plan
@@ -148,6 +149,7 @@ def place_output(entry: FileEntry, st: os.stat_result, tmp: Path, dest: Path, s:
     """
     src = entry.path
     new_size = _size(tmp)
+    zone_mark = read_zone_mark(src)         # (before the original goes to the bin)
     steps.report("Moving the original to the Trash" if s.output_mode == "replace" else "Saving the result")
     if s.preserve_dates:
         copy_times(st, tmp)
@@ -186,6 +188,10 @@ def place_output(entry: FileEntry, st: os.stat_result, tmp: Path, dest: Path, s:
             except Exception:
                 remove_quietly(dest)  # leave things exactly as they were
                 raise
+    if not dest.is_dir():
+        write_zone_mark(dest, zone_mark)
+    notify_shell(created=[] if dest == src else [dest], updated=[dest] if dest == src else [],
+                 deleted=[src] if s.output_mode == "replace" and dest != src else [])
     moved_to = ""
     if s.originals_to and s.output_mode != "replace":
         steps.report("Moving the original")

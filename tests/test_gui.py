@@ -237,6 +237,60 @@ def test_jump_list_and_tray_open_pages(win):
     assert win.pages.currentWidget() is win.compress
 
 
+def test_support_link_and_one_time_prompt(win):
+    from compressor.gui import support
+
+    win.sidebar.support_btn.click()                                         # any time, from the sidebar
+    dlg = win._support_dialog
+    assert dlg.isVisible() and not dlg.isModal() and dlg.star.text() and dlg.donate.text()
+    dlg.close()
+    qs = win.qsettings
+    qs.setValue(support.FIRST_SEEN, 0.0)
+    qs.setValue(support.SAVED_MOST, 11 * 1024 ** 3)
+    qs.remove(support.ASKED)
+    win.show_window()
+    win._maybe_ask_support()
+    assert win._support_dialog.isVisible() and qs.value(support.ASKED, False, bool)
+    win._support_dialog.close()
+    shown = win._support_dialog
+    win._maybe_ask_support()                                                # asked once only
+    assert win._support_dialog is shown
+    qs.remove(support.SAVED_MOST)
+    qs.remove(support.FIRST_SEEN)
+
+
+def test_taskbar_mirrors_the_job(win):
+    """The taskbar button follows a job panel: moving, paused, finished or failed; its Pause and Stop buttons
+    press the panel's own. On Windows the real taskbar calls must succeed too."""
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from compressor.engine import DONE, FAILED
+    from compressor.gui import taskbar as tbmod
+
+    tb, panel = win.taskbar, win.compress.job_status
+    panel.start(2, 2000)
+    assert tb._jobs[id(panel)][1] == "indeterminate" and tb.active_panel() is panel
+    tb.clicked(tbmod.PAUSE_ID)                                    # the Pause button in the taskbar preview
+    assert panel.pause_btn.isChecked() and tb._jobs[id(panel)][1] == "paused"
+    tb.clicked(tbmod.PAUSE_ID)
+    assert not panel.pause_btn.isChecked()
+    entry = SimpleNamespace(path=Path("a.jpg"), size=1000)
+    ok = SimpleNamespace(entry=entry, status=DONE, output=None, message="", step="", new_size=500, saved=500)
+    panel.finish([ok])
+    assert id(panel) not in tb._jobs and tb.active_panel() is None
+    panel.start(1, 1000)
+    bad = SimpleNamespace(entry=entry, status=FAILED, output=None, message="boom", step="Encoding", new_size=0,
+                          saved=0)
+    panel.finish([bad])
+    assert tb._jobs[id(panel)][1] == "error"                      # red until the window is looked at
+    tb.clear_error()
+    assert not tb._jobs
+    if os.name == "nt":
+        assert tb._list is not None and not tb._failed, tb.error  # ITaskbarList3 answered
+    panel.hide()
+
+
 def test_tray_menu(win):
     if win.tray is None:
         pytest.skip("no system tray here")
@@ -841,7 +895,26 @@ def test_update_check_setting_and_notice(win):
     assert tips[0].is_open()
     pop = tips[0]._popover
     assert pop.width() <= 400 * 2 and pop.body.text() == updates.HELP and pop.body.height() > pop.body.fontMetrics().height()
+    assert pop.sticky
     pop.close()
+    # Hovering shows the same card without taking the focus; leaving closes it; clicking while hovered keeps it.
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QEnterEvent
+    from PySide6.QtWidgets import QApplication
+
+    tip = tips[0]
+    QApplication.sendEvent(tip, QEnterEvent(QPointF(5, 5), QPointF(5, 5), QPointF(5, 5)))
+    _wait(lambda: tip.is_open(), 2)
+    assert not tip._popover.sticky and tip._popover.body.text() == updates.HELP
+    QApplication.sendEvent(tip, QEvent(QEvent.Leave))
+    _wait(lambda: not tip.is_open(), 2)
+    QApplication.sendEvent(tip, QEnterEvent(QPointF(5, 5), QPointF(5, 5), QPointF(5, 5)))
+    _wait(lambda: tip.is_open(), 2)
+    tip.click()
+    assert tip.is_open() and tip._popover.sticky
+    QApplication.sendEvent(tip, QEvent(QEvent.Leave))
+    assert tip.is_open()                                    # pinned by the click: leaving doesn't close it
+    tip._popover.close()
     win.sidebar.set_update("99.0", security=True)
     assert win.sidebar.update_btn.isVisibleTo(win.sidebar) and "security" in win.sidebar.update_btn.text().lower()
     win.sidebar.set_update(None)
@@ -1536,3 +1609,45 @@ def test_convert_presets_from_the_page_and_the_context_menu(win, tmp_path, monke
     assert "Web pictures" not in convert_presets.load(conv.qs)
     conv.originals.setCurrentIndex(conv.originals.findData("keep"))
     conv.clear()
+
+
+def test_icons_drawn_at_display_scale(win):
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QIcon
+
+    from compressor.gui import style
+
+    ic = style.icon("home")
+    for scale in (1.0, 1.25, 2.5):
+        pm = ic.pixmap(QSize(20, 20), scale)
+        assert pm.width() == round(20 * scale) and pm.devicePixelRatio() == scale
+    assert not ic.pixmap(QSize(16, 16), 1.0, QIcon.Disabled).isNull()
+    assert style.icon_pixmap("home", "#fff", 16, 1.75).width() == 28
+
+
+def test_developer_settings_hidden_until_switched_on(win, monkeypatch):
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    from compressor.gui import style
+    from compressor.gui.about_dialog import AboutDialog
+    from compressor.gui.devmode import CLICKS
+
+    monkeypatch.delenv("COMPRESSOR_DEV", raising=False)
+    win.qsettings.remove("dev/enabled")
+    page = win.app_settings
+    page.update_dev_section()
+    assert page.dev_section.isHidden()
+    d = AboutDialog(win)
+    for _ in range(CLICKS):
+        ev = QMouseEvent(QEvent.MouseButtonRelease, QPointF(2, 2), QPointF(2, 2), Qt.LeftButton, Qt.NoButton,
+                         Qt.NoModifier)
+        QApplication.sendEvent(d._version, ev)
+    assert not page.dev_section.isHidden()
+    page.fluent_icons.setChecked(True)      # (no icon font here: the app's own icons are still drawn)
+    assert not style.icon("home").pixmap(20, 20).isNull()
+    page.fluent_icons.setChecked(False)
+    d._toggle_dev()
+    assert page.dev_section.isHidden()
+    d.deleteLater()

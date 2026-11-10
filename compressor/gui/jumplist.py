@@ -102,10 +102,23 @@ class _Com:
             self.ptr = ctypes.c_void_p()
 
 
+CO_E_NOTINITIALIZED = -0x7FFBFE10        # 0x800401F0: COM hasn't been started on this thread
+
+
 def _create(clsid: str, iid: str) -> _Com:
+    ole32 = ctypes.windll.ole32  # type: ignore[attr-defined]
     out = ctypes.c_void_p()
-    hr = ctypes.windll.ole32.CoCreateInstance(  # type: ignore[attr-defined]
-        ctypes.byref(_GUID.of(clsid)), None, CLSCTX_INPROC_SERVER, ctypes.byref(_GUID.of(iid)), ctypes.byref(out))
+
+    def attempt() -> int:
+        return ole32.CoCreateInstance(ctypes.byref(_GUID.of(clsid)), None, CLSCTX_INPROC_SERVER,
+                                      ctypes.byref(_GUID.of(iid)), ctypes.byref(out))
+
+    hr = attempt()
+    if hr == CO_E_NOTINITIALIZED:
+        # (Qt starts COM on the window's thread only once something needs it, e.g. drag and drop: start it here,
+        # in the same single-threaded mode Qt uses, and leave it running for the app's lifetime.)
+        ole32.CoInitializeEx(None, 2)
+        hr = attempt()
     if hr < 0:
         raise OSError(f"CoCreateInstance {clsid} failed (HRESULT 0x{hr & 0xFFFFFFFF:08X})")
     return _Com(out)
@@ -181,4 +194,24 @@ def update(exe: str | None = None, args_prefix: str = "") -> bool:
             ole32.CoUninitialize()
 
 
-__all__ = ["APP_ID", "TASKS", "set_process_app_id", "update"]
+def clear() -> bool:
+    """Remove the jump list Windows keeps for this app (the uninstaller's clean-up)."""
+    if not IS_WINDOWS:
+        return False
+    ole32 = ctypes.windll.ole32  # type: ignore[attr-defined]
+    hr_init = ole32.CoInitializeEx(None, 2)
+    dest = None
+    try:
+        dest = _create(CLSID_DestinationList, IID_ICustomDestinationList)
+        dest.call(10, (ctypes.c_wchar_p,), APP_ID)                                     # DeleteList
+        return True
+    except OSError:
+        return False
+    finally:
+        if dest is not None:
+            dest.release()
+        if hr_init in (0, 1):
+            ole32.CoUninitialize()
+
+
+__all__ = ["APP_ID", "TASKS", "set_process_app_id", "update", "clear"]

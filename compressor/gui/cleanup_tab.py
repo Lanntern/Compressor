@@ -4,7 +4,7 @@ clutter, Windows, app compression and Google Takeout, one tab each (see cleanup_
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QSizePolicy, QStackedWidget, QTabBar
+from PySide6.QtWidgets import QComboBox, QSizePolicy, QStackedWidget, QTabBar, QWidget
 
 from .cleanup_section import ToolSection
 from .cleanup_tools import tools
@@ -24,17 +24,14 @@ class CleanupTab(Page):
         self.tabs.setAccessibleName("Clean-up tools")
         self.tabs.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)   # its tabs' full height, never squeezed
         self.stack = QStackedWidget()
-        self.sections: list[ToolSection] = []
-        for tool in tools():
-            sec = ToolSection(tool, self)
-            self.sections.append(sec)
+        # Each tool is built the first time it's shown (building all ten up front made opening the page hitch).
+        self._tools = tools()
+        self._built: dict[int, ToolSection] = {}
+        self._hover: bool | None = None
+        for tool in self._tools:
             self.tabs.addTab(tool.tab)
-            self.stack.addWidget(sec)
+            self.stack.addWidget(QWidget())               # (a placeholder until the tool is first shown)
         self.tabs.currentChanged.connect(self._show_tool)
-        from .widgets import _BodyScroll
-
-        for scroll in self.findChildren(_BodyScroll):
-            scroll.verticalScrollBar().rangeChanged.connect(lambda *_: self._refit_soon())
         self._show_tool(0)
         # Too narrow for every tab: the same choice as a drop-down (no scroll arrows, nothing cut off).
         self.picker = QComboBox()
@@ -48,9 +45,35 @@ class CleanupTab(Page):
         self.body.addWidget(self.picker, 0, Qt.AlignLeft)
         self.body.addWidget(self.stack, 1)
 
+    def section(self, index: int) -> ToolSection:
+        """Tool ``index``'s section, built now if it hasn't been yet."""
+        sec = self._built.get(index)
+        if sec is None:
+            from .widgets import _BodyScroll
+
+            sec = ToolSection(self._tools[index], self)
+            if self._hover is not None:
+                sec.hover.enabled = self._hover
+            current = self.stack.currentIndex()
+            holder = self.stack.widget(index)
+            self.stack.insertWidget(index, sec)
+            self.stack.removeWidget(holder)
+            holder.deleteLater()
+            self.stack.setCurrentIndex(current)
+            for scroll in sec.findChildren(_BodyScroll):
+                scroll.verticalScrollBar().rangeChanged.connect(lambda *_: self._refit_soon())
+            self._built[index] = sec
+        return sec
+
+    @property
+    def sections(self) -> list[ToolSection]:
+        """Every tool's section (building any that haven't been shown yet)."""
+        return [self.section(i) for i in range(len(self._tools))]
+
     def _show_tool(self, index: int) -> None:
         """Only the tool on screen counts for the page's minimum size (a stack otherwise takes the widest of
         all ten, and every tool would be squeezed or cut off by the widest one's buttons)."""
+        self.section(index)
         self.stack.setCurrentIndex(index)
         for i in range(self.stack.count()):
             w = self.stack.widget(i)
@@ -84,16 +107,17 @@ class CleanupTab(Page):
         self.picker.setVisible(not fits)
 
     def busy(self) -> bool:
-        return any(s.busy() for s in self.sections)
+        return any(s.busy() for s in self._built.values())
 
     def set_hover(self, on: bool) -> None:
-        for s in self.sections:
+        self._hover = on
+        for s in self._built.values():
             s.hover.enabled = on
             if not on:
                 s.hover.hide()
 
     def stop_all(self) -> None:
-        for s in self.sections:
+        for s in self._built.values():
             s.stop()
             if s.worker is not None:
                 s.worker.wait(30000)

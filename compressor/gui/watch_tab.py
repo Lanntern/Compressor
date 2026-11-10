@@ -7,7 +7,7 @@ import os
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSize, Qt, QThread, Signal
+from PySide6.QtCore import QSettings, QSize, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QCheckBox, QComboBox, QFileDialog, QFrame, QLabel, QListWidget,
                                QListWidgetItem)
 
@@ -341,6 +341,15 @@ class WatchTab(Page):
     def _next(self) -> None:
         if self.job is not None and self.job.isRunning() or not self.queue:
             return
+        from .. import power
+
+        if power.user_busy():          # a game or presentation is full-screen: don't make it stutter
+            if not getattr(self, "_waiting_for_quiet", False):
+                self._waiting_for_quiet = True
+                self._log("Waiting: something is running full-screen")
+            QTimer.singleShot(60_000, self._next)
+            return
+        self._waiting_for_quiet = False
         batch, self.queue = self.queue[:200], self.queue[200:]
         self._log(f"Compressing {len(batch)} new file(s)…")
         groups: dict[str, tuple[list[str], Settings]] = {}
@@ -362,7 +371,8 @@ class WatchTab(Page):
         self.win.history.refresh()
         if done or failed:
             self.win.tray_message(f"Compressed {done} new file(s), saved {human(saved)}"
-                                  + (f"; {failed} failed" if failed else ""))
+                                  + (f"; {failed} failed" if failed else ""),
+                                  actions=[("Show in History", "history")], launch="watch")
 
     def _log(self, line: str) -> None:
         self.logw.insertItem(0, f"{time.strftime('%H:%M')}   {line}")

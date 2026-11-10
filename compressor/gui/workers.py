@@ -29,7 +29,7 @@ class ScanThread(QThread):
 
         try:
             with power.awake():
-                self.result.emit(scan(self.paths, self.settings, self.progress.emit, self.cancel))
+                self.result.emit(scan(self.paths, self.settings, self.progress.emit, self.cancel, picked=True))
         except Exception as e:  # noqa: BLE001
             self.error.emit(str(e))
 

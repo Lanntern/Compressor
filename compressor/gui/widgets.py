@@ -36,11 +36,21 @@ class WrapLabel(QLabel):
 
     def _lines_height(self, width: int) -> int:
         """The height the text needs at ``width``. (QLabel's own heightForWidth never goes below the minimum
-        height, which _keep_lines sets: measured with it, a label laid out narrow once would stay tall.)"""
+        height, which _keep_lines sets: measured with it, a label laid out narrow once would stay tall.)
+        Remembered per width, text and font: a layout asks the same question many times while it settles."""
         m = self.contentsMargins()
+        key = (width, self.text(), self.font().key(), m.left(), m.right(), m.top(), m.bottom(), self.margin())
+        cache = self.__dict__.setdefault("_hfw", {})
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
         rect = self.fontMetrics().boundingRect(0, 0, max(1, width - m.left() - m.right()), 100_000,
                                                int(self.alignment()) | Qt.TextWordWrap, self._plain())
-        return rect.height() + m.top() + m.bottom() + 2 * self.margin()
+        height = rect.height() + m.top() + m.bottom() + 2 * self.margin()
+        if len(cache) > 64:
+            cache.clear()
+        cache[key] = height
+        return height
 
     def _plain(self) -> str:
         if self.textFormat() == Qt.PlainText or not _might_be_rich(self.text()):
@@ -188,7 +198,20 @@ class FlowLayout(QLayout):
         self._items: list = []
         self._groups: list[list] = []
         self._spacing, self._line_spacing, self._inner = spacing, line_spacing, inner
+        # Sizes measured during one call from Qt (sizeHint, heightForWidth...), so each widget is asked once
+        # rather than once per group and line. Not kept between calls: overriding invalidate() to clear it
+        # would make Qt call into Python while tearing the window down, which crashes at exit.
+        self._cache: dict | None = None
         self.setContentsMargins(0, 0, 0, 0)
+
+    def _measuring(self, fn, *args):
+        if self._cache is not None:          # (already inside a call: share its measurements)
+            return fn(*args)
+        self._cache = {}
+        try:
+            return fn(*args)
+        finally:
+            self._cache = None
 
     # QLayout interface
     def addItem(self, item) -> None:
@@ -228,27 +251,40 @@ class FlowLayout(QLayout):
         return True
 
     def heightForWidth(self, width: int) -> int:
-        return self._layout(QRect(0, 0, width, 0), apply=False)
+        return self._measuring(self._layout, QRect(0, 0, width, 0), False)
 
     def setGeometry(self, rect) -> None:
         super().setGeometry(rect)
-        self._layout(rect, apply=True)
+        self._measuring(self._layout, rect, True)
 
     def sizeHint(self) -> QSize:
-        w = sum(self._group_width(g) for g in self._visible_groups())
-        w += self._spacing * max(0, len(self._visible_groups()) - 1)
-        return QSize(w, self.heightForWidth(w) if w else 0)
+        return self._measuring(self._size, False)
 
     def minimumSize(self) -> QSize:
-        w = max((self._group_width(g) for g in self._visible_groups()), default=0)
-        return QSize(w, self.heightForWidth(w) if w else 0)
+        return self._measuring(self._size, True)
+
+    def _size(self, minimum: bool) -> QSize:
+        widths = [self._group_width(g) for g in self._visible_groups()]
+        w = max(widths, default=0) if minimum else sum(widths) + self._spacing * max(0, len(widths) - 1)
+        return QSize(w, self._layout(QRect(0, 0, w, 0), apply=False) if w else 0)
 
     # internals
     def _visible_groups(self) -> list[list]:
-        return [vis for g in self._groups if (vis := [i for i in g if not i.isEmpty()])]
+        cache = self._cache if self._cache is not None else {}
+        if "groups" not in cache:
+            cache["groups"] = [vis for g in self._groups if (vis := [i for i in g if not i.isEmpty()])]
+        return cache["groups"]
+
+    def _hint(self, item) -> QSize:
+        if self._cache is None:
+            return item.sizeHint()
+        hints = self._cache.setdefault("hints", {})
+        if id(item) not in hints:
+            hints[id(item)] = item.sizeHint()
+        return hints[id(item)]
 
     def _group_width(self, group) -> int:
-        return sum(i.sizeHint().width() for i in group) + self._inner * (len(group) - 1)
+        return sum(self._hint(i).width() for i in group) + self._inner * (len(group) - 1)
 
     def _layout(self, rect, apply: bool) -> int:
         lines: list[list] = [[]]
@@ -264,12 +300,12 @@ class FlowLayout(QLayout):
         for line in lines:
             if not line:
                 continue
-            h = max(i.sizeHint().height() for g in line for i in g)
+            h = max(self._hint(i).height() for g in line for i in g)
             if apply:
                 x = rect.x()
                 for g in line:
                     for i in g:
-                        sh = i.sizeHint()
+                        sh = self._hint(i)
                         i.setGeometry(QRect(x, y + (h - sh.height()) // 2, sh.width(), sh.height()))
                         x += sh.width() + self._inner
                     x += self._spacing - self._inner
@@ -428,12 +464,8 @@ class Section(QWidget):
 
     def _set(self, on: bool) -> None:
         self.content.setVisible(on)
-        pm = icon_pixmap("chevron", tokens().text2, Size.ICON_S - 4)
-        if on:
-            from PySide6.QtGui import QTransform
-
-            pm = pm.transformed(QTransform().rotate(90), Qt.SmoothTransformation)
-        self.toggle.setIcon(pm)
+        self.toggle.setIcon(icon("chevron_down" if on else "chevron", tokens().text2))
+        self.toggle.setIconSize(QSize(Size.ICON_S - 4, Size.ICON_S - 4))
         self.toggle.setAccessibleDescription("expanded" if on else "collapsed")
 
     def refresh(self) -> None:
@@ -514,14 +546,19 @@ class DropZone(QFrame):
 # ---------------------------------------------------------------- info button
 
 class InfoPopover(QWidget):
-    """A small card that points at what it explains (Fluent's info popover): opened by a click or the keyboard,
-    it stays until you click elsewhere or press Esc. Text wraps at a comfortable reading width."""
+    """A small card that points at what it explains (Fluent's info popover). Opened by a click or the keyboard
+    it stays until you click elsewhere or press Esc; opened by hovering (``sticky=False``) it takes no focus and
+    its owner closes it when the pointer leaves. Text wraps at a comfortable reading width."""
 
     BEAK = 7        # the arrow's height
     SHADOW = 10     # room around the card for its shadow
 
-    def __init__(self, body: str, title: str = "", parent=None):
-        super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+    def __init__(self, body: str, title: str = "", parent=None, sticky: bool = True):
+        kind = Qt.Popup if sticky else Qt.ToolTip
+        super().__init__(parent, kind | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.sticky = sticky
+        if not sticky:
+            self.setAttribute(Qt.WA_ShowWithoutActivating)   # hovering mustn't take the keyboard focus
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_NoMouseReplay)      # clicking the "?" again closes it, rather than reopening it
         self.setAttribute(Qt.WA_DeleteOnClose)
@@ -566,7 +603,8 @@ class InfoPopover(QWidget):
         self._beak_x = centre_x - x
         self.move(x, int(y))
         self.show()
-        self.setFocus(Qt.PopupFocusReason)
+        if self.sticky:
+            self.setFocus(Qt.PopupFocusReason)
 
     def _shape(self) -> QPainterPath:
         sh, b = self.SHADOW, self.BEAK
@@ -601,7 +639,10 @@ class InfoPopover(QWidget):
 
 
 class HelpTip(QAbstractButton):
-    """A small "?" beside a setting. Click it (or press Enter or Space) for the explanation in a popover."""
+    """A small "?" beside a setting. Hover over it for the explanation in a popover; click it (or press Enter or
+    Space) to keep the popover open."""
+
+    HOVER_DELAY_MS = 250      # long enough that passing over the "?" doesn't flash a card
 
     SIZE = 18
 
@@ -611,21 +652,40 @@ class HelpTip(QAbstractButton):
         self.setFixedSize(self.SIZE, self.SIZE)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("More information")
         self.setAccessibleName(f"More information: {title}" if title else "More information")
         self.setAccessibleDescription(help_text)
-        self.clicked.connect(self.open)
+        self.clicked.connect(lambda: self.open(sticky=True))   # (clicked passes a bool)
         self._popover: InfoPopover | None = None
+        from PySide6.QtCore import QTimer
 
-    def open(self) -> None:
+        self._hover_timer = QTimer(self, singleShot=True, interval=self.HOVER_DELAY_MS)
+        self._hover_timer.timeout.connect(lambda: self.open(sticky=False))
+
+    def open(self, sticky: bool = True) -> None:
         from PySide6.QtWidgets import QToolTip
 
+        self._hover_timer.stop()
+        if self.is_open():
+            if not sticky or self._popover.sticky:
+                return
+            self._popover.close()           # a click on a hovered "?" keeps the card: reopen it as sticky
         QToolTip.hideText()
-        pop = InfoPopover(self.help_text, self.title, self.window())
+        pop = InfoPopover(self.help_text, self.title, self.window(), sticky=sticky)
         pop.destroyed.connect(lambda *_: self.update())
         self._popover = pop
         pop.show_at(self)
         self.update()
+
+    def enterEvent(self, e) -> None:  # noqa: N802
+        super().enterEvent(e)
+        if not self.is_open():
+            self._hover_timer.start()
+
+    def leaveEvent(self, e) -> None:  # noqa: N802
+        super().leaveEvent(e)
+        self._hover_timer.stop()
+        if self.is_open() and not self._popover.sticky:
+            self._popover.close()
 
     def is_open(self) -> bool:
         try:

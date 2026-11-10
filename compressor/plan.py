@@ -48,6 +48,12 @@ def _skip(reason: str) -> Plan:
     return Plan(False, reason)
 
 
+def _too_small(e: FileEntry, limit_bytes: int) -> bool:
+    """Under a size minimum (Options › Rules), unless the file was picked by itself: the minimums keep folder scans
+    from spending time on tiny files, but a file you chose yourself is compressed whatever its size."""
+    return e.size < limit_bytes and not e.picked
+
+
 def plan_entry(entry: FileEntry, s: Settings) -> Plan:
     if s.output_mode == "folder" and not s.output_dir.strip():
         return _skip("Choose an output folder")
@@ -83,7 +89,7 @@ def _plan_image(e: FileEntry, s: Settings) -> Plan:
     fmt = s.image_format
     if fmt == "none":
         return _skip("Image conversion is off")
-    if e.size < s.min_image_kb * 1024:
+    if _too_small(e, s.min_image_kb * 1024):
         return _skip(f"Smaller than {s.min_image_kb} KB")
     info = e.image
     if info is None:
@@ -276,7 +282,7 @@ def fps_label(fps: float) -> str:
 def _plan_video(e: FileEntry, s: Settings) -> Plan:
     if s.video_codec == "none":
         return _skip("Video conversion is off")
-    if e.size < s.min_video_mb * 1024 * 1024:
+    if _too_small(e, s.min_video_mb * 1024 * 1024):
         return _skip(f"Smaller than {s.min_video_mb} MB")
     v = e.video
     if v is None:
@@ -364,7 +370,7 @@ def _plan_document(e: FileEntry, s: Settings) -> Plan:
 
     if s.documents == "none":
         return _skip("Documents are off")
-    if e.size < 100 * 1024:
+    if _too_small(e, 100 * 1024):
         return _skip("Smaller than 100 KB")
     reduce = s.documents == "reduce"
     ext = e.path.suffix.lower()
@@ -394,7 +400,7 @@ def _plan_audio(e: FileEntry, s: Settings) -> Plan:
 
     if s.audio_lossless == "keep" and s.audio_lossy == "keep":
         return _skip("Audio conversion is off")
-    if e.size < s.min_audio_kb * 1024:
+    if _too_small(e, s.min_audio_kb * 1024):
         return _skip(f"Smaller than {s.min_audio_kb} KB")
     a = e.audio
     if a is None:

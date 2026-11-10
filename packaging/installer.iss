@@ -45,15 +45,15 @@ PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0
+; Windows 10 version 1809 or later (Qt 6's minimum): older versions get a clear message instead of a broken app.
+MinVersion=10.0.17763
 OutputDir=..\dist
-OutputBaseFilename=Compressor-setup-x64
+OutputBaseFilename=Compressor-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-; The licence, shown before installing. An information page rather than "I accept the agreement": the GPL asks
-; nothing of people who just use the app (it covers sharing and changing it).
-InfoBeforeFile=..\LICENSE
+; The licence, accepted before installing.
+LicenseFile=..\LICENSE
 UninstallDisplayIcon={app}\Compressor.exe
 UninstallDisplayName={#AppName}
 CloseApplications=yes
@@ -66,10 +66,9 @@ SetupIconFile={#IconFile}
 ; The page's title says it all: no subtitle, no instructions.
 SelectTasksDesc=
 SelectTasksLabel2=
-; The licence page: one line above the text instead of two "please read" lines.
-WizardInfoBefore=License
-InfoBeforeLabel=Compressor is free, open-source software.
-InfoBeforeClickLabel=You don't need to accept anything to use it. The GNU General Public License below covers sharing and changing Compressor, and explains that it comes with no warranty.
+; The licence page: a subtitle and one instruction, instead of two "please read" lines saying the same thing.
+LicenseLabel=Compressor is free, open-source software.
+LicenseLabel3=Please read the license below. You must accept its terms to continue with the installation.
 ; Shortcuts are optional (off by default), so don't send people looking for them.
 FinishedLabel=Setup has finished installing [name] on your computer.
 FinishedLabelNoIcons=Setup has finished installing [name] on your computer.
@@ -84,6 +83,13 @@ Name: "jxlext"; Description: "Get the JPEG XL Image Extension from the Microsoft
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[Registry]
+; (An earlier uninstall's clean-up for other users must not run on this new install: see RegisterCleanupForOtherUsers.)
+Root: HKLM; Subkey: "Software\Microsoft\Active Setup\Installed Components\{{6E3B5C1A-2F44-4C1E-9B8A-0C6D2E7F4A31}"; ValueType: none; Flags: deletekey; Check: IsAdminInstallMode
+; App Paths: typing "compressor" in Win+R (and launchers that use it) starts the app.
+Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\Compressor.exe"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Compressor.exe"; ValueType: string; ValueName: "Path"; ValueData: "{app}"
+
 [Icons]
 ; AppUserModelID: the same as the app's (compressor/gui/jumplist.py), so the shortcut, the running window and the
 ; jump list (taskbar right-click, Start, Windows Search actions) are one app.
@@ -97,7 +103,8 @@ Filename: "{app}\Compressor.exe"; Parameters: "--installer-setup {code:SetupArgs
 Filename: "ms-windows-store://pdp/?ProductId=9MZPRTH5C0TB"; Flags: shellexec nowait skipifsilent runasoriginaluser; Tasks: jxlext
 Filename: "{app}\Compressor.exe"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 ; The downloaded installer isn't needed any more (removed a few seconds after Setup closes).
-Filename: "{cmd}"; Parameters: "/c ping -n 4 127.0.0.1 >nul & del /f /q ""{srcexe}"""; Description: "Delete the installer"; Flags: postinstall runhidden nowait skipifsilent runasoriginaluser
+; (Also the folder it was unzipped into, and that .zip, when both are named after the installer: see CleanupCommand.)
+Filename: "{cmd}"; Parameters: "{code:CleanupCommand}"; WorkingDir: "{sys}"; Description: "Delete the installer"; Flags: postinstall runhidden nowait skipifsilent runasoriginaluser
 
 [UninstallRun]
 ; Remove the Explorer context menu and start-at-sign-in (both point at this copy of the app).
@@ -108,6 +115,7 @@ var
   Upgrading: Boolean;
   UpdatesLabel: TNewStaticText;
   UpdatesCombo: TNewComboBox;
+  JxlChecked, JxlInstalled: Boolean;
 
 function InitializeSetup(): Boolean;
 begin
@@ -182,12 +190,62 @@ begin
     Result := UpdateKey(UpdatesCombo.ItemIndex);
 end;
 
-procedure CurPageChanged(CurPageID: Integer);
+// Is Microsoft's JPEG XL Image Extension already installed (for this user)? Asked once, the first time the
+// tasks page needs it.
+function JxlExtensionInstalled(): Boolean;
+var
+  Code: Integer;
 begin
+  if not JxlChecked then
+  begin
+    JxlChecked := True;
+    JxlInstalled := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -NonInteractive -Command "if (Get-AppxPackage -Name ''*JpegXL*'') { exit 0 } else { exit 1 }"',
+      '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0);
+  end;
+  Result := JxlInstalled;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+var
+  I: Integer;
+begin
+  // Already have the JPEG XL extension: show that option greyed out and unticked.
+  if CurPageID = wpSelectTasks then
+    for I := 0 to WizardForm.TasksList.Items.Count - 1 do
+      if Pos('JPEG XL Image Extension', WizardForm.TasksList.ItemCaption[I]) > 0 then
+        if JxlExtensionInstalled() then
+        begin
+          WizardForm.TasksList.Checked[I] := False;
+          WizardForm.TasksList.ItemEnabled[I] := False;
+          if Pos('(Already installed)', WizardForm.TasksList.ItemCaption[I]) = 0 then
+            WizardForm.TasksList.ItemCaption[I] := WizardForm.TasksList.ItemCaption[I] + ' (Already installed)';
+        end;
   // The last page has no Cancel: put Finish where the main button sits on every other page (bottom right),
   // not in the middle.
   if CurPageID = wpFinished then
     WizardForm.NextButton.Left := WizardForm.CancelButton.Left;
+end;
+
+// "Delete the installer": the setup .exe, a few seconds after Setup closes. When it was unzipped from a download
+// (e.g. Compressor-setup.zip extracted to a Compressor-setup folder), that folder goes too if nothing else is in
+// it (rmdir refuses otherwise), and so does the .zip beside it. Only names starting with "Compressor-setup", so a
+// Downloads or Desktop folder is never touched.
+function CleanupCommand(Param: String): String;
+var
+  Exe, Dir, Name, Zip: String;
+begin
+  Exe := ExpandConstant('{srcexe}');
+  Dir := ExtractFileDir(Exe);
+  Name := ExtractFileName(Dir);
+  Result := '/c ping -n 4 127.0.0.1 >nul & del /f /q "' + Exe + '"';
+  if Pos('compressor-setup', Lowercase(Name)) = 1 then
+  begin
+    Result := Result + ' & rmdir "' + Dir + '"';
+    Zip := ExtractFileDir(Dir) + '\' + Name + '.zip';
+    if FileExists(Zip) then
+      Result := Result + ' & del /f /q "' + Zip + '"';
+  end;
 end;
 
 function Flag(const Task: String): String;
@@ -204,12 +262,74 @@ begin
             ' updates=' + UpdatesChoice() + ' upgrade=' + Up;
 end;
 
+// Settings › Apps › Installed apps › … › Modify: opens Compressor's Settings (menus, start at sign-in,
+// notifications), the closest thing a classic app has to "Advanced options". (Inno marks it NoModify otherwise.)
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Root: Integer;
+  Key: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if IsAdminInstallMode then Root := HKLM else Root := HKCU;
+    Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8A6F2C1E-5B7D-4C2A-9E3F-6D1B2C3A4F50}_is1';
+    RegWriteDWordValue(Root, Key, 'NoModify', 0);
+    RegWriteStringValue(Root, Key, 'ModifyPath', '"' + ExpandConstant('{app}\Compressor.exe') + '" --open=settings');
+  end;
+end;
+
+// Other people's leftovers after an install for everyone: start at sign-in, menus, Open with, notifications
+// are written per user (in each one's own registry), and the uninstaller can only reach the person running it.
+// Windows' Active Setup runs a command once for each user at their next sign-in: this one removes those entries
+// (never anyone's files, settings or History). A later install removes the Active Setup entry again ([Registry]).
+const
+  CleanupKey = 'Software\Microsoft\Active Setup\Installed Components\{6E3B5C1A-2F44-4C1E-9B8A-0C6D2E7F4A31}';
+
+function CleanupScript(): String;
+begin
+  Result :=
+    '$c=''HKCU:\Software\Classes''; ' +
+    'foreach($k in ''Compressor.Picture'',''Compressor.Video'',''Compressor.Audio'',''compressor'',' +
+    '''*\shell\Compressor'',''Directory\shell\Compressor'',' +
+    '''SystemFileAssociations\image\shell\CompressorConvert'',''SystemFileAssociations\video\shell\CompressorConvert'',' +
+    '''SystemFileAssociations\audio\shell\CompressorConvert'',''Applications\Compressor.exe'',' +
+    '''AppUserModelId\Lanntern.Compressor''){Remove-Item -LiteralPath ($c+''\''+$k) -Recurse -Force -EA 0}; ' +
+    'Get-ChildItem $c -EA 0 | Where-Object {$_.PSChildName -like ''.*''} | ForEach-Object {' +
+    'Remove-ItemProperty -LiteralPath ($_.PSPath+''\OpenWithProgids'') ' +
+    '-Name ''Compressor.Picture'',''Compressor.Video'',''Compressor.Audio'' -EA 0}; ' +
+    'Remove-ItemProperty -LiteralPath ''HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'' -Name ''Compressor'' -EA 0; ' +
+    'Remove-ItemProperty -LiteralPath ''HKCU:\Software\RegisteredApplications'' -Name ''Compressor'' -EA 0; ' +
+    'Remove-Item -LiteralPath ''HKCU:\Software\Lanntern\Compressor'',' +
+    '''HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings\Lanntern.Compressor'',' +
+    '''HKCU:\Software\Compressor\Shell'' -Recurse -Force -EA 0; ' +
+    'Get-AppxPackage -Name ''Lanntern.Compressor.ContextMenu'' | Remove-AppxPackage -EA 0';
+end;
+
+procedure RegisterCleanupForOtherUsers();
+begin
+  RegWriteStringValue(HKLM, CleanupKey, '', 'Compressor clean-up after uninstalling');
+  RegWriteStringValue(HKLM, CleanupKey, 'StubPath',
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe') +
+    ' -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command "' + CleanupScript() + '"');
+  // A new version number each time, so a user who ran an earlier clean-up gets this one too.
+  RegWriteStringValue(HKLM, CleanupKey, 'Version', '1,' + GetDateTimeString('yyyy,mmdd,hhnn', #0, #0));
+  RegWriteDWordValue(HKLM, CleanupKey, 'IsInstalled', 1);
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if (CurUninstallStep = usPostUninstall) and IsAdminInstallMode then
+    RegisterCleanupForOtherUsers();
   if (CurUninstallStep = usPostUninstall) and not UninstallSilent then
-    if MsgBox('Also remove your Compressor settings and History?' + #13#10#13#10 +
-              'History is how compressed files can be undone. Keep it if you might reinstall.',
-              mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+    // (Command links: each choice says what it does. Keeping is the default, and the safe answer.)
+    if TaskDialogMsgBox('Keep your settings and History?',
+         'Compressor has been removed. Your settings and History are still on this PC.',
+         mbConfirmation, MB_YESNO,
+         ['Keep them' + #13#10 + 'If you install Compressor again, it carries on where you left off, and ' +
+            'you can still undo past compressions from History.',
+          'Remove them' + #13#10 + 'Deletes Compressor''s settings, History and log. Your files aren''t ' +
+            'touched, but compressions can no longer be undone from History.'],
+         0) = IDNO then
     begin
       DelTree(ExpandConstant('{localappdata}\Compressor'), True, True, True);
       RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Compressor');
