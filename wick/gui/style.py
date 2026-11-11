@@ -530,17 +530,18 @@ QToolTip {{ background: {t.card}; color: {t.text}; border: 1px solid {t.border};
 #updateLink {{ color: {t.accent_text}; background: transparent; border: none; padding: 0; text-align: left;
               font-weight: 600; }}
 #updateLink:hover {{ text-decoration: underline; }}
-#updateLink:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
+#updateLink[kbfocus="true"]:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
 #supportLink {{ color: {t.text2}; background: transparent; border: none; padding: 0; text-align: left; }}
 #supportLink:hover {{ color: {t.accent_text}; }}
-#supportLink:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
+#supportLink[kbfocus="true"]:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
 #sidebar QListWidget {{ background: transparent; border: none; padding: {S.XS}px {S.S}px; }}
 #sidebar QListWidget::item {{ height: {Z.SIDEBAR_ROW}px; padding-left: {S.S}px; border-radius: {R.CONTROL}px;
   color: {t.text}; margin: 1px 0; }}
 #sidebar QListWidget::item:hover {{ background: {t.control_hover}; }}
 #sidebar QListWidget::item:selected {{ background: {t.accent_soft}; color: {t.accent_text}; }}
 #sidebar QListWidget:focus {{ border: none; }}
-#sidebar QListWidget::item:focus {{ border: 2px solid {t.accent}; }}
+QPushButton:focus, QToolButton:focus, QCheckBox:focus, QRadioButton:focus {{ outline: none; }}
+#sidebar QListWidget[kbfocus="true"]::item:focus {{ border: 2px solid {t.accent}; }}
 
 /* ---- text roles (sizes come from fonts set in code via Type) */
 #secondary, #pageSubtitle {{ color: {t.text2}; }}
@@ -562,25 +563,25 @@ QPushButton {{
 QPushButton:hover {{ background: {t.control_hover}; }}
 QPushButton:pressed {{ background: {t.neutral_soft}; }}
 QPushButton:disabled {{ color: {t.text3}; background: {t.card_alt}; border-color: {t.border}; }}
-QPushButton:focus {{ border: 2px solid {t.accent}; padding: 0 {bp - 1}px; min-height: {h2}px; max-height: {h2}px; }}
+QPushButton[kbfocus="true"]:focus {{ border: 2px solid {t.accent}; padding: 0 {bp - 1}px; min-height: {h2}px; max-height: {h2}px; }}
 QPushButton:checked {{ background: {t.accent_soft}; border-color: {t.accent}; color: {t.accent_text}; }}
 QPushButton#primary {{ background: {t.accent}; color: {t.on_accent}; border-color: {t.accent}; font-weight: 600; }}
 QPushButton#primary:hover {{ background: {t.accent_hover}; border-color: {t.accent_hover}; }}
 QPushButton#primary:pressed {{ background: {t.accent_pressed}; border-color: {t.accent_pressed}; }}
 QPushButton#primary:disabled {{ background: {t.neutral_soft}; color: {t.text3}; border-color: {t.neutral_soft}; }}
-QPushButton#primary:focus {{ border-color: {t.text}; }}
+QPushButton#primary[kbfocus="true"]:focus {{ border-color: {t.text}; }}
 QPushButton#danger {{ color: {t.danger}; }}
 QPushButton#link {{ background: transparent; border: 1px solid transparent; color: {t.accent_text}; padding: 0 {S.XS}px; }}
 QPushButton#link:hover {{ text-decoration: underline; }}
-QPushButton#link:focus {{ border: 2px solid {t.accent}; padding: 0 {S.XS - 1}px; }}
+QPushButton#link[kbfocus="true"]:focus {{ border: 2px solid {t.accent}; padding: 0 {S.XS - 1}px; }}
 QToolButton {{ background: transparent; border: 1px solid transparent; border-radius: {R.CONTROL}px; padding: {S.XS + 1}px; }}
 QToolButton:hover {{ background: {t.control_hover}; }}
 QToolButton:checked {{ background: {t.accent_soft}; }}
-QToolButton:focus {{ border: 2px solid {t.accent}; padding: {S.XS}px; }}
+QToolButton[kbfocus="true"]:focus {{ border: 2px solid {t.accent}; padding: {S.XS}px; }}
 QToolButton#sectionToggle {{ border: 2px solid transparent; padding: {S.XS}px 0; font-weight: 600; color: {t.text}; }}
 QToolButton#sectionToggle:hover, QToolButton#sectionToggle:checked {{ background: transparent; }}
 QToolButton#sectionToggle:hover {{ color: {t.accent_text}; }}
-QToolButton#sectionToggle:focus {{ border: 2px solid {t.accent}; padding: {S.XS}px 0; }}
+QToolButton#sectionToggle[kbfocus="true"]:focus {{ border: 2px solid {t.accent}; padding: {S.XS}px 0; }}
 
 /* ---- inputs: same height as buttons; text inset by Space.S */
 QLineEdit, QComboBox, QSpinBox {{
@@ -616,7 +617,7 @@ QComboBox QAbstractItemView::item {{ min-height: {h2}px; padding: 0 {S.S}px; bor
 QComboBox QAbstractItemView::item:hover {{ background: {t.accent_soft}; color: {t.text}; }}
 QComboBox QAbstractItemView::item:selected {{ background: {t.accent}; color: {t.on_accent}; }}
 QCheckBox {{ spacing: {S.S}px; }}
-QCheckBox:focus {{ color: {t.accent_text}; }}
+QCheckBox[kbfocus="true"]:focus {{ color: {t.accent_text}; }}
 QCheckBox::indicator, QTableView::indicator, QTreeView::indicator, QListView::indicator {{ width: {ind}px; height: {ind}px; }}
 QCheckBox::indicator:unchecked, QTableView::indicator:unchecked, QTreeView::indicator:unchecked {{ image: url({a["box"]}); }}
 QCheckBox::indicator:unchecked:hover, QTableView::indicator:unchecked:hover, QTreeView::indicator:unchecked:hover {{ image: url({a["box_hover"]}); }}
@@ -668,7 +669,7 @@ QTabBar#segmented::tab:only-one {{ border-right: 1px solid {t.control_border}; b
 QTabBar#segmented::tab:hover {{ background: {t.control_hover}; }}
 QTabBar#segmented::tab:selected {{ background: {t.accent}; color: {t.on_accent}; border-color: {t.accent}; font-weight: 600; }}
 QTabBar#segmented:focus {{ outline: none; }}
-QTabBar#segmented::tab:focus {{ text-decoration: underline; }}
+QTabBar#segmented[kbfocus="true"]::tab:focus {{ text-decoration: underline; }}
 QTabBar QToolButton {{ background: {t.control}; border: 1px solid {t.control_border}; border-radius: {R.SMALL}px; }}
 
 /* ---- menus, dialogs, sliders */
@@ -684,7 +685,7 @@ QSlider::sub-page:horizontal {{ background: {t.accent}; border-radius: {S.XXS}px
 QSlider::handle:horizontal {{ background: {t.card}; border: 1px solid {t.control_border}; width: {S.L + 2}px;
   height: {S.L + 2}px; margin: -{S.S}px 0; border-radius: {S.S + 1}px; }}
 QSlider {{ background: transparent; border: none; min-height: {S.XL}px; }}
-QSlider::handle:horizontal:focus {{ border: 2px solid {t.accent}; }}
+QSlider[kbfocus="true"]::handle:horizontal:focus {{ border: 2px solid {t.accent}; }}
 """
 
 
@@ -841,6 +842,70 @@ def _rich(value: str) -> bool:
     return bool(QtGui.Qt.mightBeRichText(value))
 
 
+def keyboard_focus(w: QWidget) -> bool:
+    """Whether ``w`` has the focus and got it from the keyboard (Tab, a shortcut, or a key pressed while focused):
+    only then is the focus ring drawn, as in Windows. Clicks and windows opening don't show it."""
+    return w.hasFocus() and w.property("kbfocus") is True
+
+
+class _FocusVisible(QObject):
+    """Marks the focused widget ``kbfocus`` when the focus came from the keyboard (what the stylesheet's focus
+    rings and keyboard_focus() go by), and unmarks it when the focus leaves. Also gives dialogs' title bars the
+    dialog's colours on Windows 11 (see _tint_title_bar)."""
+
+    _KEYBOARD = (Qt.TabFocusReason, Qt.BacktabFocusReason, Qt.ShortcutFocusReason)
+    _IGNORE = (Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta)
+
+    @staticmethod
+    def _mark(w: QWidget, on: bool) -> None:
+        if (w.property("kbfocus") is True) != on:
+            w.setProperty("kbfocus", on)
+            w.style().unpolish(w)
+            w.style().polish(w)
+            w.update()
+
+    @safe_filter
+    def eventFilter(self, obj, ev):  # noqa: N802
+        kind = ev.type()
+        if kind == QEvent.FocusIn and isinstance(obj, QWidget):
+            self._mark(obj, ev.reason() in self._KEYBOARD)
+        elif kind == QEvent.FocusOut and isinstance(obj, QWidget):
+            self._mark(obj, False)
+        elif kind == QEvent.Show and os.name == "nt" and isinstance(obj, QWidget) and obj.isWindow() \
+                and obj.inherits("QDialog") and not obj.property("_titleTinted"):
+            obj.setProperty("_titleTinted", True)
+            _tint_title_bar(obj)
+        elif kind == QEvent.KeyPress and isinstance(obj, QWidget) and obj.hasFocus() \
+                and ev.key() not in self._IGNORE:
+            self._mark(obj, True)          # (arrow keys or Space on something clicked: now it's the keyboard's)
+        return False
+
+
+_focus_visible: _FocusVisible | None = None
+
+
+def _tint_title_bar(w: QWidget) -> None:
+    """Windows 11: a dialog's title bar in the dialog's own colours. Windows would otherwise paint it in the
+    accent colour (when "Show accent colour on title bars" is on), unlike the app's own window, which draws its
+    own title bar."""
+    try:
+        import ctypes
+
+        if sys.getwindowsversion().build < 22000:  # type: ignore[attr-defined]
+            return
+        def colorref(c: QColor) -> ctypes.c_uint:
+            return ctypes.c_uint(c.red() | c.green() << 8 | c.blue() << 16)
+
+        hwnd = ctypes.c_void_p(int(w.winId()))
+        dwm = ctypes.windll.dwmapi  # type: ignore[attr-defined]
+        for attribute, color in ((35, w.palette().color(QPalette.Window)),      # DWMWA_CAPTION_COLOR
+                                 (36, QColor(tokens().text))):                  # DWMWA_TEXT_COLOR
+            value = colorref(color)
+            dwm.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(value), ctypes.sizeof(value))
+    except Exception:  # noqa: BLE001 - the default title bar is fine too
+        pass
+
+
 class _WrapLongTooltips(QObject):
     """Qt shows a plain-text tooltip on one line however long it is (across the whole screen). Long ones are
     shown wrapped at a reading width instead; short ones are left alone."""
@@ -877,6 +942,10 @@ def apply_style(mode: str) -> Tokens:
     if _tooltip_wrap is None:
         _tooltip_wrap = _WrapLongTooltips(app)
         app.installEventFilter(_tooltip_wrap)
+    global _focus_visible
+    if _focus_visible is None:
+        _focus_visible = _FocusVisible(app)
+        app.installEventFilter(_focus_visible)
     hints = app.styleHints()
     if hasattr(hints, "setColorScheme"):
         scheme = {"light": Qt.ColorScheme.Light, "dark": Qt.ColorScheme.Dark}.get(mode, Qt.ColorScheme.Unknown)

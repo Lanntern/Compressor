@@ -64,27 +64,25 @@ class SupportDialog(QDialog):
                    else f"Enjoying {APP_NAME}?")
         lay.addWidget(text(heading, Type.TITLE3, bold=True, wrap=True))
         lay.addWidget(text(
-            f"{APP_NAME} is free, with no ads and nothing locked, and it's made by one person. If it's been useful, "
-            "a star on GitHub helps other people find it, and a donation on Ko-fi helps keep it going (and pays for "
-            "things like a code-signing certificate, so Windows stops warning about it).",
-            Type.BODY, wrap=True))
+            f"{APP_NAME} is free and open source. If you'd like to support it, a star on GitHub or a tip on Ko-fi "
+            "helps.", Type.BODY, wrap=True))
         if asked:
-            lay.addWidget(text("This is the only time it asks. It's always under “Support Wick” in the sidebar.",
+            lay.addWidget(text(f"This won't show again. It's under “Support {APP_NAME}” in the sidebar.",
                                Type.FOOTNOTE, secondary=True, wrap=True))
         row = QHBoxLayout()
         row.setSpacing(Space.S)
         self.star = button("Star on GitHub", "", "star", "Open Wick's GitHub page")
         self.star.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
-        self.donate = button("Support on Ko-fi", "primary", "heart", "Open Wick's Ko-fi page")
+        self.donate = button("Ko-fi", "", "heart", "Open Wick's Ko-fi page")
         self.donate.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(DONATE_URL)))
-        self.close_btn = button("Not Now", "", None, "", "Esc")
+        self.close_btn = button("Close", "", None, "", "Esc")
         self.close_btn.clicked.connect(self.close)
         row.addWidget(self.star)
         row.addWidget(self.donate)
         row.addStretch(1)
         row.addWidget(self.close_btn)
         lay.addLayout(row)
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(420)
         # Enter or Esc just closes: a reflex key press shouldn't open a browser.
         self.close_btn.setDefault(True)
         self.close_btn.setFocus()

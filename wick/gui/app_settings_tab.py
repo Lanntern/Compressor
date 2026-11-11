@@ -6,7 +6,7 @@ from typing import cast
 
 import os
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
@@ -66,6 +66,8 @@ def separator() -> QFrame:
 
 
 class AppSettingsTab(Page):
+    index_counted = Signal(int, int)      # (files, bytes), from a background thread
+
     def __init__(self, window):
         super().__init__("Settings", scrolls=True)
         self.win = window
@@ -374,7 +376,28 @@ class AppSettingsTab(Page):
         self.update_dev_section()
 
     def _update_index_stats(self) -> None:
-        n, size = index.stats()
+        """Count what the file index holds, off the window's thread: the count waits for the index's lock, which
+        a scan in the background (Home's analysis) can hold for a while, and the page mustn't freeze meanwhile."""
+        if getattr(self, "_counting", False):
+            return
+        self._counting = True
+        if not hasattr(self, "_counted_connected"):
+            self.index_counted.connect(self._show_index_stats)
+            self._counted_connected = True
+
+        def count() -> None:
+            try:
+                n, size = index.stats()
+            except Exception:  # noqa: BLE001 - only a description
+                n, size = 0, 0
+            self.index_counted.emit(n, size)
+
+        import threading
+
+        threading.Thread(target=count, daemon=True, name="index-stats").start()
+
+    def _show_index_stats(self, n: int, size: int) -> None:
+        self._counting = False
         self.index_desc.setText(f"{n:,} files · {human(size)}" if n else "Nothing remembered yet.")
         self.index_clear.setEnabled(n > 0)
 

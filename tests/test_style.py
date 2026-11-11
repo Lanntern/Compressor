@@ -86,3 +86,28 @@ def test_high_contrast_uses_the_users_colours():
     assert t.accent == "#1AEBFF" and t.on_accent == "#000000" and t.accent_text == "#75E9FC"
     assert t.danger == t.success == t.text                       # no colours of the app's own
     assert contrast_ratio(t.text, t.window) >= 7 and contrast_ratio(t.on_accent, t.accent) >= 7
+
+
+def test_focus_rings_only_for_keyboard_focus():
+    """Like Windows: a button focused by a click or a window opening shows no ring; Tab (or a shortcut) does.
+    (The filter is called directly: earlier tests may leave a QGuiApplication, which doesn't route widget events.)"""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QFocusEvent, QGuiApplication
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from wick.gui import style
+
+    if QGuiApplication.instance() is None:
+        QApplication([])
+    if not isinstance(QGuiApplication.instance(), QApplication):
+        import pytest
+
+        pytest.skip("an earlier test made a QGuiApplication (no widgets possible)")
+    focus = style._FocusVisible()
+    b = QPushButton("OK")
+    for reason, ring in ((Qt.MouseFocusReason, False), (Qt.ActiveWindowFocusReason, False),
+                         (Qt.OtherFocusReason, False), (Qt.TabFocusReason, True), (Qt.ShortcutFocusReason, True)):
+        focus.eventFilter(b, QFocusEvent(QEvent.FocusIn, reason))
+        assert (b.property("kbfocus") is True) == ring, reason
+        focus.eventFilter(b, QFocusEvent(QEvent.FocusOut, Qt.OtherFocusReason))
+        assert b.property("kbfocus") is not True

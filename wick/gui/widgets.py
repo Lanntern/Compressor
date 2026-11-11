@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QToolButton, QVBoxLayout, QWidget, QWidgetItem,
 )
 
-from .style import Radius, Size, Space, Type, icon, icon_pixmap, text_scale, tokens, ui_font
+from .style import Radius, Size, Space, Type, icon, icon_pixmap, keyboard_focus, text_scale, tokens, ui_font
 
 
 # ---------------------------------------------------------------- text
@@ -706,7 +706,7 @@ class HelpTip(QAbstractButton):
         t = tokens()
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        active = self.underMouse() or self.hasFocus() or self.is_open()
+        active = self.underMouse() or keyboard_focus(self) or self.is_open()
         color = QColor(t.accent if active else t.text2)
         r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
         if self.is_open():
@@ -715,7 +715,7 @@ class HelpTip(QAbstractButton):
             p.setBrush(fill)
         else:
             p.setBrush(Qt.NoBrush)
-        p.setPen(QPen(QColor(t.accent) if active else QColor(t.separator), 2 if self.hasFocus() else 1))
+        p.setPen(QPen(QColor(t.accent) if active else QColor(t.separator), 2 if keyboard_focus(self) else 1))
         p.drawEllipse(r)
         p.setPen(color)
         p.setFont(ui_font(Type.FOOTNOTE, QFont.DemiBold))
@@ -756,7 +756,7 @@ class ToggleSwitch(QAbstractButton):
         x = track.right() - knob - 2 if on else track.left() + 2
         p.setBrush(QColor("#FFFFFF"))
         p.drawEllipse(QRectF(x, track.top() + 2, knob, knob))
-        if self.hasFocus():
+        if keyboard_focus(self):
             p.setBrush(Qt.NoBrush)
             p.setPen(QPen(QColor(t.accent), 2))
             p.drawRoundedRect(track.adjusted(-2, -2, 2, 2), th / 2 + 2, th / 2 + 2)
