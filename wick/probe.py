@@ -216,17 +216,23 @@ def detect_cadence(path: Path, info: VideoInfo, seconds: float = 3.0) -> int:  #
     import statistics
 
     start = max(0.0, info.duration * 0.4 - seconds / 2)
-    try:
-        ffmpeg = tools.require("ffmpeg")
-        proc = tools.run([ffmpeg, "-hide_banner", "-nostdin", "-hwaccel", "auto",   # GPU decoding when present
-                          "-ss", f"{start:.2f}", "-t", f"{seconds:.2f}", "-i", str(path),
-                          "-map", f"0:{info.main_video_index}", "-an", "-sn", "-vf",
-                          "scale=192:-2,format=gray,tblend=all_mode=difference,signalstats,"
-                          "metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-"],
-                         timeout=120, check=False)
-    except Exception:  # noqa: BLE001 - detection is optional
-        return 0
-    d = [float(x) for x in re.findall(r"YAVG=([0-9.]+)", proc.stdout or "")]
+    d: list[float] = []
+    # GPU decoding when present; then on the processor, if that failed (some ffmpeg builds crash outright when
+    # a GPU library is missing, and a crashed measurement must not read as "no repeated frames").
+    for hw in (["-hwaccel", "auto"], []):
+        try:
+            ffmpeg = tools.require("ffmpeg")
+            proc = tools.run([ffmpeg, "-hide_banner", "-nostdin", *hw,
+                              "-ss", f"{start:.2f}", "-t", f"{seconds:.2f}", "-i", str(path),
+                              "-map", f"0:{info.main_video_index}", "-an", "-sn", "-vf",
+                              "scale=192:-2,format=gray,tblend=all_mode=difference,signalstats,"
+                              "metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-"],
+                             timeout=120, check=False)
+        except Exception:  # noqa: BLE001 - detection is optional
+            continue
+        d = [float(x) for x in re.findall(r"YAVG=([0-9.]+)", proc.stdout or "")]
+        if proc.returncode == 0 and len(d) >= 40:
+            break
     if len(d) < 40:
         return 0
     high = statistics.quantiles(d, n=4)[2]   # typical difference between moving frames

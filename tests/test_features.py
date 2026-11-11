@@ -187,6 +187,30 @@ def test_custom_video_quality_value():
     assert Settings.from_dict({"video_quality": "custom", "video_crf": 999}).video_crf == 63
 
 
+@needs_ffmpeg
+def test_repeated_frames_found_when_gpu_decoding_crashes(tmp_path, monkeypatch):
+    """Some ffmpeg builds crash outright with -hwaccel auto when a GPU library is missing: the measurement is
+    taken again on the processor rather than read as "no repeated frames"."""
+    import subprocess
+
+    from wick import tools
+    from wick.probe import detect_cadence, probe_video
+
+    ffmpeg("-f", "lavfi", "-i", "testsrc2=s=640x360:r=24:d=8", "-vf", "fps=30", "-c:v", "libx264", "-crf", "20",
+           "padded.mp4", cwd=tmp_path)
+    real_run = tools.run
+    crashed = []
+
+    def run(args, *a, **k):
+        if "-hwaccel" in args:
+            crashed.append(1)
+            return subprocess.CompletedProcess(args, -6, "", "Assertion failed")
+        return real_run(args, *a, **k)
+
+    monkeypatch.setattr(tools, "run", run)
+    assert detect_cadence(tmp_path / "padded.mp4", probe_video(tmp_path / "padded.mp4")) == 5 and crashed
+
+
 def _cadence_report(path, info) -> str:
     """What the frame-difference measurement gave (with and without GPU decoding), for a failed detection."""
     import re
