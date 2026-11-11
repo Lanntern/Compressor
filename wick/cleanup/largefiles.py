@@ -11,7 +11,7 @@ from pathlib import Path
 
 from ..formats import VIDEO_EXTS, human
 from ..scanner import EXCLUDED_DIR_NAMES
-from .common import Candidate, ScanResult
+from .common import _CLOUD_ONLY_ATTRS, Candidate, ScanResult, cloud_only
 
 LIMIT = 500                    # the biggest this many are listed
 
@@ -66,7 +66,7 @@ def _walk(roots: list[Path], min_size: int, progress, cancel) -> list[tuple[Path
                         stack.append(Path(e.path))
                 elif e.is_file(follow_symlinks=False):
                     st = e.stat(follow_symlinks=False)
-                    if st.st_size >= min_size:
+                    if st.st_size >= min_size and not cloud_only(st):     # (cloud-only: not on this disk)
                         found.append((Path(e.path), st.st_size, st.st_mtime))
             except OSError:
                 continue
@@ -87,13 +87,14 @@ def _from_everything(roots: list[Path], min_size: int) -> list[tuple[Path, int, 
         if items is None:
             return None
         out += [(Path(n), s, m) for n, is_dir, s, m, a in items
-                if not is_dir and s >= min_size and not a & 0x2]       # (hidden files left out, like the walk)
+                if not is_dir and s >= min_size and not a & 0x2         # (hidden files left out, like the walk,
+                and not a & _CLOUD_ONLY_ATTRS]                          #  and files only in the cloud)
     return out
 
 
-def find_large_files(roots: list[Path], min_mb: int, kind: str = "all",
+def find_large_files(roots: list[Path], min_mb: float, kind: str = "all",
                      progress: Callable | None = None, cancel: threading.Event | None = None) -> ScanResult:
-    min_size = max(1, min_mb) * 1024 * 1024
+    min_size = max(1, int(min_mb * 1024 * 1024))
     found = None
     if os.name == "nt":
         try:

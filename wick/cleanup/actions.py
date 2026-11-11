@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import journal
+from .. import cfa, journal
 from ..fileops import BIN_NAME, copy_times, move_to_trash, remove_quietly, temp_name, trash_available
 from . import appcompress
 from .common import Candidate
@@ -25,6 +25,14 @@ class Outcome:
     message: str
     freed: int = 0
     trashed_at: float = 0.0      # when it went to the Recycle Bin (to find it there again)
+    blocked: bool = False        # refused by Windows' Controlled folder access (explained once, not per file)
+
+
+def _failed(item: Candidate, e: BaseException, what: str, path: Path | None = None) -> Outcome:
+    """A failure, told as Controlled folder access when that's what refused it."""
+    if cfa.blocked(e, path or item.path):
+        return Outcome(item, False, cfa.SHORT, blocked=True)
+    return Outcome(item, False, f"{what}: {e}")
 
 
 def _record(writer: journal.RunWriter, item: Candidate, mode: str, method: str, freed: int,
@@ -44,7 +52,7 @@ def trash_item(item: Candidate, writer: journal.RunWriter, label: str) -> Outcom
     try:
         move_to_trash(item.path, item.size)
     except Exception as e:  # noqa: BLE001 - e.g. a file in use
-        return Outcome(item, False, f"Couldn't move to the {BIN_NAME}: {e}")
+        return _failed(item, e, f"Couldn't move to the {BIN_NAME}")
     main_size = item.size
     moved_with = []
     for extra_path in item.extra.get("companions", []):     # a Live Photo's video goes with its photo
@@ -239,7 +247,7 @@ def hardlink_item(item: Candidate, writer: journal.RunWriter) -> Outcome:
             os.replace(tmp, dup)
         except OSError as e:
             remove_quietly(tmp)
-            return Outcome(item, False, f"Couldn't create a hard link: {e}")
+            return _failed(item, e, "Couldn't create a hard link")
     item.extra["mtime_ns"] = ds.st_mtime_ns
     how = "block clone of" if cloned else "hard link to"
     _record(writer, item, HARDLINK, f"Duplicate → {how} {keeper.name}", item.size, time.time(), str(keeper))
@@ -353,7 +361,7 @@ def rename_item(item: Candidate, writer: journal.RunWriter) -> Outcome:
     try:
         os.rename(item.path, target)
     except OSError as e:
-        return Outcome(item, False, f"Couldn't rename: {e}")
+        return _failed(item, e, "Couldn't rename")
     writer.add(journal.FileRecord(
         original=str(item.path), output=str(target), original_size=0, output_size=0, kind="cleanup",
         method=f"Renamed to {target.name}", reversible=True, trashed_at=0.0, mode="renamed"))

@@ -292,7 +292,7 @@ def process_file(
         return FileResult(entry, FAILED, str(e))
     except Exception as e:  # noqa: BLE001 - report anything, keep going
         log.exception("Failed: %s", entry.path)
-        return FileResult(entry, FAILED, f"{e}; original kept")
+        return FileResult(entry, FAILED, f"{_why(e, entry.path)}; original kept")
     finally:
         remove_quietly(tmp)
 
@@ -311,7 +311,15 @@ def _guarded(entry: FileEntry, fn) -> FileResult:
         return FileResult(entry, FAILED, str(e))
     except Exception as e:  # noqa: BLE001
         log.exception("Failed: %s", entry.path)
-        return FileResult(entry, FAILED, f"{e}; original kept")
+        return FileResult(entry, FAILED, f"{_why(e, entry.path)}; original kept")
+
+
+def _why(e: BaseException, path: Path) -> str:
+    """An error as people should read it: Controlled folder access named, not "access denied"."""
+    from . import APP_NAME, cfa
+
+    return f"{cfa.SHORT} (allow {APP_NAME} in Windows Security to change files here)" if cfa.blocked(e, path) \
+        else str(e)
 
 
 def process_convert(entry: FileEntry, plan: Plan, s: Settings, writer, cancel=None, on_progress=None, *,

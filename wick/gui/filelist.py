@@ -106,9 +106,16 @@ class ColumnFitter(QObject):
         tree.header().sectionResized.connect(self._resized)
         tree.itemExpanded.connect(lambda *_: self.fit_soon())
 
-    def _resized(self, *_):
-        if not self._fitting and QApplication.mouseButtons() & Qt.LeftButton:
-            self.user_sized = True  # the user is dragging a column edge: their widths, scroll if needed
+    def _resized(self, index: int, *_):
+        """A column edge dragged by the person: their widths from now on (scrolling if needed). Only a drag on
+        the header counts: resizing the window with the mouse also resizes the stretching last column, and
+        taking that for a choice froze every column at its empty-list width."""
+        header = self.tree.header()
+        dragging = getattr(header, "_dragging", None)
+        by_hand = dragging if dragging is not None else bool(QApplication.mouseButtons() & Qt.LeftButton)
+        shown = [c for c in range(self.tree.columnCount()) if not self.tree.isColumnHidden(c)]
+        if not self._fitting and by_hand and shown and index != shown[-1]:
+            self.user_sized = True
             self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
     @safe_filter
@@ -172,6 +179,8 @@ class ColumnFitter(QObject):
             head = header.sectionSizeFromContents(c).width()
             if header._check is not None and header._check[0] == c:
                 head += 32
+            if hasattr(header, "_expander_width"):
+                head += header._expander_width(c)
             want[c] = max(self.MIN, min(self.MAX, max(content, head) + 8))
         available = tree.viewport().width() - 2
         fitted = dict(want)

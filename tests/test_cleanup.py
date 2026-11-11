@@ -733,6 +733,44 @@ def test_files_are_what_their_contents_say(tmp_path):
     assert (tmp_path / "photo.jpg").exists() and not (tmp_path / "photo.png").exists()
 
 
+def test_cloud_only_files_are_never_opened(tmp_path, monkeypatch):
+    """Files that are only in the cloud (OneDrive, iCloud...) are left out without being read: reading them, even
+    their first bytes, makes the cloud app download them. Checked on the scans that walk folders themselves."""
+    from wick import formats
+    from wick.cleanup import extensions, largefiles
+    from wick.gui import thumbs
+
+    for name in ("cloud.jpg", "here.jpg"):
+        (tmp_path / name).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 3_000_000)    # PNGs called .jpg, 3 MB
+    is_cloud = lambda st: st.st_size == 3_000_008 and st.st_ino == cloud_ino    # noqa: E731
+    cloud_ino = (tmp_path / "cloud.jpg").stat().st_ino
+    monkeypatch.setattr(extensions, "cloud_only", is_cloud)
+    monkeypatch.setattr(largefiles, "cloud_only", is_cloud)
+    monkeypatch.setattr("wick.cleanup.common.cloud_only", is_cloud)
+    opened: list[str] = []
+    real_sniff = formats.sniff
+    monkeypatch.setattr(formats, "sniff", lambda p, head=None: (opened.append(p.name), real_sniff(p, head))[1])
+    found = extensions.find_wrong_extensions([tmp_path])
+    assert [c.path.name for c in found.items] == ["here.jpg"] and opened == ["here.jpg"]
+    assert [c.path.name for c in largefiles.find_large_files([tmp_path], 2).items] == ["here.jpg"]
+    monkeypatch.setattr(thumbs, "_own_thumbnail", lambda *a: opened.append("decoded") or b"png")
+    assert thumbs.make_thumbnail(tmp_path / "cloud.jpg", "png", 64) is None and "decoded" not in opened
+
+
+def test_wrong_extensions_are_read_side_by_side(tmp_path, monkeypatch):
+    """Many files: all are checked (in parallel), and the results are the same as one at a time."""
+    from wick.cleanup import extensions
+    from PIL import Image
+
+    for i in range(60):
+        Image.new("RGB", (8, 8), "red").save(tmp_path / f"p{i}.jpg", "PNG" if i % 3 == 0 else "JPEG")
+    seen = []
+    monkeypatch.setattr(extensions, "wrong_extension",
+                        lambda p, real=extensions.wrong_extension: (seen.append(p.name), real(p))[1])
+    found = extensions.find_wrong_extensions([tmp_path])
+    assert len(seen) == 60 and sorted(c.path.name for c in found.items) == sorted(f"p{i}.jpg" for i in range(0, 60, 3))
+
+
 def test_broken_files_are_found(tmp_path):
     import zipfile
 

@@ -799,3 +799,29 @@ def test_renamed_from_compressor_carries_history_and_settings_over(tmp_path, mon
     legacy.sync()
     assert main_window.carry_over_settings() == 0                # once only: Wick's own settings stay
     assert QSettings(QSettings.IniFormat, QSettings.UserScope, "Wick", "Wick").value("theme") == "dark"
+
+
+def test_controlled_folder_access_is_recognized(monkeypatch, tmp_path):
+    """Access denied (or "not found") in a protected folder while Controlled folder access is on, and Wick isn't
+    allowed: explained as that. Anything else stays the error it is."""
+    import sys
+
+    from wick import cfa
+
+    protected = tmp_path / "Pictures"
+    monkeypatch.setattr(cfa, "_IS_WINDOWS", True)
+    monkeypatch.setattr(cfa, "_cache", (1e18, {"on": True, "folders": [protected], "apps": []}))
+    monkeypatch.setattr(cfa.time, "monotonic", lambda: 1e18)
+    denied = PermissionError(13, "Access is denied")
+    assert cfa.blocked(denied, protected / "a" / "photo.jpg")
+    assert not cfa.blocked(denied, tmp_path / "Downloads" / "photo.jpg")          # not a protected folder
+    assert not cfa.blocked(OSError(28, "No space left"), protected / "photo.jpg")   # another problem
+    gone = FileNotFoundError(2, "The system cannot find the file specified")
+    assert not cfa.blocked(gone, protected / "photo.jpg")                          # really not there
+    protected.mkdir()
+    (protected / "photo.jpg").write_bytes(b"x")
+    assert cfa.blocked(gone, protected / "photo.jpg")                              # there, but refused
+    cfa._cache[1]["apps"] = [sys.executable]
+    assert not cfa.blocked(denied, protected / "photo.jpg")                       # Wick is allowed
+    cfa._cache[1].update(on=False, apps=[])
+    assert not cfa.blocked(denied, protected / "photo.jpg")                       # turned off

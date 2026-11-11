@@ -351,8 +351,10 @@ def open_in_file_manager_many(paths) -> None:
     paths = [os.path.normpath(str(p)) for p in paths]
     if not paths:
         return
-    if os.name != "nt" or len(paths) == 1 or not _explorer_select(paths):
+    if os.name != "nt" or len(paths) == 1:
         open_in_file_manager(paths[0])
+    elif not _explorer_select(paths):
+        _open_folder(os.path.dirname(paths[0]))
 
 
 def _explorer_select(paths: list[str]) -> bool:
@@ -384,6 +386,8 @@ def _explorer_select(paths: list[str]) -> bool:
                 if children:
                     arr = (ctypes.c_void_p * len(children))(*[shell32.ILFindLastID(c) for c in children])
                     opened |= shell32.SHOpenFolderAndSelectItems(fp, wintypes.UINT(len(children)), arr, 0) == 0
+                else:   # Windows can't name the file itself (a path past 260 characters): its folder at least
+                    opened |= shell32.SHOpenFolderAndSelectItems(fp, wintypes.UINT(0), None, 0) == 0
             finally:
                 for c in children:
                     ole32.CoTaskMemFree(c)
@@ -393,12 +397,23 @@ def _explorer_select(paths: list[str]) -> bool:
         return False
 
 
+def _open_folder(folder: str) -> None:
+    try:
+        os.startfile(folder)  # type: ignore[attr-defined]
+    except OSError:
+        pass
+
+
 def open_in_file_manager(path: str) -> None:
     import subprocess
     import sys
 
     if os.name == "nt":
-        subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
+        # Through the shell, not "explorer /select,PATH": Explorer splits its arguments at commas, even inside
+        # quotes, so a name with commas in it opened some other folder.
+        path = os.path.normpath(path)
+        if not _explorer_select([path]):
+            _open_folder(path if os.path.isdir(path) else os.path.dirname(path))
     elif sys.platform == "darwin":
         subprocess.Popen(["open", "-R", path])
     else:
