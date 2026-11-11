@@ -187,6 +187,26 @@ def test_custom_video_quality_value():
     assert Settings.from_dict({"video_quality": "custom", "video_crf": 999}).video_crf == 63
 
 
+def _cadence_report(path, info) -> str:
+    """What the frame-difference measurement gave (with and without GPU decoding), for a failed detection."""
+    import re
+    import statistics
+
+    from wick import tools
+
+    lines = [f"fps={info.fps} duration={info.duration} vfr={info.vfr} interlaced={info.interlaced}"]
+    for hw in (["-hwaccel", "auto"], []):
+        proc = tools.run([tools.require("ffmpeg"), "-hide_banner", "-nostdin", *hw, "-ss", "2.50", "-t", "3.00",
+                          "-i", str(path), "-an", "-vf", "scale=192:-2,format=gray,tblend=all_mode=difference,"
+                          "signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-"],
+                         timeout=120, check=False)
+        d = [float(x) for x in re.findall(r"YAVG=([0-9.]+)", proc.stdout or "")]
+        q = statistics.quantiles(d, n=4) if len(d) > 4 else []
+        lines.append(f"{hw or 'software'}: exit {proc.returncode}, {len(d)} values, quartiles {q}, "
+                     f"first {[round(x, 2) for x in d[:12]]}, stderr {(proc.stderr or '')[-600:]!r}")
+    return "\n".join(lines)
+
+
 @needs_ffmpeg
 def test_repeated_frames_detected_and_removed(tmp_path):
     from wick import mediainfo
@@ -203,7 +223,7 @@ def test_repeated_frames_detected_and_removed(tmp_path):
 
     s = Settings(video_codec="hevc", min_video_mb=0, output_mode="suffix", image_format="none")
     entry = next(e for e in scan([tmp_path], s).entries if e.path.name == "padded.mp4")
-    assert entry.video.cadence == 5 and round(entry.video.content_fps) == 24
+    assert entry.video.cadence == 5 and round(entry.video.content_fps) == 24, _cadence_report(entry.path, entry.video)
     assert "30→24 fps" in mediainfo.describe(entry) and "padded" in mediainfo.cadence_note(entry.video)
     plan = plan_entry(entry, s)
     assert "repeated frames removed" in plan.reason
