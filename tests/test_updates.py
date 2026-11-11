@@ -80,7 +80,7 @@ def test_tool_downloads_are_checked(monkeypatch):
     unpinned = fetch_tools.Download("demo", "1.0", "https://example.invalid/demo.zip", None)
     with pytest.raises(fetch_tools.ChecksumMismatch, match="no recorded checksum"):
         fetch_tools.verify(unpinned, b"payload", allow_unpinned=False)
-    for d in [*fetch_tools.WINDOWS, fetch_tools.LINUX_LIBJXL]:
+    for d in [*fetch_tools.WINDOWS, fetch_tools.LINUX_LIBJXL, fetch_tools.LINUX_FFMPEG]:
         assert d.url.startswith("https://") and (d.sha256 is None or len(d.sha256) == 64)
 
 

@@ -65,30 +65,35 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements.txt
-      - name: Install encoders and Qt runtime libraries
-        timeout-minutes: 20
+      # ffmpeg comes from a pinned download (fetch_tools.py --ffmpeg), not Ubuntu's mirrors: when those stalled for
+      # hours, no pull request could merge. Only what the runner lacks is taken from Ubuntu, and not getting it
+      # doesn't stop the job (gifsicle's tests are then skipped; missing Qt libraries fail the GUI tests plainly).
+      - name: Qt runtime libraries and gifsicle (from Ubuntu, only if missing)
+        timeout-minutes: 8
+        continue-on-error: true
         run: |
-          # Skip rebuilding the man page index after installing (the slowest part of apt-get on a runner).
-          sudo rm -f /var/lib/man-db/auto-update
-          # A slow package mirror once held this step for 40 minutes: give up on a stuck attempt and retry. The
-          # runner's Azure mirror can stall on every package, so a retry uses Ubuntu's own archive instead.
-          # IPv4 only: package downloads stalled ~20 s each while connections over IPv6 timed out first.
-          apt="sudo timeout 330 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=10 -o Acquire::ForceIPv4=true"
-          for attempt in 1 2 3; do
-            $apt update && $apt install -y --no-install-recommends ffmpeg gifsicle libegl1 libxkbcommon0 libfontconfig1 \
-              && exit 0
-            echo "apt-get didn't finish (attempt $attempt); trying again from archive.ubuntu.com"
+          missing=""
+          for pair in libEGL.so.1:libegl1 libxkbcommon.so.0:libxkbcommon0 libfontconfig.so.1:libfontconfig1; do
+            ldconfig -p | grep -q "${pair%%:*}" || missing="$missing ${pair##*:}"
+          done
+          command -v gifsicle >/dev/null || missing="$missing gifsicle"
+          if [ -z "$missing" ]; then echo "Nothing missing"; exit 0; fi
+          echo "Installing:$missing"
+          sudo rm -f /var/lib/man-db/auto-update     # (rebuilding the man page index is the slowest part)
+          apt="sudo timeout 180 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=10 -o Acquire::ForceIPv4=true"
+          for attempt in 1 2; do
+            $apt update && $apt install -y --no-install-recommends $missing && exit 0
+            echo "apt-get didn't finish (attempt $attempt); trying archive.ubuntu.com"
             sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' /etc/apt/apt-mirrors.txt \
               /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
-            sleep 10
           done
           exit 1
       - uses: actions/cache@v6
         with:
           path: tools
           key: tools-linux-${{ hashFiles('scripts/fetch_tools.py') }}
-      - name: Download libjxl 0.11 (cjxl, djxl, cjpegli) and Pandoc (skipped when cached)
-        run: python scripts/fetch_tools.py --libjxl --pandoc
+      - name: Download ffmpeg 9.0, libjxl 0.11 (cjxl, djxl, cjpegli) and Pandoc (skipped when cached)
+        run: python scripts/fetch_tools.py --ffmpeg --libjxl --pandoc
       - name: Install (exact versions from requirements.txt, checksums enforced)
         run: |
           pip install --require-hashes -r requirements.txt

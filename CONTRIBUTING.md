@@ -14,7 +14,7 @@ Then get the encoders:
 
 * **Windows:** `python scripts/fetch_tools.py` downloads ffmpeg/ffprobe, cjxl/djxl/cjpegli and gifsicle into `tools/`.
 * **Linux:** `sudo apt install ffmpeg gifsicle`, then `python scripts/fetch_tools.py --libjxl` for cjxl/djxl/cjpegli 0.11
-  (distro libjxl is often too old).
+  (distro libjxl is often too old). `--ffmpeg` downloads the static FFmpeg build CI uses, instead of the distro's.
 
 Start the app with `wick`.
 

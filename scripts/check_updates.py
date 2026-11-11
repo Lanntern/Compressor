@@ -52,7 +52,7 @@ def latest(repo: str, pattern: str) -> str | None:
 
 def tool_findings() -> list[str]:
     pinned: dict[str, set[str]] = {}
-    for d in [*fetch_tools.WINDOWS, fetch_tools.LINUX_LIBJXL, fetch_tools.LINUX_PANDOC]:
+    for d in [*fetch_tools.WINDOWS, fetch_tools.LINUX_LIBJXL, fetch_tools.LINUX_PANDOC, fetch_tools.LINUX_FFMPEG]:
         if d.held:
             yield f"- Note: {d.tool} {d.version} is held back on purpose: {d.held}."
             continue
