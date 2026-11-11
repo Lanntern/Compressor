@@ -47,7 +47,7 @@ def _size_setting(sec: "ToolSection", key: str, default: int,
                   old_unit: tuple[str, int] = ("min_kb", 1024)) -> SizeInput:
     """A size option, remembered in bytes (earlier versions kept a whole number of KB or MB)."""
     old = sec.qs.value(f"{key}/{old_unit[0]}", None)
-    start = int(old) * old_unit[1] if old is not None else default
+    start = int(str(old)) * old_unit[1] if old is not None else default
     w = SizeInput(cast(int, sec.qs.value(f"{key}/min_bytes", start, int)))
     w.changed.connect(lambda b: sec.qs.setValue(f"{key}/min_bytes", b))
     return w

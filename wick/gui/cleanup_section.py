@@ -518,8 +518,9 @@ class ToolSection(QWidget):
         clicked = selected_or_clicked(self.tree, pos)
         items: list[QTreeWidgetItem] = []
         for it in clicked:            # a group row stands for its removable rows
+            kids = [it.child(i) for i in range(it.childCount())]
             rows = [it] if isinstance(it.data(C_NAME, ROLE_ITEM), Candidate) else \
-                [it.child(i) for i in range(it.childCount()) if it.child(i).flags() & Qt.ItemIsUserCheckable]
+                [k for k in kids if k is not None and k.flags() & Qt.ItemIsUserCheckable]
             items += [r for r in rows if r not in items and isinstance(r.data(C_NAME, ROLE_ITEM), Candidate)]
         if not items:
             return
