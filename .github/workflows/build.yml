@@ -69,7 +69,7 @@ jobs:
       # hours, no pull request could merge. Only what the runner lacks is taken from Ubuntu, and not getting it
       # doesn't stop the job (gifsicle's tests are then skipped; missing Qt libraries fail the GUI tests plainly).
       - name: Qt runtime libraries and gifsicle (from Ubuntu, only if missing)
-        timeout-minutes: 8
+        timeout-minutes: 6
         continue-on-error: true
         run: |
           missing=""
@@ -80,7 +80,7 @@ jobs:
           if [ -z "$missing" ]; then echo "Nothing missing"; exit 0; fi
           echo "Installing:$missing"
           sudo rm -f /var/lib/man-db/auto-update     # (rebuilding the man page index is the slowest part)
-          apt="sudo timeout 180 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=10 -o Acquire::ForceIPv4=true"
+          apt="sudo timeout 120 apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::ForceIPv4=true"
           for attempt in 1 2; do
             $apt update && $apt install -y --no-install-recommends $missing && exit 0
             echo "apt-get didn't finish (attempt $attempt); trying archive.ubuntu.com"
@@ -88,6 +88,24 @@ jobs:
               /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           done
           exit 1
+      # Qt can't load without libEGL. If Ubuntu's mirrors couldn't be reached (their names stopped resolving on
+      # the runners for hours), take the same two packages from Launchpad, checked against the SHA-256s in
+      # Ubuntu's signed package index (noble/main), and unpack them beside the job instead of installing them.
+      - name: libEGL from Launchpad (only if still missing)
+        timeout-minutes: 5
+        run: |
+          if ldconfig -p | grep -q libEGL.so.1; then echo "libEGL is there"; exit 0; fi
+          dir="$RUNNER_TEMP/egl"
+          mkdir -p "$dir/root"
+          while read -r sha file; do
+            curl -fsSL --retry 3 --max-time 120 -o "$dir/$file" "https://launchpad.net/ubuntu/+archive/primary/+files/$file"
+            echo "$sha  $dir/$file" | sha256sum -c -
+            dpkg-deb -x "$dir/$file" "$dir/root"
+          done <<'PKGS'
+          e549f7776216f7bd3b1c216729fb40a97a562e2eb7c563cde632b4931f9a4e57 libegl1_1.7.0-1build1_amd64.deb
+          33f5e07c74f73c2bfb44086ae0f9e6da52acd6c104d30ffe8fd768d8253d5e82 libglvnd0_1.7.0-1build1_amd64.deb
+          PKGS
+          echo "LD_LIBRARY_PATH=$dir/root/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
       - uses: actions/cache@v6
         with:
           path: tools
