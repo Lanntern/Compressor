@@ -72,7 +72,8 @@ jobs:
           sudo rm -f /var/lib/man-db/auto-update
           # A slow package mirror once held this step for 40 minutes: give up on a stuck attempt and retry. The
           # runner's Azure mirror can stall on every package, so a retry uses Ubuntu's own archive instead.
-          apt="sudo timeout 330 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=10"
+          # IPv4 only: package downloads stalled ~20 s each while connections over IPv6 timed out first.
+          apt="sudo timeout 330 apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=10 -o Acquire::ForceIPv4=true"
           for attempt in 1 2 3; do
             $apt update && $apt install -y --no-install-recommends ffmpeg gifsicle libegl1 libxkbcommon0 libfontconfig1 \
               && exit 0
