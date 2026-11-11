@@ -16,7 +16,7 @@ from ..cleanup import (
 from ..cleanup.common import Candidate
 from ..fileops import BIN_NAME
 from .cleanup_section import Tool, ToolSection, _existing
-from .widgets import button
+from .widgets import SizeInput, button
 
 # ---------------------------------------------------------------- tool definitions
 
@@ -39,18 +39,23 @@ def _keep_options(sec: ToolSection):
                 keep.setCurrentIndex(0)
     keep.currentIndexChanged.connect(changed)
     sec.extra_keep = keep
-    minsize = QSpinBox()
-    minsize.setRange(0, 10_000_000)
-    minsize.setSuffix(" KB")
-    minsize.setValue(cast(int, sec.qs.value("cleanup/duplicates/min_kb", 100, int)))
-    minsize.valueChanged.connect(lambda v: sec.qs.setValue("cleanup/duplicates/min_kb", v))
-    sec.extra_min = minsize
-    return [("Keep", keep), ("Ignore files under", minsize)]
+    sec.extra_min = _size_setting(sec, "cleanup/duplicates", 100 * 1024)
+    return [("Keep", keep), ("Ignore files under", sec.extra_min)]
+
+
+def _size_setting(sec: "ToolSection", key: str, default: int,
+                  old_unit: tuple[str, int] = ("min_kb", 1024)) -> SizeInput:
+    """A size option, remembered in bytes (earlier versions kept a whole number of KB or MB)."""
+    old = sec.qs.value(f"{key}/{old_unit[0]}", None)
+    start = int(str(old)) * old_unit[1] if old is not None else default
+    w = SizeInput(cast(int, sec.qs.value(f"{key}/min_bytes", start, int)))
+    w.changed.connect(lambda b: sec.qs.setValue(f"{key}/min_bytes", b))
+    return w
 
 
 def _scan_duplicates(sec: ToolSection, progress, cancel):
     prefer = cast(str, sec.qs.value("cleanup/duplicates/prefer", "", str))
-    return duplicates.find_duplicates(sec.folders, min_size=sec.extra_min.value() * 1024,
+    return duplicates.find_duplicates(sec.folders, min_size=sec.extra_min.bytes(),
                                       keep=sec.extra_keep.currentData(), prefer=Path(prefer) if prefer else None,
                                       progress=progress, cancel=cancel)
 
@@ -63,24 +68,12 @@ def _similar_options(sec: "ToolSection"):
     how.setToolTip("Nearly identical: re-saved, resized or slightly edited copies. Similar: also burst shots.")
     how.currentIndexChanged.connect(lambda: sec.qs.setValue("cleanup/similar/strictness", how.currentData()))
     sec.extra_how = how
-    minsize = QSpinBox()
-    minsize.setRange(0, 10_000_000)
-    minsize.setSuffix(" KB")
-    minsize.setValue(cast(int, sec.qs.value("cleanup/similar/min_kb", 50, int)))
-    minsize.valueChanged.connect(lambda v: sec.qs.setValue("cleanup/similar/min_kb", v))
-    sec.extra_min = minsize
-    return [("Match", how), ("Ignore photos under", minsize)]
+    sec.extra_min = _size_setting(sec, "cleanup/similar", 50 * 1024)
+    return [("Match", how), ("Ignore photos under", sec.extra_min)]
 
 
 def _large_options(sec: "ToolSection"):
-    minsize = QSpinBox()
-    minsize.setRange(10, 1_000_000)
-    minsize.setSingleStep(100)
-    minsize.setSuffix(" MB")
-    minsize.setValue(cast(int, sec.qs.value("cleanup/large/min_mb", 500, int)))
-    minsize.valueChanged.connect(lambda v: sec.qs.setValue("cleanup/large/min_mb", v))
-    minsize.setAccessibleName("Larger than, in megabytes")
-    sec.extra_min = minsize
+    sec.extra_min = _size_setting(sec, "cleanup/large", 500 * 1024 ** 2, old_unit=("min_mb", 1024 ** 2))
     kind = QComboBox()
     for value, label in largefiles.KINDS.items():
         kind.addItem(label, value)
@@ -88,17 +81,17 @@ def _large_options(sec: "ToolSection"):
     kind.currentIndexChanged.connect(lambda: sec.qs.setValue("cleanup/large/kind", kind.currentData()))
     kind.setAccessibleName("Type of file")
     sec.extra_how = kind
-    return [("Larger than", minsize), ("Type", kind)]
+    return [("Larger than", sec.extra_min), ("Type", kind)]
 
 
 def _scan_large(sec: "ToolSection", progress, cancel):
-    return largefiles.find_large_files(sec.folders, sec.extra_min.value(), sec.extra_how.currentData(), progress,
+    return largefiles.find_large_files(sec.folders, sec.extra_min.bytes() / 1024 ** 2, sec.extra_how.currentData(), progress,
                                        cancel)
 
 
 def _scan_similar(sec: "ToolSection", progress, cancel):
     return similar.find_similar(sec.folders, strictness=sec.extra_how.currentData(),
-                                min_size=sec.extra_min.value() * 1024, progress=progress, cancel=cancel)
+                                min_size=sec.extra_min.bytes(), progress=progress, cancel=cancel)
 
 
 def _videos_options(sec: "ToolSection"):
@@ -107,7 +100,7 @@ def _videos_options(sec: "ToolSection"):
         how.addItem(label, value)
     how.setCurrentIndex(max(0, how.findData(sec.qs.value("cleanup/videos/strictness", "very", str))))
     how.setToolTip("Nearly identical: the same video in another size or format. Similar: also copies with "
-                   "changed colours, a watermark or subtitles burned in.")
+                   "changed colors, a watermark or subtitles burned in.")
     how.currentIndexChanged.connect(lambda: sec.qs.setValue("cleanup/videos/strictness", how.currentData()))
     sec.extra_how = how
     return [("Match", how)]

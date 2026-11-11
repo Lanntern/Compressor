@@ -65,26 +65,53 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements.txt
-      - name: Install encoders and Qt runtime libraries
-        timeout-minutes: 20
+      # ffmpeg comes from a pinned download (fetch_tools.py --ffmpeg), not Ubuntu's mirrors: when those stalled for
+      # hours, no pull request could merge. Only what the runner lacks is taken from Ubuntu, and not getting it
+      # doesn't stop the job (gifsicle's tests are then skipped; missing Qt libraries fail the GUI tests plainly).
+      - name: Qt runtime libraries and gifsicle (from Ubuntu, only if missing)
+        timeout-minutes: 6
+        continue-on-error: true
         run: |
-          # Skip rebuilding the man page index after installing (the slowest part of apt-get on a runner).
-          sudo rm -f /var/lib/man-db/auto-update
-          # A slow package mirror once held this step for 40 minutes: give up on a stuck attempt and retry.
-          apt="sudo timeout 420 apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30"
-          for attempt in 1 2 3; do
-            $apt update && $apt install -y --no-install-recommends ffmpeg gifsicle libegl1 libxkbcommon0 libfontconfig1 \
-              && exit 0
-            echo "apt-get didn't finish (attempt $attempt); trying again"
-            sleep 15
+          missing=""
+          for pair in libEGL.so.1:libegl1 libxkbcommon.so.0:libxkbcommon0 libfontconfig.so.1:libfontconfig1; do
+            ldconfig -p | grep -q "${pair%%:*}" || missing="$missing ${pair##*:}"
+          done
+          command -v gifsicle >/dev/null || missing="$missing gifsicle"
+          if [ -z "$missing" ]; then echo "Nothing missing"; exit 0; fi
+          echo "Installing:$missing"
+          sudo rm -f /var/lib/man-db/auto-update     # (rebuilding the man page index is the slowest part)
+          apt="sudo timeout 120 apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::ForceIPv4=true"
+          for attempt in 1 2; do
+            $apt update && $apt install -y --no-install-recommends $missing && exit 0
+            echo "apt-get didn't finish (attempt $attempt); trying archive.ubuntu.com"
+            sudo sed -i 's#azure\.archive\.ubuntu\.com#archive.ubuntu.com#g' /etc/apt/apt-mirrors.txt \
+              /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           done
           exit 1
+      # Qt can't load without libEGL. If Ubuntu's mirrors couldn't be reached (their names stopped resolving on
+      # the runners for hours), take the same two packages from Launchpad, checked against the SHA-256s in
+      # Ubuntu's signed package index (noble/main), and unpack them beside the job instead of installing them.
+      - name: libEGL from Launchpad (only if still missing)
+        timeout-minutes: 5
+        run: |
+          if ldconfig -p | grep -q libEGL.so.1; then echo "libEGL is there"; exit 0; fi
+          dir="$RUNNER_TEMP/egl"
+          mkdir -p "$dir/root"
+          while read -r sha file; do
+            curl -fsSL --retry 3 --max-time 120 -o "$dir/$file" "https://launchpad.net/ubuntu/+archive/primary/+files/$file"
+            echo "$sha  $dir/$file" | sha256sum -c -
+            dpkg-deb -x "$dir/$file" "$dir/root"
+          done <<'PKGS'
+          e549f7776216f7bd3b1c216729fb40a97a562e2eb7c563cde632b4931f9a4e57 libegl1_1.7.0-1build1_amd64.deb
+          33f5e07c74f73c2bfb44086ae0f9e6da52acd6c104d30ffe8fd768d8253d5e82 libglvnd0_1.7.0-1build1_amd64.deb
+          PKGS
+          echo "LD_LIBRARY_PATH=$dir/root/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
       - uses: actions/cache@v6
         with:
           path: tools
           key: tools-linux-${{ hashFiles('scripts/fetch_tools.py') }}
-      - name: Download libjxl 0.11 (cjxl, djxl, cjpegli) and Pandoc (skipped when cached)
-        run: python scripts/fetch_tools.py --libjxl --pandoc
+      - name: Download ffmpeg 9.0, libjxl 0.11 (cjxl, djxl, cjpegli) and Pandoc (skipped when cached)
+        run: python scripts/fetch_tools.py --ffmpeg --libjxl --pandoc
       - name: Install (exact versions from requirements.txt, checksums enforced)
         run: |
           pip install --require-hashes -r requirements.txt
@@ -243,7 +270,7 @@ jobs:
         run: |
           Copy-Item -Recurse tools dist/Wick/tools
           python packaging/smoke_test.py dist/Wick
-      - name: Add docs and licences, and zip
+      - name: Add docs and licenses, and zip
         shell: pwsh
         run: |
           Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md dist/Wick/
@@ -396,6 +423,8 @@ jobs:
         # (Pinned to a commit: a third-party action with write access. Dependabot proposes updates.)
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
+          # A draft: checked, given its notes and published by hand (nobody sees it until then).
+          draft: true
           files: |
             Wick-windows.zip
             Wick-setup.exe

@@ -179,6 +179,42 @@ def test_parse_windows_recycle_info():
     assert trash_restore.parse_windows_info(b"junk") is None
 
 
+def test_recycle_records_read_through_brief_locks(tmp_path, monkeypatch):
+    """A $I record another program has open for a moment is read again, not taken for missing (undo would
+    say the original was gone from the Recycle Bin while it was still there)."""
+    import builtins
+
+    path = "C:\\Users\\Åsa\\Bilder\\pic.bmp"
+    ft = int((1_700_000_000 * 1e7) + 116444736000000000)
+    rec = tmp_path / "$IABC123.bmp"
+    rec.write_bytes(struct.pack("<qqqI", 2, 10, ft, len(path) + 1) + (path + "\x00").encode("utf-16-le"))
+    real_open, busy = builtins.open, [2]
+
+    def flaky_open(file, *a, **k):
+        if str(file) == str(rec) and busy[0]:
+            busy[0] -= 1
+            e = PermissionError(13, "The process cannot access the file because it is being used")
+            e.winerror = 32                                    # (sharing violation, as on Windows)
+            raise e
+        return real_open(file, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", flaky_open)
+    monkeypatch.setattr(trash_restore.time, "sleep", lambda _s: None)
+    assert trash_restore._read_windows_info(str(rec)) == (path, 1_700_000_000.0) and busy[0] == 0
+    busy[0] = 99                                               # locked for good: unreadable, not a crash
+    assert trash_restore._read_windows_info(str(rec)) is None
+    assert trash_restore._read_windows_info(str(tmp_path / "$Igone.bmp")) is None
+    denied, tries = PermissionError(13, "Access is denied"), []
+    denied.winerror = 5                                        # off-limits for good: not waited for
+
+    def no_access(file, *a, **k):
+        tries.append(file)
+        raise denied
+
+    monkeypatch.setattr(builtins, "open", no_access)
+    assert trash_restore._read_windows_info(str(rec)) is None and len(tries) == 1
+
+
 @pytest.mark.skipif(os.name == "nt", reason="freedesktop Trash layout is Linux-only")
 def test_freedesktop_restore(tmp_path):
     trash = tmp_path / "Trash"
@@ -700,7 +736,7 @@ def test_limits_against_bombs(tmp_path, monkeypatch):
 
 
 def test_winrt_notifications_and_accent():
-    """Windows: a notification is built through WinRT itself (no PowerShell), and the accent colour comes from
+    """Windows: a notification is built through WinRT itself (no PowerShell), and the accent color comes from
     UISettings; elsewhere neither exists."""
     import re
 
@@ -763,3 +799,29 @@ def test_renamed_from_compressor_carries_history_and_settings_over(tmp_path, mon
     legacy.sync()
     assert main_window.carry_over_settings() == 0                # once only: Wick's own settings stay
     assert QSettings(QSettings.IniFormat, QSettings.UserScope, "Wick", "Wick").value("theme") == "dark"
+
+
+def test_controlled_folder_access_is_recognized(monkeypatch, tmp_path):
+    """Access denied (or "not found") in a protected folder while Controlled folder access is on, and Wick isn't
+    allowed: explained as that. Anything else stays the error it is."""
+    import sys
+
+    from wick import cfa
+
+    protected = tmp_path / "Pictures"
+    monkeypatch.setattr(cfa, "_IS_WINDOWS", True)
+    monkeypatch.setattr(cfa, "_cache", (1e18, {"on": True, "folders": [protected], "apps": []}))
+    monkeypatch.setattr(cfa.time, "monotonic", lambda: 1e18)
+    denied = PermissionError(13, "Access is denied")
+    assert cfa.blocked(denied, protected / "a" / "photo.jpg")
+    assert not cfa.blocked(denied, tmp_path / "Downloads" / "photo.jpg")          # not a protected folder
+    assert not cfa.blocked(OSError(28, "No space left"), protected / "photo.jpg")   # another problem
+    gone = FileNotFoundError(2, "The system cannot find the file specified")
+    assert not cfa.blocked(gone, protected / "photo.jpg")                          # really not there
+    protected.mkdir()
+    (protected / "photo.jpg").write_bytes(b"x")
+    assert cfa.blocked(gone, protected / "photo.jpg")                              # there, but refused
+    cfa._cache[1]["apps"] = [sys.executable]
+    assert not cfa.blocked(denied, protected / "photo.jpg")                       # Wick is allowed
+    cfa._cache[1].update(on=False, apps=[])
+    assert not cfa.blocked(denied, protected / "photo.jpg")                       # turned off

@@ -1,5 +1,5 @@
 """Calling Windows Runtime (WinRT) classes from plain ctypes: the supported, documented way to reach modern Windows
-features (notifications, the accent colour) without PowerShell or another dependency.
+features (notifications, the accent color) without PowerShell or another dependency.
 
 Only what this app uses: activate a class or get its statics/factory, call methods by vtable slot (via
 jumplist._Com), pass strings as HSTRINGs. Interface IDs and slot numbers come from Windows' own metadata (as
@@ -94,7 +94,7 @@ UICOLOR_ACCENT = 5
 
 
 def accent_color() -> str | None:
-    """The accent colour chosen in Windows' Settings (UISettings.GetColorValue(Accent)) as "#RRGGBB", or None."""
+    """The accent color chosen in Windows' Settings (UISettings.GetColorValue(Accent)) as "#RRGGBB", or None."""
     if not IS_WINDOWS:
         return None
     settings = ui = None
@@ -104,7 +104,7 @@ def accent_color() -> str | None:
         color = Color()
         ui.call(6, (ctypes.c_int, ctypes.POINTER(Color)), UICOLOR_ACCENT, ctypes.byref(color))   # GetColorValue
         return f"#{color.R:02X}{color.G:02X}{color.B:02X}"
-    except Exception:  # noqa: BLE001 - no accent: the app's own colour is used
+    except Exception:  # noqa: BLE001 - no accent: the app's own color is used
         return None
     finally:
         for com in (ui, settings):

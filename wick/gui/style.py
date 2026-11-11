@@ -1,6 +1,6 @@
-"""Design system: colour tokens, typography, icons and the application stylesheet.
+"""Design system: color tokens, typography, icons and the application stylesheet.
 
-Light/dark tokens follow Apple's Human Interface colour roles. Every text colour
+Light/dark tokens follow Apple's Human Interface color roles. Every text color
 used on its background meets WCAG AA (4.5:1) - see tests/test_style.py.
 When Windows High Contrast is on, no custom styling is applied at all.
 """
@@ -70,17 +70,17 @@ DARK = Tokens(
 )
 
 _current: Tokens = LIGHT
-_system_accent = False      # Settings › Appearance › "Use the Windows accent colour"
+_system_accent = False      # Settings › Appearance › "Use the Windows accent color"
 
 
 def set_system_accent(on: bool) -> None:
-    """Use Windows' accent colour instead of the app's blue (from the next apply_style)."""
+    """Use Windows' accent color instead of the app's blue (from the next apply_style)."""
     global _system_accent
     _system_accent = bool(on)
 
 
 def windows_accent() -> str | None:
-    """The accent colour chosen in Windows' Settings › Personalisation › Colours ("#RRGGBB"), or None. Asked of
+    """The accent color chosen in Windows' Settings › Personalization › Colors ("#RRGGBB"), or None. Asked of
     Windows' own UISettings API (the supported way), not read from its private registry values."""
     from .winrt import accent_color
 
@@ -94,8 +94,8 @@ def _mix(a: QColor, b: QColor, t: float) -> str:
 
 
 def with_accent(t: Tokens, accent: str) -> Tokens:
-    """``t`` with every accent colour derived from ``accent``, each nudged until it meets the same contrast
-    rules as the app's own blue (AA: 4.5:1 for text on buttons, and for accent-coloured text on cards)."""
+    """``t`` with every accent color derived from ``accent``, each nudged until it meets the same contrast
+    rules as the app's own blue (AA: 4.5:1 for text on buttons, and for accent-colored text on cards)."""
     import dataclasses
 
     base = QColor(accent)
@@ -123,7 +123,7 @@ def tokens() -> Tokens:
 # ---------------------------------------------------------------- accessibility
 
 def high_contrast_active() -> bool:
-    """Windows High Contrast mode: the user's colours must win, so we don't style."""
+    """Windows High Contrast mode: the user's colors must win, so we don't style."""
     if os.name != "nt":
         return False
     try:
@@ -144,9 +144,9 @@ def high_contrast_active() -> bool:
 
 
 def high_contrast_tokens(pal: QPalette) -> Tokens:
-    """The app's colours taken from Windows' contrast theme (the user's own choices), for everything the app
-    draws itself: icons, switches, the sidebar, charts. No colour coding of its own: success, warning and
-    danger use the theme's text colour (the words and icons still say which is which)."""
+    """The app's colors taken from Windows' contrast theme (the user's own choices), for everything the app
+    draws itself: icons, switches, the sidebar, charts. No color coding of its own: success, warning and
+    danger use the theme's text color (the words and icons still say which is which)."""
     def c(role, group=QPalette.Active) -> str:
         return pal.color(group, role).name().upper()
 
@@ -390,7 +390,7 @@ def screen_scale() -> float:
 
 
 def icon_pixmap(name: str, color: str, size: int, dpr: float | None = None, stroke: float = 1.8) -> QPixmap:
-    """Rendered once per name/colour/size/scale (QPixmap copies are cheap and implicitly shared). ``dpr``:
+    """Rendered once per name/color/size/scale (QPixmap copies are cheap and implicitly shared). ``dpr``:
     the display scaling to render for (default: the screens' highest, so it's sharp, not stretched)."""
     return QPixmap(_icon_pixmap(name, color, size, round(dpr or screen_scale(), 3), stroke))
 
@@ -408,7 +408,7 @@ def _icon_pixmap(name: str, color: str, size: int, dpr: float, stroke: float) ->
 
 class _IconEngine(QIconEngine):
     """Draws the icon at exactly the size and display scaling it's shown at (Qt asks per screen: 100%, 150%,
-    250%...), instead of stretching one pre-rendered pixmap. Colours per mode: normal, disabled, selected."""
+    250%...), instead of stretching one pre-rendered pixmap. Colors per mode: normal, disabled, selected."""
 
     def __init__(self, name: str, colors: dict, stroke: float = 1.8):
         super().__init__()
@@ -438,7 +438,7 @@ class _IconEngine(QIconEngine):
 
 
 def icon(name: str, color: str | None = None, size: int = 20) -> QIcon:
-    """The named icon in the theme's colours (``color`` for normal and selected, when given). ``size`` is
+    """The named icon in the theme's colors (``color`` for normal and selected, when given). ``size`` is
     unused: the icon is drawn at whatever size it's shown."""
     t = tokens()
     return QIcon(_IconEngine(name, {QIcon.Normal: color or t.text2, QIcon.Disabled: t.text3,
@@ -530,17 +530,18 @@ QToolTip {{ background: {t.card}; color: {t.text}; border: 1px solid {t.border};
 #updateLink {{ color: {t.accent_text}; background: transparent; border: none; padding: 0; text-align: left;
               font-weight: 600; }}
 #updateLink:hover {{ text-decoration: underline; }}
-#updateLink:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
+#updateLink[kbfocus="true"]:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
 #supportLink {{ color: {t.text2}; background: transparent; border: none; padding: 0; text-align: left; }}
 #supportLink:hover {{ color: {t.accent_text}; }}
-#supportLink:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
+#supportLink[kbfocus="true"]:focus {{ outline: none; border-bottom: 2px solid {t.accent}; }}
 #sidebar QListWidget {{ background: transparent; border: none; padding: {S.XS}px {S.S}px; }}
 #sidebar QListWidget::item {{ height: {Z.SIDEBAR_ROW}px; padding-left: {S.S}px; border-radius: {R.CONTROL}px;
   color: {t.text}; margin: 1px 0; }}
 #sidebar QListWidget::item:hover {{ background: {t.control_hover}; }}
 #sidebar QListWidget::item:selected {{ background: {t.accent_soft}; color: {t.accent_text}; }}
 #sidebar QListWidget:focus {{ border: none; }}
-#sidebar QListWidget::item:focus {{ border: 2px solid {t.accent}; }}
+QPushButton:focus, QToolButton:focus, QCheckBox:focus, QRadioButton:focus {{ outline: none; }}
+#sidebar QListWidget[kbfocus="true"]::item:focus {{ border: 2px solid {t.accent}; }}
 
 /* ---- text roles (sizes come from fonts set in code via Type) */
 #secondary, #pageSubtitle {{ color: {t.text2}; }}
@@ -562,25 +563,25 @@ QPushButton {{
 QPushButton:hover {{ background: {t.control_hover}; }}
 QPushButton:pressed {{ background: {t.neutral_soft}; }}
 QPushButton:disabled {{ color: {t.text3}; background: {t.card_alt}; border-color: {t.border}; }}
-QPushButton:focus {{ border: 2px solid {t.accent}; padding: 0 {bp - 1}px; min-height: {h2}px; max-height: {h2}px; }}
+QPushButton[kbfocus="true"]:focus {{ border: 2px solid {t.accent}; padding: 0 {bp - 1}px; min-height: {h2}px; max-height: {h2}px; }}
 QPushButton:checked {{ background: {t.accent_soft}; border-color: {t.accent}; color: {t.accent_text}; }}
 QPushButton#primary {{ background: {t.accent}; color: {t.on_accent}; border-color: {t.accent}; font-weight: 600; }}
 QPushButton#primary:hover {{ background: {t.accent_hover}; border-color: {t.accent_hover}; }}
 QPushButton#primary:pressed {{ background: {t.accent_pressed}; border-color: {t.accent_pressed}; }}
 QPushButton#primary:disabled {{ background: {t.neutral_soft}; color: {t.text3}; border-color: {t.neutral_soft}; }}
-QPushButton#primary:focus {{ border-color: {t.text}; }}
+QPushButton#primary[kbfocus="true"]:focus {{ border-color: {t.text}; }}
 QPushButton#danger {{ color: {t.danger}; }}
 QPushButton#link {{ background: transparent; border: 1px solid transparent; color: {t.accent_text}; padding: 0 {S.XS}px; }}
 QPushButton#link:hover {{ text-decoration: underline; }}
-QPushButton#link:focus {{ border: 2px solid {t.accent}; padding: 0 {S.XS - 1}px; }}
+QPushButton#link[kbfocus="true"]:focus {{ border: 2px solid {t.accent}; padding: 0 {S.XS - 1}px; }}
 QToolButton {{ background: transparent; border: 1px solid transparent; border-radius: {R.CONTROL}px; padding: {S.XS + 1}px; }}
 QToolButton:hover {{ background: {t.control_hover}; }}
 QToolButton:checked {{ background: {t.accent_soft}; }}
-QToolButton:focus {{ border: 2px solid {t.accent}; padding: {S.XS}px; }}
+QToolButton[kbfocus="true"]:focus {{ border: 2px solid {t.accent}; padding: {S.XS}px; }}
 QToolButton#sectionToggle {{ border: 2px solid transparent; padding: {S.XS}px 0; font-weight: 600; color: {t.text}; }}
 QToolButton#sectionToggle:hover, QToolButton#sectionToggle:checked {{ background: transparent; }}
 QToolButton#sectionToggle:hover {{ color: {t.accent_text}; }}
-QToolButton#sectionToggle:focus {{ border: 2px solid {t.accent}; padding: {S.XS}px 0; }}
+QToolButton#sectionToggle[kbfocus="true"]:focus {{ border: 2px solid {t.accent}; padding: {S.XS}px 0; }}
 
 /* ---- inputs: same height as buttons; text inset by Space.S */
 QLineEdit, QComboBox, QSpinBox {{
@@ -616,7 +617,7 @@ QComboBox QAbstractItemView::item {{ min-height: {h2}px; padding: 0 {S.S}px; bor
 QComboBox QAbstractItemView::item:hover {{ background: {t.accent_soft}; color: {t.text}; }}
 QComboBox QAbstractItemView::item:selected {{ background: {t.accent}; color: {t.on_accent}; }}
 QCheckBox {{ spacing: {S.S}px; }}
-QCheckBox:focus {{ color: {t.accent_text}; }}
+QCheckBox[kbfocus="true"]:focus {{ color: {t.accent_text}; }}
 QCheckBox::indicator, QTableView::indicator, QTreeView::indicator, QListView::indicator {{ width: {ind}px; height: {ind}px; }}
 QCheckBox::indicator:unchecked, QTableView::indicator:unchecked, QTreeView::indicator:unchecked {{ image: url({a["box"]}); }}
 QCheckBox::indicator:unchecked:hover, QTableView::indicator:unchecked:hover, QTreeView::indicator:unchecked:hover {{ image: url({a["box_hover"]}); }}
@@ -668,7 +669,7 @@ QTabBar#segmented::tab:only-one {{ border-right: 1px solid {t.control_border}; b
 QTabBar#segmented::tab:hover {{ background: {t.control_hover}; }}
 QTabBar#segmented::tab:selected {{ background: {t.accent}; color: {t.on_accent}; border-color: {t.accent}; font-weight: 600; }}
 QTabBar#segmented:focus {{ outline: none; }}
-QTabBar#segmented::tab:focus {{ text-decoration: underline; }}
+QTabBar#segmented[kbfocus="true"]::tab:focus {{ text-decoration: underline; }}
 QTabBar QToolButton {{ background: {t.control}; border: 1px solid {t.control_border}; border-radius: {R.SMALL}px; }}
 
 /* ---- menus, dialogs, sliders */
@@ -684,7 +685,7 @@ QSlider::sub-page:horizontal {{ background: {t.accent}; border-radius: {S.XXS}px
 QSlider::handle:horizontal {{ background: {t.card}; border: 1px solid {t.control_border}; width: {S.L + 2}px;
   height: {S.L + 2}px; margin: -{S.S}px 0; border-radius: {S.S + 1}px; }}
 QSlider {{ background: transparent; border: none; min-height: {S.XL}px; }}
-QSlider::handle:horizontal:focus {{ border: 2px solid {t.accent}; }}
+QSlider[kbfocus="true"]::handle:horizontal:focus {{ border: 2px solid {t.accent}; }}
 """
 
 
@@ -841,6 +842,70 @@ def _rich(value: str) -> bool:
     return bool(QtGui.Qt.mightBeRichText(value))
 
 
+def keyboard_focus(w: QWidget) -> bool:
+    """Whether ``w`` has the focus and got it from the keyboard (Tab, a shortcut, or a key pressed while focused):
+    only then is the focus ring drawn, as in Windows. Clicks and windows opening don't show it."""
+    return w.hasFocus() and w.property("kbfocus") is True
+
+
+class _FocusVisible(QObject):
+    """Marks the focused widget ``kbfocus`` when the focus came from the keyboard (what the stylesheet's focus
+    rings and keyboard_focus() go by), and unmarks it when the focus leaves. Also gives dialogs' title bars the
+    dialog's colors on Windows 11 (see _tint_title_bar)."""
+
+    _KEYBOARD = (Qt.TabFocusReason, Qt.BacktabFocusReason, Qt.ShortcutFocusReason)
+    _IGNORE = (Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta)
+
+    @staticmethod
+    def _mark(w: QWidget, on: bool) -> None:
+        if (w.property("kbfocus") is True) != on:
+            w.setProperty("kbfocus", on)
+            w.style().unpolish(w)
+            w.style().polish(w)
+            w.update()
+
+    @safe_filter
+    def eventFilter(self, obj, ev):  # noqa: N802
+        kind = ev.type()
+        if kind == QEvent.FocusIn and isinstance(obj, QWidget):
+            self._mark(obj, ev.reason() in self._KEYBOARD)
+        elif kind == QEvent.FocusOut and isinstance(obj, QWidget):
+            self._mark(obj, False)
+        elif kind == QEvent.Show and os.name == "nt" and isinstance(obj, QWidget) and obj.isWindow() \
+                and obj.inherits("QDialog") and not obj.property("_titleTinted"):
+            obj.setProperty("_titleTinted", True)
+            _tint_title_bar(obj)
+        elif kind == QEvent.KeyPress and isinstance(obj, QWidget) and obj.hasFocus() \
+                and ev.key() not in self._IGNORE:
+            self._mark(obj, True)          # (arrow keys or Space on something clicked: now it's the keyboard's)
+        return False
+
+
+_focus_visible: _FocusVisible | None = None
+
+
+def _tint_title_bar(w: QWidget) -> None:
+    """Windows 11: a dialog's title bar in the dialog's own colors. Windows would otherwise paint it in the
+    accent color (when "Show accent color on title bars" is on), unlike the app's own window, which draws its
+    own title bar."""
+    try:
+        import ctypes
+
+        if sys.getwindowsversion().build < 22000:  # type: ignore[attr-defined]
+            return
+        def colorref(c: QColor) -> ctypes.c_uint:
+            return ctypes.c_uint(c.red() | c.green() << 8 | c.blue() << 16)
+
+        hwnd = ctypes.c_void_p(int(w.winId()))
+        dwm = ctypes.windll.dwmapi  # type: ignore[attr-defined]
+        for attribute, color in ((35, w.palette().color(QPalette.Window)),      # DWMWA_CAPTION_COLOR
+                                 (36, QColor(tokens().text))):                  # DWMWA_TEXT_COLOR
+            value = colorref(color)
+            dwm.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(value), ctypes.sizeof(value))
+    except Exception:  # noqa: BLE001 - the default title bar is fine too
+        pass
+
+
 class _WrapLongTooltips(QObject):
     """Qt shows a plain-text tooltip on one line however long it is (across the whole screen). Long ones are
     shown wrapped at a reading width instead; short ones are left alone."""
@@ -877,6 +942,10 @@ def apply_style(mode: str) -> Tokens:
     if _tooltip_wrap is None:
         _tooltip_wrap = _WrapLongTooltips(app)
         app.installEventFilter(_tooltip_wrap)
+    global _focus_visible
+    if _focus_visible is None:
+        _focus_visible = _FocusVisible(app)
+        app.installEventFilter(_focus_visible)
     hints = app.styleHints()
     if hasattr(hints, "setColorScheme"):
         scheme = {"light": Qt.ColorScheme.Light, "dark": Qt.ColorScheme.Dark}.get(mode, Qt.ColorScheme.Unknown)
@@ -892,10 +961,10 @@ def apply_style(mode: str) -> Tokens:
         _current = with_accent(_current, accent)
     global _system_palette
     if _system_palette is None:
-        _system_palette = QPalette(app.palette())          # (Windows' own colours, before ours are applied)
+        _system_palette = QPalette(app.palette())          # (Windows' own colors, before ours are applied)
     if high_contrast_active():
-        # The user's contrast theme wins: Windows draws the controls in its colours, and what the app draws
-        # itself (icons, switches, charts) takes the same colours.
+        # The user's contrast theme wins: Windows draws the controls in its colors, and what the app draws
+        # itself (icons, switches, charts) takes the same colors.
         app.setStyleSheet("")
         app.setPalette(_system_palette)
         _current = high_contrast_tokens(_system_palette)

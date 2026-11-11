@@ -1,4 +1,4 @@
-"""Accessibility: every text colour meets WCAG AA (4.5:1) on the surfaces it's used on."""
+"""Accessibility: every text color meets WCAG AA (4.5:1) on the surfaces it's used on."""
 
 import pytest
 
@@ -56,7 +56,7 @@ def test_controls_share_one_height(mode):
 
 @pytest.mark.parametrize("accent", ["#0078D4", "#FFB900", "#E3008C", "#00CC6A", "#744DA9", "#FFFFFF", "#101010"])
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_windows_accent_colours_stay_readable(accent, theme):
+def test_windows_accent_colors_stay_readable(accent, theme):
     """Any Windows accent (even pale yellow or near-black) gives buttons and accent text AA contrast."""
     from wick.gui.style import DARK, LIGHT, with_accent
 
@@ -64,11 +64,11 @@ def test_windows_accent_colours_stay_readable(accent, theme):
     t = with_accent(base, accent)
     assert contrast_ratio(t.on_accent, t.accent) >= 4.5
     assert contrast_ratio(t.accent_text, t.card) >= 4.5 and contrast_ratio(t.accent_text, t.window) >= 4.5
-    assert t.accent_soft != t.card and t.window == base.window          # only accent colours change
+    assert t.accent_soft != t.card and t.window == base.window          # only accent colors change
 
 
-def test_high_contrast_uses_the_users_colours():
-    """In a Windows contrast theme, everything the app draws itself takes the theme's colours."""
+def test_high_contrast_uses_the_users_colors():
+    """In a Windows contrast theme, everything the app draws itself takes the theme's colors."""
     from PySide6.QtGui import QColor, QPalette
     from PySide6.QtWidgets import QApplication
 
@@ -76,13 +76,38 @@ def test_high_contrast_uses_the_users_colours():
 
     QApplication.instance() or QApplication([])
     pal = QPalette()
-    for role, colour in ((QPalette.Window, "#000000"), (QPalette.Base, "#000000"), (QPalette.WindowText, "#FFFF00"),
+    for role, color in ((QPalette.Window, "#000000"), (QPalette.Base, "#000000"), (QPalette.WindowText, "#FFFF00"),
                          (QPalette.Highlight, "#1AEBFF"), (QPalette.HighlightedText, "#000000"),
                          (QPalette.Button, "#000000"), (QPalette.ButtonText, "#FFFFFF"),
                          (QPalette.Link, "#75E9FC")):
-        pal.setColor(QPalette.Active, role, QColor(colour))
+        pal.setColor(QPalette.Active, role, QColor(color))
     t = high_contrast_tokens(pal)
     assert t.dark and t.window == "#000000" and t.text == t.text2 == "#FFFF00"
     assert t.accent == "#1AEBFF" and t.on_accent == "#000000" and t.accent_text == "#75E9FC"
-    assert t.danger == t.success == t.text                       # no colours of the app's own
+    assert t.danger == t.success == t.text                       # no colors of the app's own
     assert contrast_ratio(t.text, t.window) >= 7 and contrast_ratio(t.on_accent, t.accent) >= 7
+
+
+def test_focus_rings_only_for_keyboard_focus():
+    """Like Windows: a button focused by a click or a window opening shows no ring; Tab (or a shortcut) does.
+    (The filter is called directly: earlier tests may leave a QGuiApplication, which doesn't route widget events.)"""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QFocusEvent, QGuiApplication
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from wick.gui import style
+
+    if QGuiApplication.instance() is None:
+        QApplication([])
+    if not isinstance(QGuiApplication.instance(), QApplication):
+        import pytest
+
+        pytest.skip("an earlier test made a QGuiApplication (no widgets possible)")
+    focus = style._FocusVisible()
+    b = QPushButton("OK")
+    for reason, ring in ((Qt.MouseFocusReason, False), (Qt.ActiveWindowFocusReason, False),
+                         (Qt.OtherFocusReason, False), (Qt.TabFocusReason, True), (Qt.ShortcutFocusReason, True)):
+        focus.eventFilter(b, QFocusEvent(QEvent.FocusIn, reason))
+        assert (b.property("kbfocus") is True) == ring, reason
+        focus.eventFilter(b, QFocusEvent(QEvent.FocusOut, Qt.OtherFocusReason))
+        assert b.property("kbfocus") is not True

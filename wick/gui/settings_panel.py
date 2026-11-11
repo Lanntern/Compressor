@@ -175,7 +175,7 @@ class SettingsPanel(QWidget):
         g = QWidget()
         f = _form(g)
         self.jpeg_progressive = _combo([("Progressive", True), ("Baseline", False)],
-                                       "Progressive JPEGs are smaller and load gradually. Lossless optimisation "
+                                       "Progressive JPEGs are smaller and load gradually. Lossless optimization "
                                        "always writes progressive.")
         self.jpeg_subsampling = _combo(
             [("Automatic", "auto"), ("4:4:4", "444"), ("4:2:2", "422"), ("4:2:0", "420")],
@@ -238,7 +238,7 @@ class SettingsPanel(QWidget):
         f = _form(g)
         self.metadata = _combo(METADATA_CHOICES,
                                "Location: GPS coordinates. Personal info: also camera, serial numbers, owner, author "
-                               "and comments.\nRotation and colour profile are always kept so images look right.")
+                               "and comments.\nRotation and color profile are always kept so images look right.")
         f.addRow("Metadata", self.metadata)
         self.preserve_dates = QCheckBox("Keep original file dates")
         self.preserve_dates.setToolTip("Results get the original's modified and created dates, so photos stay "

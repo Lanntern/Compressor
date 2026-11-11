@@ -96,7 +96,7 @@ class CaptionButton(QAbstractButton):
         pen.setCosmetic(False)
         p.setPen(pen)
         p.setBrush(Qt.NoBrush)
-        # A 10 px glyph centred on whole pixels, like Segoe Fluent Icons at 100 %.
+        # A 10 px glyph centered on whole pixels, like Segoe Fluent Icons at 100 %.
         cx = round(self.width() / 2)
         cy = round(self.height() / 2)
         g = 10.0
@@ -268,7 +268,7 @@ class WindowFrame:
         b.raise_()
 
     def changed(self, event) -> None:
-        """From the window's changeEvent: restore/maximize glyph, inactive colours."""
+        """From the window's changeEvent: restore/maximize glyph, inactive colors."""
         if event.type() in (QEvent.WindowStateChange, QEvent.ActivationChange):
             self.buttons.refresh()
 

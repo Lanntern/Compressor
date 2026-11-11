@@ -72,7 +72,7 @@ def fingerprint(path: Path) -> tuple[int, int, int] | None:
 
 
 def inspect(path: Path, px: int = 256):
-    """(sharpness, px×px greyscale thumbnail) from one decode; (0.0, None) if unreadable.
+    """(sharpness, px×px grayscale thumbnail) from one decode; (0.0, None) if unreadable.
 
     Sharpness is the edge energy of a copy reduced to fit 512 px (higher = sharper), used to pick which
     burst shot to keep; the thumbnail (orientation applied) tells re-saves apart from different shots."""
@@ -81,10 +81,10 @@ def inspect(path: Path, px: int = 256):
     try:
         with Image.open(path) as im:
             im.draft("L", (512, 512))          # JPEG: decode at reduced size (fast)
-            grey = (ImageOps.exif_transpose(im) or im).convert("L")
-            grey.thumbnail((512, 512))
-            sharp = ImageStat.Stat(grey.filter(ImageFilter.FIND_EDGES)).var[0]
-            return sharp, grey.resize((px, px), Image.LANCZOS)
+            gray = (ImageOps.exif_transpose(im) or im).convert("L")
+            gray.thumbnail((512, 512))
+            sharp = ImageStat.Stat(gray.filter(ImageFilter.FIND_EDGES)).var[0]
+            return sharp, gray.resize((px, px), Image.LANCZOS)
     except Exception:  # noqa: BLE001 - unreadable or unsupported
         return 0.0, None
 
@@ -95,7 +95,7 @@ def sharpness(path: Path) -> float:
 
 
 def thumb(path: Path, px: int = 256):
-    """A px×px greyscale thumbnail (orientation applied), or None."""
+    """A px×px grayscale thumbnail (orientation applied), or None."""
     return inspect(path, px)[1]
 
 

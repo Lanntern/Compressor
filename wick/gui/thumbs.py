@@ -22,11 +22,17 @@ CACHE_SIZE = 96
 def make_thumbnail(path: Path, kind: str, max_px: int) -> bytes | None:
     """PNG bytes of a small preview, or None if it can't be decoded. On Windows, Explorer's own cached thumbnail
     first (instant); then our decoders; then Windows making one, for types they can't read."""
+    from ..cleanup.common import cloud_only
     from . import winthumbs
 
     cached = winthumbs.thumbnail(path, max_px, cache_only=True)
     if cached is not None:
         return _png(cached)
+    try:
+        if cloud_only(path.stat()):       # only in the cloud (OneDrive, iCloud): decoding it would download it
+            return None
+    except OSError:
+        return None
     own = _own_thumbnail(path, kind, max_px)
     if own is None and winthumbs.IS_WINDOWS:
         made = winthumbs.thumbnail(path, max_px, cache_only=False)

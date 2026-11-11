@@ -249,11 +249,11 @@ def process_file(
             assert entry.audio is not None
             tmp = convert_audio(src, entry.audio, plan, s, on_progress, cancel)
         elif entry.kind == DOCUMENT:
-            from .documents import optimise
+            from .documents import optimize
 
             steps.report("Shrinking the pictures inside" if entry.path.suffix.lower() != ".pdf"
-                         else "Optimising the PDF")
-            tmp = optimise(src, reduce=s.documents == "reduce")
+                         else "Optimizing the PDF")
+            tmp = optimize(src, reduce=s.documents == "reduce")
         else:
             tmp = convert_image(src, entry.kind, entry.image, plan, s)
         if cancel is not None and cancel.is_set():
@@ -292,7 +292,7 @@ def process_file(
         return FileResult(entry, FAILED, str(e))
     except Exception as e:  # noqa: BLE001 - report anything, keep going
         log.exception("Failed: %s", entry.path)
-        return FileResult(entry, FAILED, f"{e}; original kept")
+        return FileResult(entry, FAILED, f"{_why(e, entry.path)}; original kept")
     finally:
         remove_quietly(tmp)
 
@@ -311,7 +311,15 @@ def _guarded(entry: FileEntry, fn) -> FileResult:
         return FileResult(entry, FAILED, str(e))
     except Exception as e:  # noqa: BLE001
         log.exception("Failed: %s", entry.path)
-        return FileResult(entry, FAILED, f"{e}; original kept")
+        return FileResult(entry, FAILED, f"{_why(e, entry.path)}; original kept")
+
+
+def _why(e: BaseException, path: Path) -> str:
+    """An error as people should read it: Controlled folder access named, not "access denied"."""
+    from . import APP_NAME, cfa
+
+    return f"{cfa.SHORT} (allow {APP_NAME} in Windows Security to change files here)" if cfa.blocked(e, path) \
+        else str(e)
 
 
 def process_convert(entry: FileEntry, plan: Plan, s: Settings, writer, cancel=None, on_progress=None, *,

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import APP_NAME, cfa
 from ..cleanup import actions, duplicates
 from ..cleanup.common import Candidate, ScanResult, known_folder
 from ..formats import classify, human
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
     from .cleanup_tab import CleanupTab
 
 C_NAME, C_WHERE, C_SIZE, C_DETAIL = range(4)
+OPEN_ROWS = 30_000     # groups open by themselves up to this many rows (opening 1,000 groups takes ~0.3 s)
 ROLE_ITEM = Qt.UserRole + 20
 
 
@@ -236,6 +238,9 @@ class ToolSection(QWidget):
         make_sortable(self.tree)
         self.tree.sortByColumn(-1, Qt.AscendingOrder)
         add_header_checkbox(self.tree, C_NAME, self._update_summary)
+        self.tree.header().set_expander(C_NAME, self._all_open, lambda: self.open_all(not self._all_open()))
+        self.tree.itemExpanded.connect(lambda *_: self.tree.header().viewport().update())
+        self.tree.itemCollapsed.connect(lambda *_: self.tree.header().viewport().update())
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._menu)
         keyboard_list(self.tree, self._menu)
@@ -418,17 +423,19 @@ class ToolSection(QWidget):
         for c in result.items:
             groups.setdefault(c.group or "", []).append(c)
         bold = ui_font(Type.BODY, QFont.DemiBold)
+        parents: list[QTreeWidgetItem] = []
         for g, items in groups.items():
             parent = self.tree.invisibleRootItem()
             if g:
                 parent = SortItem([self.tool.group_title(g, items), "", human(sum(i.size for i in items)), ""])
                 set_sort_keys(parent, {C_SIZE: sum(i.size for i in items)})
                 parent.setFont(C_NAME, bold)
-                if items[0].keeper is None:
-                    parent.setFlags(parent.flags() | Qt.ItemIsUserCheckable | Qt.ItemIsAutoTristate)
-                    parent.setCheckState(C_NAME, Qt.Unchecked)
-                else:  # duplicates: no group checkbox (one copy always stays); show the copy that stays
-                    parent.setFlags(Qt.ItemIsEnabled)
+                # The group's box ticks its removable rows (see _sync_groups). Duplicates: the copy that stays
+                # has no box and is never ticked along. (Qt's own tri-state shows no box at all when one row
+                # inside has none, so it's kept here.)
+                parent.setFlags((parent.flags() | Qt.ItemIsUserCheckable) & ~Qt.ItemIsAutoTristate)
+                parent.setCheckState(C_NAME, Qt.Unchecked)
+                if items[0].keeper is not None:   # duplicates: show the copy that stays
                     try:
                         keep_size = items[0].keeper.stat().st_size   # similar photos differ in size
                     except OSError:
@@ -446,7 +453,12 @@ class ToolSection(QWidget):
                     self.tree.addTopLevelItem(it)
                 else:
                     parent.addChild(it)
-            if g and len(groups) <= 40:
+            if g:
+                parents.append(parent)
+        # Groups open by themselves, unless there are so many rows that the list would be slow to scroll (then
+        # the arrow above the rows opens them all).
+        if parents and sum(p.childCount() + 1 for p in parents) <= OPEN_ROWS:
+            for parent in parents:
                 parent.setExpanded(True)
 
     def _row(self, c: Candidate) -> QTreeWidgetItem:
@@ -470,6 +482,27 @@ class ToolSection(QWidget):
             it.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)    # (its rows are made when it opens)
         return it
 
+    def _groups(self) -> list[QTreeWidgetItem]:
+        """Top-level rows that are groups (duplicates, similar photos...): rows with rows inside."""
+        if self.result is None or self.result.rebuild is not None:      # (folder sizes: a tree, not groups)
+            return []
+        items = (self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount()))
+        return [it for it in items if it is not None and it.childCount() and not it.isHidden()]
+
+    def _all_open(self) -> bool | None:
+        """Whether every group is open (None: no groups, so no open-all arrow)."""
+        groups = self._groups()
+        return all(g.isExpanded() for g in groups) if groups else None
+
+    def open_all(self, on: bool = True) -> None:
+        self.tree.setUpdatesEnabled(False)
+        try:
+            for g in self._groups():
+                g.setExpanded(on)
+        finally:
+            self.tree.setUpdatesEnabled(True)
+        self.tree.header().viewport().update()
+
     def _expand(self, it: QTreeWidgetItem) -> None:
         """Folder sizes: make a folder's rows the first time it's opened."""
         c = it.data(C_NAME, ROLE_ITEM)
@@ -482,7 +515,13 @@ class ToolSection(QWidget):
             it.setChildIndicatorPolicy(QTreeWidgetItem.DontShowIndicator)
 
     def _menu(self, pos) -> None:
-        items = [it for it in selected_or_clicked(self.tree, pos) if isinstance(it.data(C_NAME, ROLE_ITEM), Candidate)]
+        clicked = selected_or_clicked(self.tree, pos)
+        items: list[QTreeWidgetItem] = []
+        for it in clicked:            # a group row stands for its removable rows
+            kids = [it.child(i) for i in range(it.childCount())]
+            rows = [it] if isinstance(it.data(C_NAME, ROLE_ITEM), Candidate) else \
+                [k for k in kids if k is not None and k.flags() & Qt.ItemIsUserCheckable]
+            items += [r for r in rows if r not in items and isinstance(r.data(C_NAME, ROLE_ITEM), Candidate)]
         if not items:
             return
         paths = [it.data(C_NAME, ROLE_ITEM).path for it in items if not it.data(C_NAME, ROLE_ITEM).extra.get("docker")]
@@ -498,6 +537,18 @@ class ToolSection(QWidget):
         tool_entries = self.tool.menu(self, [it.data(C_NAME, ROLE_ITEM) for it in items]) if not self.busy() else []
         if tool_entries:
             extra += [None, *tool_entries]
+        # The page's actions for just these rows, whatever is ticked (exceptions while going through a list).
+        acting = [it.data(C_NAME, ROLE_ITEM) for it in checkable]
+        if acting and not self.busy():
+            what = "This File" if len(acting) == 1 else f"These {len(acting)}"
+            extra.append(None)
+            for action_id, label, _kind in self.tool.actions:
+                if action_id != actions.TAKEOUT:
+                    extra.append((f"{label}: {what}", lambda a=action_id: self.run_action(a, only=acting)))
+        groups = self._groups()
+        if groups:
+            extra += [None, ("Open All Groups", lambda: self.open_all(True)),
+                      ("Close All Groups", lambda: self.open_all(False))]
         first = items[0].data(C_NAME, ROLE_ITEM)
         if len(items) == 1 and first.keeper is not None and first.path != first.keeper and not self.busy():
             extra += [None, ("Keep This Copy Instead", lambda: self.keep_instead(first))]
@@ -554,12 +605,39 @@ class ToolSection(QWidget):
         self.tree.blockSignals(False)
         self._update_summary()
 
-    def _item_changed(self, *_):
+    def _item_changed(self, it: QTreeWidgetItem | None = None, column: int = C_NAME):
+        if it is not None and column == C_NAME and it.childCount() and it.flags() & Qt.ItemIsUserCheckable \
+                and not isinstance(it.data(C_NAME, ROLE_ITEM), Candidate):
+            state = it.checkState(C_NAME)       # a group's box: its removable rows follow
+            if state != Qt.PartiallyChecked:
+                self.tree.blockSignals(True)
+                for i in range(it.childCount()):
+                    child = it.child(i)
+                    if child.flags() & Qt.ItemIsUserCheckable and not child.isHidden():
+                        child.setCheckState(C_NAME, state)
+                self.tree.blockSignals(False)
         self._update_summary()
+
+    def _sync_groups(self) -> None:
+        """Each group's box shows its removable rows: all ticked, some, or none."""
+        self.tree.blockSignals(True)
+        for i in range(self.tree.topLevelItemCount()):
+            g = self.tree.topLevelItem(i)
+            if g is None or not g.childCount() or isinstance(g.data(C_NAME, ROLE_ITEM), Candidate) \
+                    or not g.flags() & Qt.ItemIsUserCheckable:
+                continue
+            states = [g.child(k).checkState(C_NAME) for k in range(g.childCount())
+                      if g.child(k).flags() & Qt.ItemIsUserCheckable and not g.child(k).isHidden()]
+            want = (Qt.Unchecked if not states or all(x == Qt.Unchecked for x in states) else
+                    Qt.Checked if all(x == Qt.Checked for x in states) else Qt.PartiallyChecked)
+            if g.checkState(C_NAME) != want:
+                g.setCheckState(C_NAME, want)
+        self.tree.blockSignals(False)
 
     def _update_summary(self) -> None:
         if self.result is None:
             return
+        self._sync_groups()
         all_items = self._items()
         chosen = [c for _, c in self._items(True)]
         size = sum(c.size for c in chosen)
@@ -605,11 +683,11 @@ class ToolSection(QWidget):
         if primary is not None:
             self.run_action(primary[0])
 
-    def run_action(self, action_id: str) -> None:
-        pairs = self._items(True)
-        if not pairs or self.busy():
+    def run_action(self, action_id: str, only: list[Candidate] | None = None) -> None:
+        """Run an action on the ticked rows, or on ``only`` (rows chosen from the right-click menu)."""
+        items = only if only is not None else [c for _, c in self._items(True)]
+        if not items or self.busy():
             return
-        items = [c for _, c in pairs]
         size = sum(c.size for c in items)
         n = len(items)
         if action_id == actions.TAKEOUT:
@@ -751,9 +829,24 @@ class ToolSection(QWidget):
         self.page.win.history.refresh()
         freed = sum(o.freed for o in ok)
         info = []
-        if failed:
-            info.append(f"{len(failed)} item(s) were skipped:\n" + "\n".join(
-                f"• {o.item.title}: {o.message}" for o in failed[:12]))
+        blocked = [o for o in failed if o.blocked]
+        others = [o for o in failed if not o.blocked]
+        if blocked:
+            n_b = f"{len(blocked)} item{'s' if len(blocked) != 1 else ''}"
+            info.append(f"{n_b} {'are' if len(blocked) != 1 else 'is'} in folders that Windows protects. "
+                        + cfa.HOW)
+        if others:
+            info.append(f"{len(others)} item(s) were skipped:\n" + "\n".join(
+                f"• {o.item.title}: {o.message}" for o in others[:12]))
+        if not ok:                           # nothing at all was done: say so, not "Freed 0 B from 0 items"
+            title = (f"Nothing was changed: Windows' Controlled folder access blocked {APP_NAME}"
+                     if blocked and not others else "Nothing was changed")
+            if blocked:
+                if choose(self, title, "\n\n".join(info), "OK", "Open Windows Security"):
+                    cfa.open_settings()
+            else:
+                inform(self, title, "\n\n".join(info))
+            return
         trashed = [o for o in ok if o.trashed_at]
         now = [o for o in ok if not o.trashed_at]
         if ok and not freed and not trashed:          # (renamed: nothing freed, nothing in the bin)
@@ -815,8 +908,8 @@ class ToolSection(QWidget):
 
     def _purged(self, count: int, freed: int, problems) -> None:
         self.page.win.history.refresh()
-        inform(self, f"Freed {human(freed)}.", ("Not freed:\n" + "\n".join(f"• {p}" for p in problems[:12]))
-               if problems else "")
+        title = f"Freed {human(freed)}." if count else "Nothing was freed."
+        inform(self, title, ("Not freed:\n" + "\n".join(f"• {p}" for p in problems[:12])) if problems else "")
 
     def stop(self) -> None:
         if self.busy():

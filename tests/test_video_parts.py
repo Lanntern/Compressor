@@ -78,11 +78,13 @@ def test_scene_by_scene_is_frame_exact_and_carries_on(scenes, small_parts, monke
     def counting(args, duration, on_progress=None, c=None):
         if "part-" in str(args[-1]):
             started.append(str(args[-1]))
-            if len(started) == 3:
+            if len(started) == 3:          # stopped as this part starts (a 3 s part can finish before a stop lands)
                 cancel.set()
+                raise tools.Cancelled()
         return real(args, duration, on_progress, c)
 
     monkeypatch.setattr(tools, "run_ffmpeg_progress", counting)
+    monkeypatch.setattr(chunked, "part_workers", lambda info, s: (1, 2))   # one part at a time: a fixed order
     with pytest.raises(tools.Cancelled):
         video.convert_video(scenes, info, Plan(True, target_ext=".mkv"), s, cancel=cancel)
     folder = next(scenes.parent.glob(chunked.PARTS_PREFIX + "*"))

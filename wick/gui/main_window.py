@@ -96,7 +96,7 @@ def carry_over_settings() -> int:
 
 
 def app_icon() -> QIcon:
-    """The app icon: arrows squeezing a frame, on the accent colour."""
+    """The app icon: arrows squeezing a frame, on the accent color."""
     icon = QIcon()
     for size in (16, 20, 24, 32, 48, 64, 128, 256):
         pm = QPixmap(size, size)

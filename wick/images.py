@@ -358,7 +358,7 @@ def _load_frames(path: Path):
 # ---------------------------------------------------------------- digests
 
 def digest_images(images) -> tuple[int, str]:
-    """Count + SHA-256 of premultiplied RGBA pixels (invisible colour under alpha=0 ignored)."""
+    """Count + SHA-256 of premultiplied RGBA pixels (invisible color under alpha=0 ignored)."""
     h = hashlib.sha256()
     n = 0
     for im in images:
@@ -369,7 +369,7 @@ def digest_images(images) -> tuple[int, str]:
     return n, h.hexdigest()
 
 
-_FAST_FORMATS = (".ppm", ".pgm", ".pam")   # RGB, grey, with alpha (libjxl 0.11 wants the matching one)
+_FAST_FORMATS = (".ppm", ".pgm", ".pam")   # RGB, gray, with alpha (libjxl 0.11 wants the matching one)
 
 
 def _djxl_fast(path: Path, make_out, png_only: bool = False) -> Path | None:
@@ -509,7 +509,7 @@ def _route_jxl(ctx: Ctx):
     except tools.ToolError:
         if ctx.kind != GIF:
             raise
-        # cjxl rejects GIFs whose pixels reference colours past the palette (common in
+        # cjxl rejects GIFs whose pixels reference colors past the palette (common in
         # the wild); hand it the exact same frames as an APNG instead.
         remove_quietly(ctx.out)
         frames, durations, loop = _load_frames(ctx.staged)
@@ -656,7 +656,7 @@ def _route_png_quant(ctx: Ctx):
         data, palette = procpool.call(_workers.quantize, rgba.tobytes(), rgba.width, rgba.height,
                                       max(0, q - 30), q)          # helper process: imagequant holds the GIL
     except RuntimeError as e:
-        raise NotWorthIt(f"256 colours can't reach quality {q}; original kept") from e
+        raise NotWorthIt(f"256 colors can't reach quality {q}; original kept") from e
     quant = Image.frombytes("P", rgba.size, data, "raw")
     quant.putpalette(palette, rawmode="RGBA")
     mid = ctx.tmp(".png", "-q")

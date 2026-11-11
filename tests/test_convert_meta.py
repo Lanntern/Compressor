@@ -86,7 +86,7 @@ def test_metadata_cleanup_keeps_image_data(media_dir, fmt):
             im.save(p, exif=exif)
         src.unlink()
         src = p
-    summary = metaclean.summarise(src)
+    summary = metaclean.summarize(src)
     assert summary.gps.startswith("59.") and "Cam" in summary.camera and summary.taken.startswith("2024")
     original_payload = metaclean._payload(src.read_bytes(), metaclean.kind_of(src))
     s = Settings(min_image_kb=0)
@@ -96,11 +96,11 @@ def test_metadata_cleanup_keeps_image_data(media_dir, fmt):
                               processor=lambda *a: process_metadata(*a, policy="strip_all_keep_date"),
                               tool="metadata")
     assert results[0].status == DONE, results[0].message
-    after = metaclean.summarise(src)
+    after = metaclean.summarize(src)
     assert not after.gps and not after.camera and after.taken.startswith("2024")   # date taken kept
     assert metaclean._payload(src.read_bytes(), metaclean.kind_of(src)) == original_payload
     undo_run(run_id)
-    assert metaclean.summarise(src).gps.startswith("59.")
+    assert metaclean.summarize(src).gps.startswith("59.")
 
 
 @needs_ffmpeg
@@ -108,11 +108,11 @@ def test_metadata_cleanup_video(media_dir):
     ffmpeg("-f", "lavfi", "-i", "testsrc2=s=160x120:r=25:d=1", "-metadata", "location=+59.3293+018.0686/",
            "-metadata", "creation_time=2024-05-01T10:00:00Z", "-c:v", "libx264", "v.mp4", cwd=media_dir)
     v = media_dir / "v.mp4"
-    assert metaclean.summarise(v).gps
+    assert metaclean.summarize(v).gps
     out = metaclean.clean(v, "strip_gps")
     try:
         os.replace(out, v)
-        s = metaclean.summarise(v)
+        s = metaclean.summarize(v)
         assert not s.gps and s.taken == "2024-05-01 10:00"
     finally:
         if out.exists():
@@ -345,7 +345,7 @@ def test_addons_are_checked_before_use(tmp_path, monkeypatch):
     archive = tmp_path / "tool.zip"
     with zipfile.ZipFile(archive, "w") as z:
         z.writestr("tool-1.0/tool.exe", b"MZ fake program")
-        z.writestr("tool-1.0/COPYRIGHT.txt", b"licence")
+        z.writestr("tool-1.0/COPYRIGHT.txt", b"license")
     good = addons.Addon("tool", "1.0", archive.as_uri(), hashlib.sha256(archive.read_bytes()).hexdigest(),
                         archive.stat().st_size, "tool-1.0/tool.exe", "tool-1.0/COPYRIGHT.txt", "")
     exe = addons.download(good)

@@ -11,8 +11,8 @@ from ..formats import human
 from .style import Space, Type, tokens
 from .widgets import Card, FlowLayout, button, text
 
-# The reference categorical palette's first six slots, in fixed order (validated for colour-vision
-# differences against the card colour in each mode). "Other" is neutral; free space is the empty track.
+# The reference categorical palette's first six slots, in fixed order (validated for color-vision
+# differences against the card color in each mode). "Other" is neutral; free space is the empty track.
 _COLORS = {
     False: ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"),
     True: ("#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"),
@@ -29,7 +29,7 @@ def color_of(key: str) -> QColor:
 
 
 class StackedBar(QWidget):
-    """One horizontal bar: coloured segments in a neutral track (free space), 2 px gaps between them."""
+    """One horizontal bar: colored segments in a neutral track (free space), 2 px gaps between them."""
 
     HEIGHT = 12
 
@@ -127,7 +127,7 @@ class SpaceCard(Card):
 
         super().changeEvent(e)
         if e.type() in (QEvent.StyleChange, QEvent.PaletteChange) and not getattr(self, "_restyling", False):
-            self._restyling = True          # the theme changed: colours of the swatches too
+            self._restyling = True          # the theme changed: colors of the swatches too
             try:
                 if self.breakdown is not None:
                     self.show_breakdown(self.breakdown)

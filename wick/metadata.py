@@ -8,8 +8,8 @@ Policies:
                   Dates and exposure settings are kept.
 * ``strip_all_keep_date`` - everything except the date the photo was taken.
 * ``strip_all`` - EXIF/XMP/IPTC/comments removed.
-Orientation and the colour profile are always kept: dropping them would show
-the image rotated or with wrong colours.
+Orientation and the color profile are always kept: dropping them would show
+the image rotated or with wrong colors.
 
 JPEG, PNG and WebP are edited at the container level, so no pixels change.
 """
@@ -198,7 +198,7 @@ def jpeg_write_meta(data: bytes, meta: Meta, drop_other: bool) -> bytes:
             head.append(seg)
             continue
         if drop_other and (marker == 0xFE or marker == 0xED or (0xE1 <= marker <= 0xEF and marker != 0xEE)):
-            continue  # COM, APP13 (IPTC/Photoshop), other APPn; keep APP14 (Adobe colour transform)
+            continue  # COM, APP13 (IPTC/Photoshop), other APPn; keep APP14 (Adobe color transform)
         kept.append(seg)
 
     new = []

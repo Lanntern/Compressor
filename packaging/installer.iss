@@ -52,7 +52,7 @@ OutputBaseFilename=Wick-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-; The licence, accepted before installing.
+; The license, accepted before installing.
 LicenseFile=..\LICENSE
 UninstallDisplayIcon={app}\Wick.exe
 UninstallDisplayName={#AppName}
@@ -66,7 +66,7 @@ SetupIconFile={#IconFile}
 ; The page's title says it all: no subtitle, no instructions.
 SelectTasksDesc=
 SelectTasksLabel2=
-; The licence page: a subtitle and one instruction, instead of two "please read" lines saying the same thing.
+; The license page: a subtitle and one instruction, instead of two "please read" lines saying the same thing.
 LicenseLabel=Wick is free, open-source software.
 LicenseLabel3=Please read the license below. You must accept its terms to continue with the installation.
 ; Shortcuts are optional (off by default), so don't send people looking for them.
@@ -210,7 +210,7 @@ procedure CurPageChanged(CurPageID: Integer);
 var
   I: Integer;
 begin
-  // Already have the JPEG XL extension: show that option greyed out and unticked.
+  // Already have the JPEG XL extension: show that option grayed out and unticked.
   if CurPageID = wpSelectTasks then
     for I := 0 to WizardForm.TasksList.Items.Count - 1 do
       if Pos('JPEG XL Image Extension', WizardForm.TasksList.ItemCaption[I]) > 0 then

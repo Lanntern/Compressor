@@ -40,7 +40,7 @@ def test_pictures_into_one_pdf_without_re_encoding(tmp_path):
     sizes = [Image.open(p).size for p in pages]
     assert sizes == [(72, 96), (150, 75), (75, 75)]                    # upright, at their own size
     magenta = Image.open(pages[2]).convert("RGB").getpixel((37, 37))
-    assert magenta[0] > 200 and magenta[1] < 80 and magenta[2] > 120   # CMYK colours not inverted
+    assert magenta[0] > 200 and magenta[1] < 80 and magenta[2] > 120   # CMYK colors not inverted
     pdftools.combine([tmp_path / "a.pdf", tmp_path / "alpha.png"], tmp_path / "b.pdf", "a4")
     with pikepdf.open(tmp_path / "b.pdf") as pdf:
         assert len(pdf.pages) == 4 and [round(float(v)) for v in pdf.pages[3].MediaBox] == [0, 0, 842, 595]

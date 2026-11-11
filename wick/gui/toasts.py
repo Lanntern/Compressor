@@ -1,4 +1,4 @@
-"""Windows notifications (toasts) instead of tray balloons: they wait in the notification centre, follow Do Not
+"""Windows notifications (toasts) instead of tray balloons: they wait in the notification center, follow Do Not
 Disturb, and can have buttons ("Show in History").
 
 No new dependency: the app registers itself once under HKCU (an AppUserModelId entry with its name and icon,

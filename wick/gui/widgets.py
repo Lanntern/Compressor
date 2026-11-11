@@ -1,16 +1,16 @@
-"""Reusable UI components. Sizes, spacing and colours come only from style.py scales."""
+"""Reusable UI components. Sizes, spacing and colors come only from style.py scales."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtCore import QRect, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QDoubleValidator, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QAbstractButton, QApplication, QFrame, QHBoxLayout, QLabel, QLayout, QProgressBar, QPushButton,
+    QAbstractButton, QApplication, QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QProgressBar, QPushButton,
     QScrollArea,
     QSizePolicy, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QToolButton, QVBoxLayout, QWidget, QWidgetItem,
 )
 
-from .style import Radius, Size, Space, Type, icon, icon_pixmap, text_scale, tokens, ui_font
+from .style import Radius, Size, Space, Type, icon, icon_pixmap, keyboard_focus, text_scale, tokens, ui_font
 
 
 # ---------------------------------------------------------------- text
@@ -706,7 +706,7 @@ class HelpTip(QAbstractButton):
         t = tokens()
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        active = self.underMouse() or self.hasFocus() or self.is_open()
+        active = self.underMouse() or keyboard_focus(self) or self.is_open()
         color = QColor(t.accent if active else t.text2)
         r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
         if self.is_open():
@@ -715,7 +715,7 @@ class HelpTip(QAbstractButton):
             p.setBrush(fill)
         else:
             p.setBrush(Qt.NoBrush)
-        p.setPen(QPen(QColor(t.accent) if active else QColor(t.separator), 2 if self.hasFocus() else 1))
+        p.setPen(QPen(QColor(t.accent) if active else QColor(t.separator), 2 if keyboard_focus(self) else 1))
         p.drawEllipse(r)
         p.setPen(color)
         p.setFont(ui_font(Type.FOOTNOTE, QFont.DemiBold))
@@ -756,7 +756,7 @@ class ToggleSwitch(QAbstractButton):
         x = track.right() - knob - 2 if on else track.left() + 2
         p.setBrush(QColor("#FFFFFF"))
         p.drawEllipse(QRectF(x, track.top() + 2, knob, knob))
-        if self.hasFocus():
+        if keyboard_focus(self):
             p.setBrush(Qt.NoBrush)
             p.setPen(QPen(QColor(t.accent), 2))
             p.drawRoundedRect(track.adjusted(-2, -2, 2, 2), th / 2 + 2, th / 2 + 2)
@@ -769,7 +769,7 @@ PROGRESS_ROLE = Qt.UserRole + 11    # 0..1 while running
 
 
 class StatusDelegate(QStyledItemDelegate):
-    """Draws the Status column as a coloured pill with a symbol (colour is never the only cue)."""
+    """Draws the Status column as a colored pill with a symbol (color is never the only cue)."""
 
     _SYMBOL = {"done": "check", "failed": "xmark", "skipped": "minus", "running": "bolt",
                "ready": None, "excluded": "minus", "high": None, "medium": None, "low": None}
@@ -899,3 +899,67 @@ class ProgressBar(QProgressBar):
             pill = QPainterPath()
             pill.addRoundedRect(fill, radius, radius)
             p.fillPath(pill, QColor(t.accent))
+
+
+class SizeInput(QWidget):
+    """A file size: a number you type or pick (common values in its list) and a unit (KB, MB, GB). ``changed``
+    gives the size in bytes."""
+
+    changed = Signal(int)
+    UNITS = (("KB", 1024), ("MB", 1024 ** 2), ("GB", 1024 ** 3))
+
+    def __init__(self, size: int = 0, presets: tuple[float, ...] = (0, 1, 10, 50, 100, 250, 500), parent=None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(Space.S)
+        self.number = QComboBox()
+        self.number.setEditable(True)
+        self.number.setInsertPolicy(QComboBox.NoInsert)
+        for v in presets:
+            self.number.addItem(f"{v:g}")
+        validator = QDoubleValidator(0, 1_000_000, 2, self.number)
+        validator.setNotation(QDoubleValidator.StandardNotation)
+        self.number.lineEdit().setValidator(validator)
+        self.number.setMinimumContentsLength(5)
+        self.unit = QComboBox()
+        for name, _factor in self.UNITS:
+            self.unit.addItem(name)
+        lay.addWidget(self.number)
+        lay.addWidget(self.unit)
+        self.setFocusProxy(self.number)
+        self.setAccessibleName("Size")
+        self.set_bytes(size)
+        self.number.editTextChanged.connect(lambda _t: self.changed.emit(self.bytes()))
+        self.unit.currentIndexChanged.connect(lambda _i: self.changed.emit(self.bytes()))
+
+    def bytes(self) -> int:
+        try:
+            value = float(self.number.currentText().replace(",", "") or 0)
+        except ValueError:
+            value = 0.0
+        return max(0, int(value * self.UNITS[self.unit.currentIndex()][1]))
+
+    def set_bytes(self, size: int) -> None:
+        """Shown in the largest unit it's a whole number of (1.5 MB stays 1536 KB; 0 keeps the unit shown)."""
+        index = self.unit.currentIndex()
+        if size > 0:
+            index = 0
+            for i, (_name, factor) in enumerate(self.UNITS):
+                if size >= factor and size % factor == 0:
+                    index = i
+        self.unit.blockSignals(True)
+        self.unit.setCurrentIndex(index)
+        self.unit.blockSignals(False)
+        self.number.setEditText(f"{size / self.UNITS[index][1]:g}")
+
+    def setAccessibleName(self, name: str) -> None:  # noqa: N802 (Qt's name)
+        super().setAccessibleName(name)
+        self.number.setAccessibleName(name)
+        self.number.lineEdit().setAccessibleName(name)
+        self.unit.setAccessibleName(f"{name}: unit")
+
+    def setToolTip(self, tip: str) -> None:  # noqa: N802
+        super().setToolTip(tip)
+        self.number.setToolTip(tip)
+        self.unit.setToolTip(tip)

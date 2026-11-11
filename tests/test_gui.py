@@ -565,7 +565,7 @@ def test_cleanup_keeps_unticked_items_and_switches_kept_copy(win, tmp_path, monk
         (tmp_path / folder / "photo.bin").write_bytes(b"x" * 300_000)
     sec = next(s for s in win.cleanup.sections if s.tool.key == "duplicates")
     sec.folders = [tmp_path]
-    sec.extra_min.setValue(1)
+    sec.extra_min.set_bytes(1024)
     sec.scan()
     assert _wait(lambda: not sec.busy() and sec.result is not None, 60)
     rows = sec._items()
@@ -586,6 +586,75 @@ def test_cleanup_keeps_unticked_items_and_switches_kept_copy(win, tmp_path, monk
     assert target.path not in paths and old_keeper in paths
     assert all(c.keeper == target.path for _, c in sec._items())
     assert {c.path: it.checkState(0) for it, c in sec._items()}[kept.path] == Qt.Unchecked
+
+
+def test_duplicate_groups_open_and_rows_can_be_chosen(win, tmp_path, monkeypatch):
+    """Groups open by themselves; the header arrow closes and opens them all; a group's box ticks its removable
+    copies but never the copy that stays; a right-click acts on just the chosen file; nothing done is said so."""
+    from PySide6.QtCore import QPoint, Qt
+
+    import wick.gui.cleanup_section as cs
+    from wick.cleanup.actions import Outcome
+    from wick.cleanup.common import Candidate, ScanResult
+
+    sec = next(s for s in win.cleanup.sections if s.tool.key == "duplicates")
+    sec.folders = [tmp_path]
+    keeper = tmp_path / "keep.jpg"
+    items = [Candidate(tmp_path / f"g{g}" / f"copy{k}.jpg", 1000, group=str(g), keeper=keeper, selected=True)
+             for g in range(60) for k in range(2)]
+    sec._scanned(ScanResult("duplicates", items, []))
+    groups = sec._groups()
+    assert len(groups) == 60 and all(g.isExpanded() for g in groups)      # (40+ groups used to stay closed)
+    header = sec.tree.header()
+    assert sec._all_open() is True and header._expander_width(0) > 0
+    sec.open_all(False)
+    assert not any(g.isExpanded() for g in groups) and sec._all_open() is False
+    header.mousePressEvent(type("E", (), {"button": lambda s: Qt.LeftButton,
+                                          "position": lambda s: QPoint(2, 5).toPointF(), "accept": lambda s: None})())
+    assert all(g.isExpanded() for g in groups)                              # the header arrow opens them all
+
+    g = groups[0]
+    keep_row = next(g.child(i) for i in range(g.childCount()) if not g.child(i).flags() & Qt.ItemIsUserCheckable)
+    copies = [g.child(i) for i in range(g.childCount()) if g.child(i).flags() & Qt.ItemIsUserCheckable]
+    assert g.flags() & Qt.ItemIsUserCheckable and g.checkState(0) == Qt.Checked     # a box, showing its rows
+    g.setCheckState(0, Qt.Unchecked)
+    assert all(c.checkState(0) == Qt.Unchecked for c in copies)
+    assert keep_row.data(0, Qt.CheckStateRole) is None                      # the copy that stays: never ticked
+    copies[0].setCheckState(0, Qt.Checked)
+    assert g.checkState(0) == Qt.PartiallyChecked                           # one of its copies chosen
+    g.setCheckState(0, Qt.Checked)
+    assert all(c.checkState(0) == Qt.Checked for c in copies) and keep_row.data(0, Qt.CheckStateRole) is None
+    assert len(sec._items(True)) == len(items) and keeper not in [c.path for _, c in sec._items()]
+
+    ran: list = []
+    monkeypatch.setattr(cs, "ask", lambda *a, **k: True)
+    monkeypatch.setattr(cs._Apply, "start", lambda self: ran.append([c.path.name for c in self.items]))
+    sec.run_action(cs.actions.TRASH, only=[items[0]])
+    assert ran == [["copy0.jpg"]]                                          # just that file, whatever is ticked
+    sec.worker = None
+
+    shown: list = []
+    monkeypatch.setattr(cs, "inform", lambda _w, title, *_a, **_k: shown.append(title))
+    sec._applied([Outcome(items[1], False, "In use")], None)
+    assert shown == ["Nothing was changed"]                                 # not "Freed 0 B from 0 items"
+
+
+def test_window_resize_does_not_freeze_columns(win):
+    """Resizing the window with the mouse held resizes the last (stretching) column: that isn't the person
+    choosing widths, so columns keep fitting their content."""
+    from PySide6.QtWidgets import QTreeWidget
+
+    from wick.gui.filelist import make_sortable
+
+    tree = QTreeWidget()
+    tree.setHeaderLabels(["Name", "Folder", "Size"])
+    make_sortable(tree)
+    tree._fitter._resized(2)                         # (last column, as the window grows)
+    tree.header()._dragging = True
+    tree._fitter._resized(2)
+    assert not tree._fitter.user_sized
+    tree._fitter._resized(0)                         # a real drag on a column edge
+    assert tree._fitter.user_sized
 
 
 def test_columns_fit_long_names_when_there_is_room(win):

@@ -20,7 +20,7 @@ AVIF_MAX_DIM = 65536
 #   jxl_transcode  JPEG -> JXL, lossless & reversible (cjxl)
 #   jxl            anything -> JXL (cjxl), lossless or lossy
 #   webp / avif / heic   Pillow encoders (static or animated)
-#   jpeg_opt       JPEG -> JPEG lossless (mozjpeg optimisation)
+#   jpeg_opt       JPEG -> JPEG lossless (mozjpeg optimization)
 #   jpeg           -> JPEG lossy (cjpegli, or Pillow + mozjpeg)
 #   png_opt        -> PNG lossless (oxipng)
 #   png_quant      -> PNG lossy (libimagequant + oxipng)
@@ -137,7 +137,7 @@ def _plan_image(e: FileEntry, s: Settings) -> Plan:
             if info.animated:
                 route, lossless = "png_opt", True
                 if mode == "lossy":
-                    notes.append("animated PNG optimised losslessly")
+                    notes.append("animated PNG optimized losslessly")
             else:
                 route = "png_quant" if mode == "lossy" else "png_opt"
         elif kind == GIF:
@@ -203,7 +203,7 @@ def _describe(route: str, lossless: bool, reversible: bool, q: int, resize, smar
     if reversible:
         d = "Lossless, reversible"
     elif route in ("jpeg_opt", "png_opt", "tiff"):
-        d = "Lossless optimisation"
+        d = "Lossless optimization"
     elif lossless:
         d = "Lossless"
     elif smart:
@@ -378,7 +378,7 @@ def _plan_document(e: FileEntry, s: Settings) -> Plan:
     if ext in documents.PDF_EXTS:
         if not documents.pdf_available():
             return _skip("PDF support isn't installed")
-        return Plan(True, f"PDF: pictures and structure optimised ({note})", ext,
+        return Plan(True, f"PDF: pictures and structure optimized ({note})", ext,
                     int(e.size * (0.7 if reduce else 0.92)), lossless=not reduce, route="document")
     try:
         jpeg, png, _other = documents.office_pictures(e.path)

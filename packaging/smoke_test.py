@@ -46,7 +46,7 @@ def main() -> int:
     img = Image.radial_gradient("L").resize((600, 400)).convert("RGB")
     img.save(src / "photo.jpg", quality=95)
     img.save(src / "shot.png")
-    # A scanned-document PDF (JPEG pages): optimised by pikepdf, which the build must bundle.
+    # A scanned-document PDF (JPEG pages): optimized by pikepdf, which the build must bundle.
     Image.effect_mandelbrot((1600, 1200), (-2, -1.2, 1, 1.2), 60).convert("RGB").save(src / "scan.pdf", quality=95)
     frames = [img.rotate(a).convert("P") for a in range(0, 60, 15)]
     frames[0].save(src / "anim.gif", save_all=True, append_images=frames[1:], duration=80, loop=0)

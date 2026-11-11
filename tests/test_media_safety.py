@@ -116,7 +116,7 @@ def test_similar_groups_do_not_chain():
 
 
 def test_similar_photo_pairs_and_live_photos(tmp_path):
-    """HEIC+JPG of one shot are labelled as such; removing a Live Photo's still takes its video along."""
+    """HEIC+JPG of one shot are labeled as such; removing a Live Photo's still takes its video along."""
     import os
     import time
 

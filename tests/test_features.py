@@ -150,7 +150,7 @@ def test_smart_quality_image_reports_choice(tmp_path):
 
 def test_smart_quality_unreached_target_keeps_the_best_quality_attempt(tmp_path, monkeypatch):
     """When no quality meets the target, the result is the one made at the best quality (it used to be
-    whichever attempt came first, labelled as the best)."""
+    whichever attempt came first, labeled as the best)."""
     import dataclasses
 
     from wick import quality
@@ -188,6 +188,50 @@ def test_custom_video_quality_value():
 
 
 @needs_ffmpeg
+def test_repeated_frames_found_when_gpu_decoding_crashes(tmp_path, monkeypatch):
+    """Some ffmpeg builds crash outright with -hwaccel auto when a GPU library is missing: the measurement is
+    taken again on the processor rather than read as "no repeated frames"."""
+    import subprocess
+
+    from wick import tools
+    from wick.probe import detect_cadence, probe_video
+
+    ffmpeg("-f", "lavfi", "-i", "testsrc2=s=640x360:r=24:d=8", "-vf", "fps=30", "-c:v", "libx264", "-crf", "20",
+           "padded.mp4", cwd=tmp_path)
+    real_run = tools.run
+    crashed = []
+
+    def run(args, *a, **k):
+        if "-hwaccel" in args:
+            crashed.append(1)
+            return subprocess.CompletedProcess(args, -6, "", "Assertion failed")
+        return real_run(args, *a, **k)
+
+    monkeypatch.setattr(tools, "run", run)
+    assert detect_cadence(tmp_path / "padded.mp4", probe_video(tmp_path / "padded.mp4")) == 5 and crashed
+
+
+def _cadence_report(path, info) -> str:
+    """What the frame-difference measurement gave (with and without GPU decoding), for a failed detection."""
+    import re
+    import statistics
+
+    from wick import tools
+
+    lines = [f"fps={info.fps} duration={info.duration} vfr={info.vfr} interlaced={info.interlaced}"]
+    for hw in (["-hwaccel", "auto"], []):
+        proc = tools.run([tools.require("ffmpeg"), "-hide_banner", "-nostdin", *hw, "-ss", "2.50", "-t", "3.00",
+                          "-i", str(path), "-an", "-vf", "scale=192:-2,format=gray,tblend=all_mode=difference,"
+                          "signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-", "-f", "null", "-"],
+                         timeout=120, check=False)
+        d = [float(x) for x in re.findall(r"YAVG=([0-9.]+)", proc.stdout or "")]
+        q = statistics.quantiles(d, n=4) if len(d) > 4 else []
+        lines.append(f"{hw or 'software'}: exit {proc.returncode}, {len(d)} values, quartiles {q}, "
+                     f"first {[round(x, 2) for x in d[:12]]}, stderr {(proc.stderr or '')[-600:]!r}")
+    return "\n".join(lines)
+
+
+@needs_ffmpeg
 def test_repeated_frames_detected_and_removed(tmp_path):
     from wick import mediainfo
     from wick.engine import DONE, run_job
@@ -203,7 +247,7 @@ def test_repeated_frames_detected_and_removed(tmp_path):
 
     s = Settings(video_codec="hevc", min_video_mb=0, output_mode="suffix", image_format="none")
     entry = next(e for e in scan([tmp_path], s).entries if e.path.name == "padded.mp4")
-    assert entry.video.cadence == 5 and round(entry.video.content_fps) == 24
+    assert entry.video.cadence == 5 and round(entry.video.content_fps) == 24, _cadence_report(entry.path, entry.video)
     assert "30→24 fps" in mediainfo.describe(entry) and "padded" in mediainfo.cadence_note(entry.video)
     plan = plan_entry(entry, s)
     assert "repeated frames removed" in plan.reason
@@ -267,9 +311,9 @@ def test_history_reads_only_changed_files():
 def test_languages_from_the_system(monkeypatch):
     from wick import languages
 
-    assert languages.normalise("sv_SE.UTF-8") == "sv" and languages.normalise("ger") == "de"
-    assert languages.normalise("deu") == "de" and languages.normalise("en-GB") == "en"
-    assert languages.normalise("C") == "" and languages.normalise("xx") == ""
+    assert languages.normalize("sv_SE.UTF-8") == "sv" and languages.normalize("ger") == "de"
+    assert languages.normalize("deu") == "de" and languages.normalize("en-GB") == "en"
+    assert languages.normalize("C") == "" and languages.normalize("xx") == ""
     assert {"ger", "deu", "de"} <= languages.track_codes(["de"])
     assert languages.parse("sv, en,xx,sv") == ["sv", "en"]
     if os.name != "nt":

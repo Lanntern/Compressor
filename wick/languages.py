@@ -45,7 +45,7 @@ _XKB = {"us": "en", "gb": "en", "ie": "en", "au": "en", "ca": "fr", "de": "de", 
         "mk": "mk", "al": "sq", "ge": "ka", "am": "hy", "kz": "kk", "pk": "ur", "id": "id", "my": "ms"}
 
 
-def normalise(code: str) -> str:
+def normalize(code: str) -> str:
     """Any spelling (en, en-GB, en_US.UTF-8, eng, ger, deu) → the ISO 639-1 key used here, or ""."""
     c = code.strip().lower().replace("_", "-").split(".")[0].split("@")[0]
     if not c or c in ("c", "posix"):
@@ -130,7 +130,7 @@ def detect() -> list[str]:
         raw = []
     out: list[str] = []
     for code in raw:
-        k = normalise(code)
+        k = normalize(code)
         if k and k not in out:
             out.append(k)
     return out or ["en"]
@@ -140,7 +140,7 @@ def parse(text: str) -> list[str]:
     """A saved list ("sv,en") back to keys; unknown entries are dropped."""
     out: list[str] = []
     for part in (text or "").split(","):
-        k = normalise(part)
+        k = normalize(part)
         if k and k not in out:
             out.append(k)
     return out
@@ -150,4 +150,4 @@ def describe(keys: list[str]) -> str:
     return ", ".join(name(k) for k in keys) or "none"
 
 
-__all__ = ["LANGUAGES", "detect", "parse", "describe", "normalise", "name", "track_codes"]
+__all__ = ["LANGUAGES", "detect", "parse", "describe", "normalize", "name", "track_codes"]

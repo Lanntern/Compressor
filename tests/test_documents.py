@@ -41,7 +41,7 @@ def _same(a: bytes, b: bytes) -> bool:
 def test_office_pictures_shrink_losslessly(tmp_path):
     doc = tmp_path / "report.docx"
     parts = _docx(doc)
-    out = documents.optimise_office(doc)
+    out = documents.optimize_office(doc)
     assert out.stat().st_size < doc.stat().st_size * 0.9
     with zipfile.ZipFile(out) as z:
         assert z.namelist() == list(parts)                                   # same parts, same order
@@ -55,7 +55,7 @@ def test_office_pictures_shrink_losslessly(tmp_path):
 def test_opendocument_keeps_its_stored_mimetype_first(tmp_path):
     doc = tmp_path / "letter.odt"
     _docx(doc, odf=True)
-    out = documents.optimise_office(doc)
+    out = documents.optimize_office(doc)
     with zipfile.ZipFile(out) as z:
         first = z.infolist()[0]
         assert first.filename == "mimetype" and first.compress_type == zipfile.ZIP_STORED
@@ -65,7 +65,7 @@ def test_opendocument_keeps_its_stored_mimetype_first(tmp_path):
 def test_reduce_scales_big_pictures(tmp_path):
     doc = tmp_path / "slides.pptx"
     _docx(doc)
-    out = documents.optimise_office(doc, reduce=True, long_edge=800)
+    out = documents.optimize_office(doc, reduce=True, long_edge=800)
     with zipfile.ZipFile(out) as z, Image.open(io.BytesIO(z.read("word/media/image2.jpeg"))) as im:
         assert max(im.size) == 800
     os.remove(out)
@@ -75,7 +75,7 @@ def test_signed_documents_are_left_alone(tmp_path):
     doc = tmp_path / "contract.docx"
     _docx(doc, signed=True)
     with pytest.raises(documents.Unsupported):
-        documents.optimise_office(doc)
+        documents.optimize_office(doc)
     (tmp_path / "locked.docx").write_bytes(b"\xd0\xcf\x11\xe0 encrypted Office files are OLE containers")
     with pytest.raises(documents.Unsupported):
         documents.office_pictures(tmp_path / "locked.docx")
@@ -98,7 +98,7 @@ def _images(path: Path) -> list[bytes]:
 def test_pdf_lossless(tmp_path):
     src = tmp_path / "scan.pdf"
     _pdf(src)
-    out = documents.optimise_pdf(src)
+    out = documents.optimize_pdf(src)
     assert out.stat().st_size < src.stat().st_size
     with pikepdf.open(out) as pdf:
         assert len(pdf.pages) == 2
@@ -115,7 +115,7 @@ def test_signed_pdfs_are_left_alone(tmp_path):
         pdf.save(src)
     assert "signed" in documents.pdf_problem(src).lower()
     with pytest.raises(documents.Unsupported):
-        documents.optimise_pdf(src)
+        documents.optimize_pdf(src)
 
 
 def test_documents_through_the_compress_job(tmp_path):

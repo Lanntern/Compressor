@@ -35,7 +35,7 @@ class _Summaries(QThread):
     def run(self) -> None:
         for e in self.entries:
             try:
-                self.one.emit(e, metaclean.summarise(e.path))
+                self.one.emit(e, metaclean.summarize(e.path))
             except Exception:  # noqa: BLE001 - an unreadable file just shows no summary
                 continue
 
@@ -65,7 +65,7 @@ class MetadataTab(FileJobPage):
         for label, value in POLICIES:
             self.policy.addItem(label, value)
         self.policy.setCurrentIndex(max(0, self.policy.findData(qs.value("meta/policy", "strip_gps", str))))
-        self.policy.setToolTip("Orientation and colour profile are always kept so images look the same.")
+        self.policy.setToolTip("Orientation and color profile are always kept so images look the same.")
         self.output = QComboBox()
         for label, value in OUTPUTS:
             self.output.addItem(label, value)

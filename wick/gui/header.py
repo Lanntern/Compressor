@@ -40,6 +40,7 @@ class Header(QHeaderView):
         self.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.setMinimumHeight(Size.ROW)
         self._check = None   # (column, state() -> Qt.CheckState, toggle())
+        self._expander = None   # (column, state() -> bool | None (all open; None: nothing to open), toggle())
         self._hover_x: int | None = None   # pointer position while over the header (shows resize handles)
         self._hand = False
         self.setMouseTracking(True)
@@ -120,6 +121,7 @@ class Header(QHeaderView):
         head = self.sectionSizeFromContents(index).width()
         if self._check is not None and self._check[0] == index:
             head += Size.INDICATOR + Space.L
+        head += self._expander_width(index)
         floor = max(self.minimumSectionSize(), head)
         view = self.parentWidget()
         content = view.sizeHintForColumn(index) + Space.S if hasattr(view, "sizeHintForColumn") else 0
@@ -200,8 +202,27 @@ class Header(QHeaderView):
         col = self._check[0]
         if self.logicalIndexAt(pos) != col:
             return False
-        x = pos.x() - self.sectionViewportPosition(col)
+        x = pos.x() - self.sectionViewportPosition(col) - self._expander_width(col)
         return 0 <= x <= self._row_check_x() + Size.INDICATOR + Space.S
+
+    # ---- open/close-all arrow
+    def set_expander(self, column: int, state, toggle) -> None:
+        """An arrow above the rows' own arrows that opens (or closes) every group at once."""
+        self._expander = (column, state, toggle)
+        self.viewport().update()
+
+    def _expander_width(self, index: int) -> int:
+        """Room the arrow takes in ``index``: the rows' indentation, when there's something to open."""
+        if self._expander is None or self._expander[0] != index or self._expander[1]() is None:
+            return 0
+        view = self.parentWidget()
+        return view.indentation() if hasattr(view, "indentation") and view.rootIsDecorated() else 0
+
+    def _expander_hit(self, pos) -> bool:
+        if self._expander is None or self.logicalIndexAt(pos) != self._expander[0]:
+            return False
+        x = pos.x() - self.sectionViewportPosition(self._expander[0])
+        return 0 <= x < self._expander_width(self._expander[0])
 
     def mousePressEvent(self, e) -> None:
         self._mins.clear()   # measured afresh for each drag (the rows may have changed)
@@ -211,18 +232,27 @@ class Header(QHeaderView):
             self.viewport().update()
             e.accept()
             return
+        if e.button() == Qt.LeftButton and self._expander_hit(e.position().toPoint()):
+            self._expander[2]()
+            self.viewport().update()
+            e.accept()
+            return
         super().mousePressEvent(e)
 
     def mouseReleaseEvent(self, e) -> None:
         self._dragging = False
-        if self._check_hit(e.position().toPoint()):
+        if self._check_hit(e.position().toPoint()) or self._expander_hit(e.position().toPoint()):
             e.accept()
             return
         super().mouseReleaseEvent(e)
 
     def mouseMoveEvent(self, e) -> None:
         pos = e.position().toPoint()
-        hand = self._check_hit(pos)
+        on_arrow = self._expander_hit(pos)
+        hand = self._check_hit(pos) or on_arrow
+        tip = ("Close All" if self._expander[1]() else "Open All") if on_arrow and self._expander else ""
+        if tip != self.toolTip():
+            self.setToolTip(tip)
         if hand != self._hand:  # only touch the cursor on change, so Qt's resize cursor still works
             self._hand = hand
             self.setCursor(Qt.PointingHandCursor) if hand else self.unsetCursor()
@@ -260,9 +290,28 @@ class Header(QHeaderView):
         with open(assets(tokens())[key], "rb") as f:
             renderer = QSvgRenderer(QByteArray(f.read()))
         size = Size.INDICATOR
-        x = rect.left() + self._row_check_x()
+        x = rect.left() + self._expander_width(self._check[0]) + self._row_check_x()
         renderer.render(p, QRectF(x, rect.center().y() - size / 2 + 1, size, size))
         return x - rect.left() + size
+
+    def _draw_expander(self, p: QPainter, rect: QRect) -> None:
+        """A chevron like the rows' own: pointing right (some are closed: open all) or down (all open)."""
+        t = tokens()
+        p.save()
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setPen(QPen(QColor(t.text2), 1.6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        cx, cy, half = rect.center().x() + 0.5, rect.center().y() + 0.5, Space.XS + 0.5
+        path = QPainterPath()
+        if self._expander[1]():
+            path.moveTo(cx - half, cy - half / 2)
+            path.lineTo(cx, cy + half / 2)
+            path.lineTo(cx + half, cy - half / 2)
+        else:
+            path.moveTo(cx - half / 2, cy - half)
+            path.lineTo(cx + half / 2, cy)
+            path.lineTo(cx - half / 2, cy + half)
+        p.drawPath(path)
+        p.restore()
 
     def _row_check_x(self) -> int:
         """Where the view draws row checkboxes inside a cell, so the header box lines up with them."""
@@ -305,6 +354,10 @@ class Header(QHeaderView):
         p.setPen(QColor(t.text2))
         fm = p.fontMetrics()
         inner = rect.adjusted(Space.S, 0, -Space.S, 0)
+        arrow_room = self._expander_width(index)
+        if arrow_room:
+            self._draw_expander(p, QRect(rect.left(), rect.top(), arrow_room, rect.height()))
+            inner.setLeft(rect.left() + arrow_room + Space.S)
         if self._check is not None and index == self._check[0]:
             inner.setLeft(rect.left() + self._draw_check(p, rect) + Space.S)
         sorted_here = self.isSortIndicatorShown() and self.sortIndicatorSection() == index and label

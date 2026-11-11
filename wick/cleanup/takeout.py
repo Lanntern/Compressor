@@ -224,7 +224,7 @@ class Summary:
     edited: int = 0
 
 
-def summarise(source: Path, cancel=None) -> Summary:
+def summarize(source: Path, cancel=None) -> Summary:
     s = Summary()
     for m in members(source):
         if cancelled(cancel):
@@ -255,7 +255,7 @@ def find(roots: list[Path], progress: ProgressFn | None = None, cancel: threadin
         if progress:
             progress(f"Reading {src.name}", i, len(sources))
         try:
-            s = summarise(src, cancel)
+            s = summarize(src, cancel)
         except (OSError, zipfile.BadZipFile, tarfile.TarError) as e:
             result.notes.append(f"{src.name} can't be read ({e}).")
             continue

@@ -74,6 +74,16 @@ LINUX_LIBJXL = Download(
      "butteraugli_main": "?butteraugli_main"},
     held="libjxl publishes no static Linux builds after 0.11.1 (Linux users get libjxl from their distribution)")
 
+# ffmpeg/ffprobe for Linux CI: a static build of the same FFmpeg release as on Windows (BtbN's GPL build: SVT-AV1,
+# x265, x264, Opus, LAME, libvpx, VMAF). Pinned to a month's last build, which BtbN keeps for two years. CI used
+# the distribution's ffmpeg, so an Ubuntu mirror outage blocked every merge.
+LINUX_FFMPEG = Download(
+    "ffmpeg", "9.0.2",
+    "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/"
+    "ffmpeg-n9.0.2-39-g7adfbe40dc-linux64-gpl-9.0.tar.xz",
+    "73e29a56974ae5a651133a04584c7483b21afe941e17dc91d79814a758b608d3",
+    {"ffmpeg": "ffmpeg", "ffprobe": "ffprobe", "LICENSE.txt": "LICENSE-ffmpeg.txt"})
+
 # Pandoc (documents): on Windows the app downloads it when first needed (wick/addons.py pins the same
 # version); this is for Linux CI and builds. Distribution packages may be too old to run --sandbox.
 LINUX_PANDOC = Download(
@@ -83,7 +93,7 @@ LINUX_PANDOC = Download(
     {"pandoc": "pandoc"})
 
 
-LICENSES = Path(__file__).resolve().parent.parent / "packaging" / "licenses"   # fallback licence texts
+LICENSES = Path(__file__).resolve().parent.parent / "packaging" / "licenses"   # fallback license texts
 
 
 class ChecksumMismatch(Exception):
@@ -118,7 +128,7 @@ def verify(d: Download, data: bytes, allow_unpinned: bool) -> None:
 
 
 def _members(data: bytes, url: str):
-    """(name, file-like opener) pairs from a zip or tar.gz."""
+    """(name, file-like opener) pairs from a zip or a tar (.gz, .xz)."""
     if url.endswith(".zip"):
         try:
             import zipfile_deflate64  # noqa: F401 - teaches zipfile Deflate64 (libjxl's Windows zips use it)
@@ -131,7 +141,7 @@ def _members(data: bytes, url: str):
             if not info.is_dir():
                 yield info.filename, (lambda i=info: z.open(i))
     else:
-        t = tarfile.open(fileobj=io.BytesIO(data), mode="r:gz")
+        t = tarfile.open(fileobj=io.BytesIO(data), mode="r:*")
         for m in t.getmembers():
             if m.isfile():
                 yield m.name, (lambda m=m: t.extractfile(m))
@@ -169,7 +179,7 @@ def fetch(d: Download, dest: Path, force: bool, allow_unpinned: bool = False) ->
             os.chmod(dest / out_name, os.stat(dest / out_name).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         found.add(base)
     for m, out in wanted.items():
-        # A licence the archive doesn't carry (gifsicle's Windows zip): ship the copy kept in packaging/licenses.
+        # A license the archive doesn't carry (gifsicle's Windows zip): ship the copy kept in packaging/licenses.
         if out and out.startswith("LICENSE") and m not in found and (LICENSES / out).is_file():
             shutil.copyfile(LICENSES / out, dest / out)
     missing = [m for m, out in wanted.items()
@@ -189,6 +199,7 @@ def main() -> int:
     ap.add_argument("--any-os", action="store_true", help="fetch the Windows tools even when not on Windows")
     ap.add_argument("--libjxl", action="store_true", help="Linux: download the static libjxl tools")
     ap.add_argument("--pandoc", action="store_true", help="Linux: download Pandoc (document conversion)")
+    ap.add_argument("--ffmpeg", action="store_true", help="Linux: download a static ffmpeg/ffprobe (as CI uses)")
     ap.add_argument("--allow-unpinned", action="store_true", help="accept downloads with no recorded checksum")
     a = ap.parse_args()
     a.dest.mkdir(parents=True, exist_ok=True)
@@ -203,8 +214,8 @@ def main() -> int:
         print(f"Tools are in {a.dest}")
         return 0 if ok else 1
 
-    if a.libjxl or a.pandoc:
-        for d, wanted in ((LINUX_LIBJXL, a.libjxl), (LINUX_PANDOC, a.pandoc)):
+    if a.libjxl or a.pandoc or a.ffmpeg:
+        for d, wanted in ((LINUX_LIBJXL, a.libjxl), (LINUX_PANDOC, a.pandoc), (LINUX_FFMPEG, a.ffmpeg)):
             if wanted and not fetch(d, a.dest, a.force, a.allow_unpinned):
                 return 1
         print(f"Tools are in {a.dest}")

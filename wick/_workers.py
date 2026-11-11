@@ -25,7 +25,7 @@ def set_low_priority(low: bool) -> None:
 def oxipng_file(src: str, dst: str, deep: bool) -> None:
     import oxipng
 
-    # For 16-bit sources keep the bit depth/colour type: the 16-bit verification
+    # For 16-bit sources keep the bit depth/color type: the 16-bit verification
     # compares in 16-bit space, where ffmpeg's 8->16 and gray->RGB paths aren't bit-exact.
     if deep:
         oxipng.optimize(src, dst, level=4, bit_depth_reduction=False, grayscale_reduction=False)

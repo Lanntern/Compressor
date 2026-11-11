@@ -37,7 +37,7 @@ class Settings:
     resize_width: int = 1920
     resize_height: int = 1080
     resize_percent: int = 50
-    metadata: str = "keep"           # see METADATA_MODES / metadata.py (orientation + colour profile always kept)
+    metadata: str = "keep"           # see METADATA_MODES / metadata.py (orientation + color profile always kept)
     preserve_dates: bool = True      # give outputs the original's modified/created dates
     # Videos
     video_codec: str = "auto"        # auto (HEVC for camera/phone videos, else AV1) | av1 | hevc | none
@@ -110,7 +110,7 @@ class Settings:
 
     def threads_per_job(self) -> int:
         """CPU threads each multi-threaded encoder (cjxl) gets, so parallel jobs share the CPU fairly
-        (-1 lets the encoder decide; used by the speed test to reproduce the old behaviour)."""
+        (-1 lets the encoder decide; used by the speed test to reproduce the old behavior)."""
         import os
 
         if self.encoder_threads:

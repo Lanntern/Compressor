@@ -6,7 +6,7 @@ from typing import cast
 
 import os
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
@@ -66,6 +66,8 @@ def separator() -> QFrame:
 
 
 class AppSettingsTab(Page):
+    index_counted = Signal(int, int)      # (files, bytes), from a background thread
+
     def __init__(self, window):
         super().__init__("Settings", scrolls=True)
         self.win = window
@@ -90,12 +92,12 @@ class AppSettingsTab(Page):
 
         if _style.windows_accent() is not None:
             card.lay.addWidget(separator())
-            self.system_accent = ToggleSwitch("Use the Windows accent colour")
+            self.system_accent = ToggleSwitch("Use the Windows accent color")
             self.system_accent.setChecked(self.qs.value("accent/system", False, bool))
             self.system_accent.toggled.connect(self._accent_toggled)
-            card.lay.addWidget(setting_row("Use the Windows accent colour",
-                                           "Buttons, links and selections take the colour chosen in Windows' "
-                                           "Personalisation settings (adjusted where needed so text stays easy "
+            card.lay.addWidget(setting_row("Use the Windows accent color",
+                                           "Buttons, links and selections take the color chosen in Windows' "
+                                           "Personalization settings (adjusted where needed so text stays easy "
                                            "to read).", self.system_accent))
         card.lay.addWidget(separator())
         self.hover = ToggleSwitch("Preview on hover")
@@ -166,7 +168,7 @@ class AppSettingsTab(Page):
             self.native_notes.toggled.connect(lambda on: self.qs.setValue("notifications/native", on))
             card.lay.addWidget(setting_row("Windows notifications",
                                            "Finished jobs and updates appear as Windows notifications, with "
-                                           "buttons like Show in History, and wait in the notification centre. "
+                                           "buttons like Show in History, and wait in the notification center. "
                                            "Off: a small message from the tray icon instead.", self.native_notes))
         col.addWidget(card)
 
@@ -257,7 +259,7 @@ class AppSettingsTab(Page):
                              Type.FOOTNOTE, secondary=True)
             desc = {"ffmpeg": "Video encoding (AV1, HEVC)", "ffprobe": "Reads video details",
                     "cjxl": "JPEG XL encoder", "djxl": "JPEG XL decoder (verification, undo)",
-                    "cjpegli": "Best-in-class lossy JPEG encoder", "gifsicle": "GIF optimiser",
+                    "cjpegli": "Best-in-class lossy JPEG encoder", "gifsicle": "GIF optimizer",
                     "ssimulacra2": "Fast image quality metric for Smart quality (a built-in one is used "
                                    "otherwise)",
                     "butteraugli_main": "Butteraugli, an optional quality measure for videos"}.get(name, "")
@@ -284,7 +286,7 @@ class AppSettingsTab(Page):
         # about
         col.addWidget(text("About", Type.HEADLINE, bold=True, name="sectionTitle"))
         card = Card()
-        about = button("About Wick", "", None, "Version, privacy, credits and licences")
+        about = button("About Wick", "", None, "Version, privacy, credits and licenses")
         about.clicked.connect(self.win.show_about)
         card.lay.addWidget(setting_row(f"{APP_NAME} {__version__}", "Private by design: no accounts, no telemetry; "
                                                                     "your files never leave your computer.", about))
@@ -374,7 +376,28 @@ class AppSettingsTab(Page):
         self.update_dev_section()
 
     def _update_index_stats(self) -> None:
-        n, size = index.stats()
+        """Count what the file index holds, off the window's thread: the count waits for the index's lock, which
+        a scan in the background (Home's analysis) can hold for a while, and the page mustn't freeze meanwhile."""
+        if getattr(self, "_counting", False):
+            return
+        self._counting = True
+        if not hasattr(self, "_counted_connected"):
+            self.index_counted.connect(self._show_index_stats)
+            self._counted_connected = True
+
+        def count() -> None:
+            try:
+                n, size = index.stats()
+            except Exception:  # noqa: BLE001 - only a description
+                n, size = 0, 0
+            self.index_counted.emit(n, size)
+
+        import threading
+
+        threading.Thread(target=count, daemon=True, name="index-stats").start()
+
+    def _show_index_stats(self, n: int, size: int) -> None:
+        self._counting = False
         self.index_desc.setText(f"{n:,} files · {human(size)}" if n else "Nothing remembered yet.")
         self.index_clear.setEnabled(n > 0)
 
