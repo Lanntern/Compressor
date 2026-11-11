@@ -740,10 +740,9 @@ def test_cloud_only_files_are_never_opened(tmp_path, monkeypatch):
     from wick.cleanup import extensions, largefiles
     from wick.gui import thumbs
 
-    for name in ("cloud.jpg", "here.jpg"):
-        (tmp_path / name).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 3_000_000)    # PNGs called .jpg, 3 MB
-    is_cloud = lambda st: st.st_size == 3_000_008 and st.st_ino == cloud_ino    # noqa: E731
-    cloud_ino = (tmp_path / "cloud.jpg").stat().st_ino
+    for name, extra in (("cloud.jpg", 1), ("here.jpg", 0)):          # PNGs called .jpg, 3 MB; told apart by size
+        (tmp_path / name).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * (3_000_000 + extra))
+    is_cloud = lambda st: st.st_size == 3_000_009    # noqa: E731  (Windows listings give no inode to go by)
     monkeypatch.setattr(extensions, "cloud_only", is_cloud)
     monkeypatch.setattr(largefiles, "cloud_only", is_cloud)
     monkeypatch.setattr("wick.cleanup.common.cloud_only", is_cloud)
