@@ -396,6 +396,8 @@ jobs:
         # (Pinned to a commit: a third-party action with write access. Dependabot proposes updates.)
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
+          # A draft: checked, given its notes and published by hand (nobody sees it until then).
+          draft: true
           files: |
             Wick-windows.zip
             Wick-setup.exe
