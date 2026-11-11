@@ -249,11 +249,11 @@ def process_file(
             assert entry.audio is not None
             tmp = convert_audio(src, entry.audio, plan, s, on_progress, cancel)
         elif entry.kind == DOCUMENT:
-            from .documents import optimise
+            from .documents import optimize
 
             steps.report("Shrinking the pictures inside" if entry.path.suffix.lower() != ".pdf"
-                         else "Optimising the PDF")
-            tmp = optimise(src, reduce=s.documents == "reduce")
+                         else "Optimizing the PDF")
+            tmp = optimize(src, reduce=s.documents == "reduce")
         else:
             tmp = convert_image(src, entry.kind, entry.image, plan, s)
         if cancel is not None and cancel.is_set():

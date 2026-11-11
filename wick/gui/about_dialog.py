@@ -1,4 +1,4 @@
-"""About Wick: version, privacy, credits and licences."""
+"""About Wick: version, privacy, credits and licenses."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QAbstractItemView, QDialog, QFrame, QHBoxLayout, QLabel, QTreeWidget, QVBoxLayout
 
 from .. import APP_NAME, __version__
-from ..about import CREDITS, DONATE_URL, LICENCE_NOTE, PRIVACY, PRIVACY_URL
+from ..about import CREDITS, DONATE_URL, LICENSE_NOTE, PRIVACY, PRIVACY_URL
 from .devmode import CLICKS
 from .filelist import SortItem, make_sortable
 from .style import Size, Space, Type
@@ -109,10 +109,10 @@ class AboutDialog(QDialog):
         head.addLayout(titles, 1)
         lay.addLayout(head)
 
-        lay.addWidget(text("Credits and licences", Type.HEADLINE, bold=True, name="sectionTitle"))
+        lay.addWidget(text("Credits and licenses", Type.HEADLINE, bold=True, name="sectionTitle"))
         self.tree = QTreeWidget()
-        self.tree.setAccessibleName("Components and their licences. Enter opens the project's website.")
-        self.tree.setHeaderLabels(["Component", "Version", "Used for", "Licence", "Included as"])
+        self.tree.setAccessibleName("Components and their licenses. Enter opens the project's website.")
+        self.tree.setHeaderLabels(["Component", "Version", "Used for", "License", "Included as"])
         self.tree.setRootIsDecorated(False)
         self.tree.setFrameShape(QFrame.NoFrame)
         self.tree.setAlternatingRowColors(True)
@@ -123,7 +123,7 @@ class AboutDialog(QDialog):
         found = versions()
         for c in CREDITS:
             version, detail = version_for(c.name, found)
-            it = SortItem([c.name, version, c.purpose, c.licence, KIND.get(c.bundled, c.bundled)])
+            it = SortItem([c.name, version, c.purpose, c.license, KIND.get(c.bundled, c.bundled)])
             it.setData(0, Qt.UserRole, c.url)
             it.setToolTip(0, c.url)
             if detail:
@@ -134,17 +134,17 @@ class AboutDialog(QDialog):
         self.tree.itemActivated.connect(lambda it, _c: self._open(it))   # double-click or Enter
         self.tree.setCurrentItem(self.tree.topLevelItem(0))
         lay.addWidget(self.tree, 1)
-        lay.addWidget(text(LICENCE_NOTE, Type.FOOTNOTE, secondary=True, wrap=True))
+        lay.addWidget(text(LICENSE_NOTE, Type.FOOTNOTE, secondary=True, wrap=True))
 
         buttons = QHBoxLayout()
         buttons.setSpacing(Space.S)
         site = button("Open Website", "", None, "Open the selected component's website", "Enter")
         site.clicked.connect(lambda: self._open(self.tree.currentItem()))
         buttons.addWidget(site)
-        licences = self._licence_folder()
-        if licences is not None:
-            files = button("Licence Files", "", "folder", "Show the licence files of the bundled tools")
-            files.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(licences))))
+        licenses = self._license_folder()
+        if licenses is not None:
+            files = button("License Files", "", "folder", "Show the license files of the bundled tools")
+            files.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(licenses))))
             buttons.addWidget(files)
         copy = button("Copy Versions", "", None, "Copy every component's version (useful when reporting a problem)")
         copy.clicked.connect(self._copy_versions)
@@ -169,7 +169,7 @@ class AboutDialog(QDialog):
         QGuiApplication.clipboard().setText(f"{report()}\nPython {platform.python_version()} · {platform.platform()}")
 
     @staticmethod
-    def _licence_folder() -> Path | None:
+    def _license_folder() -> Path | None:
         from ..tools import app_dir
 
         folder = app_dir() / "tools"

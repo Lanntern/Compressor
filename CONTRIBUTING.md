@@ -2,6 +2,22 @@
 
 Thanks for helping! Bug reports, ideas and pull requests are all welcome.
 
+## Running from source
+
+Requires Python 3.11 or newer.
+
+```bash
+pip install -e .
+```
+
+Then get the encoders:
+
+* **Windows:** `python scripts/fetch_tools.py` downloads ffmpeg/ffprobe, cjxl/djxl/cjpegli and gifsicle into `tools/`.
+* **Linux:** `sudo apt install ffmpeg gifsicle`, then `python scripts/fetch_tools.py --libjxl` for cjxl/djxl/cjpegli 0.11
+  (distro libjxl is often too old).
+
+Start the app with `wick`.
+
 ## Reporting problems
 
 - **Bugs:** open an issue with what you did, what happened, and what you expected. Settings → About → About
@@ -14,7 +30,7 @@ Thanks for helping! Bug reports, ideas and pull requests are all welcome.
    [CLA.md](CLA.md) by posting a comment; that one comment covers all your future contributions (signatures are
    kept on the `cla-signatures` branch). You keep the
    copyright in your work. The agreement lets the maintainer keep the project's licensing flexible (for
-   example, move to a newer licence) without tracking down every contributor. Pull requests can't be merged
+   example, move to a newer license) without tracking down every contributor. Pull requests can't be merged
    until it's signed.
 2. **Keep it focused.** One change per pull request, with a short description of what it changes and why.
    For a bigger change, open an issue first so we can agree on the approach.
@@ -30,7 +46,7 @@ Thanks for helping! Bug reports, ideas and pull requests are all welcome.
 
    Tests that need the encoders skip themselves when the tools aren't installed;
    `python scripts/fetch_tools.py` downloads them (see the README).
-4. **Add a test** for a bug fix or new behaviour where you can.
+4. **Add a test** for a bug fix or new behavior where you can.
 5. **Be careful with people's files.** Wick replaces and deletes files, so anything touching that path
    needs to keep the existing guarantees: verify before replacing, originals to the Recycle Bin, everything
    undoable.
@@ -82,10 +98,10 @@ qpdf). Those get security fixes, so:
   (`scripts/check_updates.py`) opens an issue when FFmpeg, libjxl or gifsicle has a newer release or a library
   has a new advisory.
 
-## Licence
+## License
 
 Wick is licensed under the GNU General Public License, version 3 only ([LICENSE](LICENSE)). By
 contributing you agree to [CLA.md](CLA.md).
 
-The Wick name and icon are not covered by the code's licence; see "Name and logo" in the
-[README](README.md#name-and-logo).
+The Wick name and icon are not covered by the code's license; see the end of the
+[README](README.md#license).

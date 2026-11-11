@@ -83,7 +83,7 @@ def _dms(v) -> float | None:
         return None
 
 
-def _summarise_exif(exif: bytes | None, s: MetaSummary) -> None:
+def _summarize_exif(exif: bytes | None, s: MetaSummary) -> None:
     if not exif:
         return
     from PIL import Image
@@ -117,7 +117,7 @@ def _summarise_exif(exif: bytes | None, s: MetaSummary) -> None:
     s.other = len(ex) + len(sub)
 
 
-def summarise(path: Path) -> MetaSummary:
+def summarize(path: Path) -> MetaSummary:
     kind = kind_of(path)
     s = MetaSummary()
     if kind not in EDITABLE:
@@ -140,7 +140,7 @@ def summarise(path: Path) -> MetaSummary:
             s.other = len(tags)
         elif kind == JXL:
             exif, xmp, _ = _jxl_boxes(path.read_bytes())
-            _summarise_exif(exif, s)
+            _summarize_exif(exif, s)
             if xmp:
                 s.other += 1
         elif kind is not None:
@@ -152,7 +152,7 @@ def summarise(path: Path) -> MetaSummary:
             with Image.open(path) as im:
                 meta = md.read_meta(im)
                 comment = im.info.get("comment")
-            _summarise_exif(meta.exif, s)
+            _summarize_exif(meta.exif, s)
             if meta.xmp:
                 s.other += 1
                 if b"GPS" in meta.xmp and not s.gps:

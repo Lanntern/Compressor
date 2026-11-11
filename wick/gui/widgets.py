@@ -1,4 +1,4 @@
-"""Reusable UI components. Sizes, spacing and colours come only from style.py scales."""
+"""Reusable UI components. Sizes, spacing and colors come only from style.py scales."""
 
 from __future__ import annotations
 
@@ -769,7 +769,7 @@ PROGRESS_ROLE = Qt.UserRole + 11    # 0..1 while running
 
 
 class StatusDelegate(QStyledItemDelegate):
-    """Draws the Status column as a coloured pill with a symbol (colour is never the only cue)."""
+    """Draws the Status column as a colored pill with a symbol (color is never the only cue)."""
 
     _SYMBOL = {"done": "check", "failed": "xmark", "skipped": "minus", "running": "bolt",
                "ready": None, "excluded": "minus", "high": None, "medium": None, "low": None}

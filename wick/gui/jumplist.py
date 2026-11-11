@@ -154,7 +154,7 @@ def update(exe: str | None = None, args_prefix: str = "") -> bool:
             return False
         exe = sys.executable
     ole32 = ctypes.windll.ole32  # type: ignore[attr-defined]
-    hr_init = ole32.CoInitializeEx(None, 2)    # apartment-threaded; S_FALSE / changed mode: already initialised
+    hr_init = ole32.CoInitializeEx(None, 2)    # apartment-threaded; S_FALSE / changed mode: already initialized
     dest = tasks = None
     links: list[_Com] = []
     try:

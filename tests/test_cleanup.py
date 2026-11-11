@@ -488,7 +488,7 @@ def test_docker_unused_images_and_containers(tmp_path):
 
 
 def test_app_compression_notices_directstorage_and_updates(tmp_path):
-    """DirectStorage games are recognised; files an update added after compressing are found."""
+    """DirectStorage games are recognized; files an update added after compressing are found."""
     folder = tmp_path / "Game"
     _write(folder / "bin" / "dstorage.dll", b"MZ" * 100)
     old = _write(folder / "old.pak", os.urandom(300_000), age_days=10)

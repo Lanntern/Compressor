@@ -23,7 +23,7 @@ def _add_settings_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("paths", type=Path, nargs="+", help="folders and/or files")
     g = p.add_argument_group("images")
     g.add_argument("--images", choices=IMAGE_FORMATS, default="jxl",
-                   help="target format; 'keep' optimises within the same format")
+                   help="target format; 'keep' optimizes within the same format")
     g.add_argument("--jpeg", choices=IMAGE_MODES, default="lossless")
     g.add_argument("--png", choices=IMAGE_MODES, default="lossless", help="PNG/GIF/BMP/TIFF/lossless WebP")
     g.add_argument("--quality", type=int, default=90, help="quality for lossy images (1-100)")

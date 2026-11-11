@@ -14,14 +14,14 @@ changes.
 | C: no evading Claude's guardrails | Tool descriptions and server instructions only describe Wick's tools |
 | D: protect privacy | Runs locally; sends nothing; [PRIVACY.md](../../PRIVACY.md) says what reaches the conversation |
 | E: only the data needed; no conversation data, even in logs | Plans list at most `list_files` files (10 by default); the log records the tool name only |
-| F: no IP infringement | GPL-3.0 code by the maintainer; bundled tools' licences in THIRD-PARTY-NOTICES.md |
+| F: no IP infringement | GPL-3.0 code by the maintainer; bundled tools' licenses in THIRD-PARTY-NOTICES.md |
 | G: no reading Claude's memory or chats | Never |
 
 ## 2. Compatibility (tool descriptions)
 
 | Rule | How |
 |---|---|
-| A, B: narrow, accurate descriptions | Each says what it does, whether it changes files, and when to use it; checked against behaviour by tests |
+| A, B: narrow, accurate descriptions | Each says what it does, whether it changes files, and when to use it; checked against behavior by tests |
 | C: no confusion with other software | Names are specific (`plan_compression`, `compress_planned_files`, ...) |
 | D, E: no steering Claude to other tools or away from them | Descriptions mention only Wick's own tools |
 | F: no instructions pulled from elsewhere | None; file names are passed as data, cleaned of hidden/control characters |
@@ -61,7 +61,7 @@ None apply: no payments, no generated media, no ads, no adult content.
 - **Access controls:** allowed folders only, fully resolved; system, program, app-data and History locations
   refused; a person approves every change outside the agent's reach.
 - **Rate limits:** per tool (30 plans a minute, 10 runs and 10 undos an hour); one job at a time.
-- **Sanitise outputs:** control, bidirectional and zero-width characters replaced; lengths bounded.
+- **Sanitize outputs:** control, bidirectional and zero-width characters replaced; lengths bounded.
 
 ## Submitting (after the rename)
 

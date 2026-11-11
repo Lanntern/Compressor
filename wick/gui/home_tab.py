@@ -104,7 +104,7 @@ class HomeTab(Page):
         # tiles
         self.tile_save = StatTile("Could save", accent=True)
         self.tile_eff = StatTile("Already efficient")
-        self.tile_files = StatTile("Analysed")
+        self.tile_files = StatTile("Analyzed")
         self.tile_save.set("—", "Scan to find out")   # (before an analysis: nothing to show yet)
         self.body.addLayout(hbox(self.tile_save, self.tile_eff, self.tile_files, spacing=Space.L))
         self.space_card = SpaceCard()

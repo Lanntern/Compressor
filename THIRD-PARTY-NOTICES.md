@@ -1,7 +1,7 @@
 # Third-party notices
 
 Wick is © Lanntern and licensed under the GNU General Public License, version 3 only (see `LICENSE`).
-It is built from, and ships with, the components below. Each keeps its own licence; licence texts for the
+It is built from, and ships with, the components below. Each keeps its own license; license texts for the
 command-line tools are in the `tools` folder next to `Wick.exe` (`LICENSE-*.txt`).
 
 The exact versions in a release are pinned in that release's source: `scripts/fetch_tools.py` (command-line
@@ -12,7 +12,7 @@ Settings → About → About Wick → **Copy Versions** lists the versions actua
 
 Wick runs these as separate programs; it does not link to them.
 
-| Tool | Licence | Binary from | Source code |
+| Tool | License | Binary from | Source code |
 |---|---|---|---|
 | FFmpeg, ffprobe (with x265, SVT-AV1, libopus, LAME, libvmaf and the other libraries of the build) | GPL-3.0 (this build; the libraries inside are GPL-2.0+, LGPL or BSD) | [Gyan.dev "full" shared build](https://www.gyan.dev/ffmpeg/builds/) | FFmpeg: `https://ffmpeg.org/releases/ffmpeg-<version>.tar.xz`; the build's libraries and their versions: listed on the Gyan.dev builds page and in `ffmpeg -version` |
 | cjxl, djxl, ssimulacra2, butteraugli_main (libjxl); cjpegli (libjxl 0.11.2) | BSD-3-Clause | [libjxl releases](https://github.com/libjxl/libjxl/releases) | https://github.com/libjxl/libjxl |
@@ -21,7 +21,7 @@ Wick runs these as separate programs; it does not link to them.
 
 ## Libraries inside the app
 
-| Library | Licence | Source code |
+| Library | License | Source code |
 |---|---|---|
 | Python | PSF License | https://www.python.org/downloads/source/ |
 | Qt / PySide6 | LGPL-3.0 | https://download.qt.io/official_releases/ (Qt), https://code.qt.io/cgit/pyside/pyside-setup.git/ (PySide6) |
@@ -44,7 +44,7 @@ own build of the same Qt version.
 ## Adapted code
 
 `wick/_ssimulacra2.py` is adapted from the `ssimulacra2` Python package (its one SciPy call replaced by
-NumPy). Its licence:
+NumPy). Its license:
 
 ```text
 BSD 3-Clause License

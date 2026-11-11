@@ -1,10 +1,10 @@
 """Office documents and PDFs: smaller without changing what they show.
 
 Office files (.docx/.pptx/.xlsx and OpenDocument) are zip archives; nearly all of their size is pictures.
-Each picture is shrunk losslessly (PNG optimised, JPEG optimised without re-encoding: identical pixels)
+Each picture is shrunk losslessly (PNG optimized, JPEG optimized without re-encoding: identical pixels)
 and the archive is recompressed. Everything else inside stays byte-for-byte the same, and that is checked.
 
-PDFs: the same lossless JPEG optimisation for pictures stored as JPEG, then a lossless restructure with
+PDFs: the same lossless JPEG optimization for pictures stored as JPEG, then a lossless restructure with
 qpdf (compressed object streams, streams recompressed at the highest level). qpdf's check must pass.
 
 "Reduce large pictures" (off by default) also scales pictures above a size down and re-encodes them.
@@ -56,7 +56,7 @@ def _same_pixels(a: bytes, b: bytes) -> bool:
 
 
 def shrink_jpeg(data: bytes) -> bytes:
-    """Same pixels, fewer bytes (Huffman tables optimised, progressive): or the original."""
+    """Same pixels, fewer bytes (Huffman tables optimized, progressive): or the original."""
     try:
         import mozjpeg_lossless_optimization as mlo
 
@@ -131,7 +131,7 @@ def office_pictures(path: Path) -> tuple[int, int, int]:
     return jpeg, png, other
 
 
-def optimise_office(src: Path, reduce: bool = False, long_edge: int = REDUCE_LONG_EDGE) -> Path:
+def optimize_office(src: Path, reduce: bool = False, long_edge: int = REDUCE_LONG_EDGE) -> Path:
     """A smaller copy of ``src`` next to it (verified); the caller decides whether to keep it."""
     office_pictures(src)        # raises Unsupported for signed / encrypted files
     out = temp_name(src.parent, src.suffix)
@@ -214,7 +214,7 @@ def _pdfa_part(pdf) -> int:
         return 0
 
 
-def optimise_pdf(src: Path, reduce: bool = False, long_edge: int = REDUCE_LONG_EDGE) -> Path:
+def optimize_pdf(src: Path, reduce: bool = False, long_edge: int = REDUCE_LONG_EDGE) -> Path:
     import pikepdf
 
     problem = pdf_problem(src)
@@ -263,11 +263,11 @@ def optimise_pdf(src: Path, reduce: bool = False, long_edge: int = REDUCE_LONG_E
         raise
 
 
-def optimise(src: Path, reduce: bool = False) -> Path:
+def optimize(src: Path, reduce: bool = False) -> Path:
     if src.suffix.lower() in PDF_EXTS:
-        return optimise_pdf(src, reduce)
-    return optimise_office(src, reduce)
+        return optimize_pdf(src, reduce)
+    return optimize_office(src, reduce)
 
 
-__all__ = ["optimise", "optimise_office", "optimise_pdf", "office_pictures", "pdf_problem", "pdf_available",
+__all__ = ["optimize", "optimize_office", "optimize_pdf", "office_pictures", "pdf_problem", "pdf_available",
            "Unsupported", "OFFICE_EXTS", "PDF_EXTS"]

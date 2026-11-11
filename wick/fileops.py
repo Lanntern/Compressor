@@ -190,7 +190,7 @@ _TRASH_LOCK = __import__("threading").Lock()
 
 
 def move_to_trash(path: Path, size: int | None = None) -> None:
-    """Send to the Recycle Bin/Trash. Serialised: parallel workers would otherwise race to
+    """Send to the Recycle Bin/Trash. Serialized: parallel workers would otherwise race to
     create the Trash folders (Linux) or overlap shell file operations (Windows).
 
     Raises TooBigForTrash instead of letting Windows delete something permanently because it's larger

@@ -80,7 +80,7 @@ def test_icons_hold_each_size(tmp_path):
     with Image.open(tmp_path / "b.ico") as im:
         im.size = (16, 16)
         small = im.convert("RGBA")                                         # (oxipng may store a palette)
-        assert small.getpixel((8, 0))[3] == 0 and small.getpixel((8, 8))[3] == 255   # not square: centred
+        assert small.getpixel((8, 0))[3] == 0 and small.getpixel((8, 8))[3] == 255   # not square: centered
     assert icons.make_ico(tmp_path / "small.png", (16, 32, 64, 256), tmp_path / "c.ico") == [16, 32]  # not enlarged
     assert icons.preset_of((48, 16, 32)) == "web" and icons.preset_of((16, 64)) == "custom"
 

@@ -84,8 +84,8 @@ def test_tool_downloads_are_checked(monkeypatch):
         assert d.url.startswith("https://") and (d.sha256 is None or len(d.sha256) == 64)
 
 
-def test_every_shipped_tool_comes_with_its_licence(monkeypatch, tmp_path):
-    """A licence the archive doesn't carry (gifsicle's Windows zip) is shipped from packaging/licenses."""
+def test_every_shipped_tool_comes_with_its_license(monkeypatch, tmp_path):
+    """A license the archive doesn't carry (gifsicle's Windows zip) is shipped from packaging/licenses."""
     import hashlib
     import zipfile
 
@@ -101,9 +101,9 @@ def test_every_shipped_tool_comes_with_its_licence(monkeypatch, tmp_path):
                              gifsicle.files, required=False)
     monkeypatch.setattr(fetch_tools, "download", lambda url: data)
     assert fetch_tools.fetch(d, tmp_path, force=True)
-    licence = (tmp_path / "LICENSE-gifsicle.txt").read_text()
-    assert "GNU GENERAL PUBLIC LICENSE" in licence and "Version 2" in licence
-    for d in fetch_tools.WINDOWS:          # every Windows tool brings a licence file, from its archive or ours
+    license = (tmp_path / "LICENSE-gifsicle.txt").read_text()
+    assert "GNU GENERAL PUBLIC LICENSE" in license and "Version 2" in license
+    for d in fetch_tools.WINDOWS:          # every Windows tool brings a license file, from its archive or ours
         assert any(out and out.lstrip("?").startswith("LICENSE") for out in d.files.values()) or d.tool == "jpegli"
 
 

@@ -588,7 +588,7 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
         args += ["-crf", str(q), "-preset", "veryfast" if probe else "medium", "-x265-params", x265]
         pix = "yuv420p10le" if ten_bit else "yuv420p"
     args += [f"-pix_fmt:v:{v_out}", pix]
-    # Keep the colour description (essential for HDR: without it the picture looks washed out).
+    # Keep the color description (essential for HDR: without it the picture looks washed out).
     for key, opt in (("primaries", "color_primaries"), ("transfer", "color_trc"), ("space", "colorspace"),
                      ("range", "color_range")):
         if info.color.get(key):

@@ -366,7 +366,7 @@ def _raw_profile(text) -> bytes | None:
 
 
 def _decode_jxl(ctx: Ctx) -> None:
-    """Decode a JPEG XL source with djxl to PNG (keeping its colour profile and metadata) for the encoders.
+    """Decode a JPEG XL source with djxl to PNG (keeping its color profile and metadata) for the encoders.
     djxl turns the pixels upright, so the EXIF orientation is reset; its EXIF also carries the JPEG XL box's
     4-byte offset, which isn't part of EXIF."""
     from PIL import Image
@@ -796,7 +796,7 @@ def convert_video(src: Path, info: VideoInfo, target: str, s: Settings,
 def video_to_animation(src: Path, info: VideoInfo, target: str, opts: ConvertOptions, s: Settings,
                        on_progress: Callable[[float], None] | None = None,
                        cancel: threading.Event | None = None) -> Path:
-    """A video as a GIF (its own 256-colour palette, made for this video) or an animated WebP. Unless chosen
+    """A video as a GIF (its own 256-color palette, made for this video) or an animated WebP. Unless chosen
     otherwise: at most 480 pixels on the short side and 15 (GIF) or 24 (WebP) frames a second."""
     import dataclasses
 

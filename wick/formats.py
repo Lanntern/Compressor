@@ -484,7 +484,7 @@ SAME_TYPE = [{".jpg", ".jpeg", ".jpe", ".jfif"}, {".tif", ".tiff"}, {".heic", ".
 
 
 def sniff(path: Path, head: bytes | None = None) -> tuple[str, str] | None:
-    """(kind, usual extension) from the file's first bytes, whatever it's called; None if not recognised."""
+    """(kind, usual extension) from the file's first bytes, whatever it's called; None if not recognized."""
     if head is None:
         try:
             with open(path, "rb") as f:

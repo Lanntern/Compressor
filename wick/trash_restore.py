@@ -213,7 +213,7 @@ def _all_freedesktop(bins: list[tuple[Path, Path | None]]) -> list[TrashedItem]:
 
 
 def index(originals, bins=None) -> dict[str, list[TrashedItem]]:
-    """Everything in the bins that hold ``originals`` (each bin read once), by normalised original path.
+    """Everything in the bins that hold ``originals`` (each bin read once), by normalized original path.
     ``bins`` overrides the bin locations (for tests)."""
     originals = [Path(o) for o in originals]
     if bins is None:

@@ -83,7 +83,7 @@ LINUX_PANDOC = Download(
     {"pandoc": "pandoc"})
 
 
-LICENSES = Path(__file__).resolve().parent.parent / "packaging" / "licenses"   # fallback licence texts
+LICENSES = Path(__file__).resolve().parent.parent / "packaging" / "licenses"   # fallback license texts
 
 
 class ChecksumMismatch(Exception):
@@ -169,7 +169,7 @@ def fetch(d: Download, dest: Path, force: bool, allow_unpinned: bool = False) ->
             os.chmod(dest / out_name, os.stat(dest / out_name).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         found.add(base)
     for m, out in wanted.items():
-        # A licence the archive doesn't carry (gifsicle's Windows zip): ship the copy kept in packaging/licenses.
+        # A license the archive doesn't carry (gifsicle's Windows zip): ship the copy kept in packaging/licenses.
         if out and out.startswith("LICENSE") and m not in found and (LICENSES / out).is_file():
             shutil.copyfile(LICENSES / out, dest / out)
     missing = [m for m, out in wanted.items()

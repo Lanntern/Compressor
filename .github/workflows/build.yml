@@ -243,7 +243,7 @@ jobs:
         run: |
           Copy-Item -Recurse tools dist/Wick/tools
           python packaging/smoke_test.py dist/Wick
-      - name: Add docs and licences, and zip
+      - name: Add docs and licenses, and zip
         shell: pwsh
         run: |
           Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md dist/Wick/

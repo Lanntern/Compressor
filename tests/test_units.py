@@ -700,7 +700,7 @@ def test_limits_against_bombs(tmp_path, monkeypatch):
 
 
 def test_winrt_notifications_and_accent():
-    """Windows: a notification is built through WinRT itself (no PowerShell), and the accent colour comes from
+    """Windows: a notification is built through WinRT itself (no PowerShell), and the accent color comes from
     UISettings; elsewhere neither exists."""
     import re
 

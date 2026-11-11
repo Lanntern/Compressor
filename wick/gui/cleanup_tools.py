@@ -107,7 +107,7 @@ def _videos_options(sec: "ToolSection"):
         how.addItem(label, value)
     how.setCurrentIndex(max(0, how.findData(sec.qs.value("cleanup/videos/strictness", "very", str))))
     how.setToolTip("Nearly identical: the same video in another size or format. Similar: also copies with "
-                   "changed colours, a watermark or subtitles burned in.")
+                   "changed colors, a watermark or subtitles burned in.")
     how.currentIndexChanged.connect(lambda: sec.qs.setValue("cleanup/videos/strictness", how.currentData()))
     sec.extra_how = how
     return [("Match", how)]

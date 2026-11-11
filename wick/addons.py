@@ -26,7 +26,7 @@ class Addon:
     sha256: str
     size: int                  # bytes to download
     member: str                # the program inside the archive
-    license: str               # its licence file inside the archive
+    license: str               # its license file inside the archive
     what: str                  # what it's for, in a sentence
 
 

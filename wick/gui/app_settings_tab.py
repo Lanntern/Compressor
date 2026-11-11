@@ -92,12 +92,12 @@ class AppSettingsTab(Page):
 
         if _style.windows_accent() is not None:
             card.lay.addWidget(separator())
-            self.system_accent = ToggleSwitch("Use the Windows accent colour")
+            self.system_accent = ToggleSwitch("Use the Windows accent color")
             self.system_accent.setChecked(self.qs.value("accent/system", False, bool))
             self.system_accent.toggled.connect(self._accent_toggled)
-            card.lay.addWidget(setting_row("Use the Windows accent colour",
-                                           "Buttons, links and selections take the colour chosen in Windows' "
-                                           "Personalisation settings (adjusted where needed so text stays easy "
+            card.lay.addWidget(setting_row("Use the Windows accent color",
+                                           "Buttons, links and selections take the color chosen in Windows' "
+                                           "Personalization settings (adjusted where needed so text stays easy "
                                            "to read).", self.system_accent))
         card.lay.addWidget(separator())
         self.hover = ToggleSwitch("Preview on hover")
@@ -168,7 +168,7 @@ class AppSettingsTab(Page):
             self.native_notes.toggled.connect(lambda on: self.qs.setValue("notifications/native", on))
             card.lay.addWidget(setting_row("Windows notifications",
                                            "Finished jobs and updates appear as Windows notifications, with "
-                                           "buttons like Show in History, and wait in the notification centre. "
+                                           "buttons like Show in History, and wait in the notification center. "
                                            "Off: a small message from the tray icon instead.", self.native_notes))
         col.addWidget(card)
 
@@ -259,7 +259,7 @@ class AppSettingsTab(Page):
                              Type.FOOTNOTE, secondary=True)
             desc = {"ffmpeg": "Video encoding (AV1, HEVC)", "ffprobe": "Reads video details",
                     "cjxl": "JPEG XL encoder", "djxl": "JPEG XL decoder (verification, undo)",
-                    "cjpegli": "Best-in-class lossy JPEG encoder", "gifsicle": "GIF optimiser",
+                    "cjpegli": "Best-in-class lossy JPEG encoder", "gifsicle": "GIF optimizer",
                     "ssimulacra2": "Fast image quality metric for Smart quality (a built-in one is used "
                                    "otherwise)",
                     "butteraugli_main": "Butteraugli, an optional quality measure for videos"}.get(name, "")
@@ -286,7 +286,7 @@ class AppSettingsTab(Page):
         # about
         col.addWidget(text("About", Type.HEADLINE, bold=True, name="sectionTitle"))
         card = Card()
-        about = button("About Wick", "", None, "Version, privacy, credits and licences")
+        about = button("About Wick", "", None, "Version, privacy, credits and licenses")
         about.clicked.connect(self.win.show_about)
         card.lay.addWidget(setting_row(f"{APP_NAME} {__version__}", "Private by design: no accounts, no telemetry; "
                                                                     "your files never leave your computer.", about))

@@ -1,4 +1,4 @@
-"""Shared behaviour for file lists: sortable columns, a select-all checkbox in the header,
+"""Shared behavior for file lists: sortable columns, a select-all checkbox in the header,
 and the context menu for files."""
 
 from __future__ import annotations

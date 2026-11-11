@@ -140,7 +140,7 @@ CROP = 640  # Python SSIMULACRA2 scores representative crops to keep the cost bo
 
 
 def _crops(img) -> list[tuple[int, int, int, int]]:
-    """The most detailed CROP x CROP region plus the centre (whole image if small)."""
+    """The most detailed CROP x CROP region plus the center (whole image if small)."""
     from PIL import ImageFilter, ImageStat
 
     w, h = img.size
@@ -156,8 +156,8 @@ def _crops(img) -> list[tuple[int, int, int, int]]:
             v = ImageStat.Stat(edges.crop((x, y, x + cw, y + ch))).var[0]
             if v > best_var:
                 best, best_var = (x, y, x + cw, y + ch), v
-    centre = ((w - cw) // 2, (h - ch) // 2, (w - cw) // 2 + cw, (h - ch) // 2 + ch)
-    return [best] if best == centre else [best, centre]
+    center = ((w - cw) // 2, (h - ch) // 2, (w - cw) // 2 + cw, (h - ch) // 2 + ch)
+    return [best] if best == center else [best, center]
 
 
 def _python_score(reference: Path, candidate: Path) -> Score:

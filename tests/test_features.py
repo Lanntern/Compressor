@@ -150,7 +150,7 @@ def test_smart_quality_image_reports_choice(tmp_path):
 
 def test_smart_quality_unreached_target_keeps_the_best_quality_attempt(tmp_path, monkeypatch):
     """When no quality meets the target, the result is the one made at the best quality (it used to be
-    whichever attempt came first, labelled as the best)."""
+    whichever attempt came first, labeled as the best)."""
     import dataclasses
 
     from wick import quality
@@ -267,9 +267,9 @@ def test_history_reads_only_changed_files():
 def test_languages_from_the_system(monkeypatch):
     from wick import languages
 
-    assert languages.normalise("sv_SE.UTF-8") == "sv" and languages.normalise("ger") == "de"
-    assert languages.normalise("deu") == "de" and languages.normalise("en-GB") == "en"
-    assert languages.normalise("C") == "" and languages.normalise("xx") == ""
+    assert languages.normalize("sv_SE.UTF-8") == "sv" and languages.normalize("ger") == "de"
+    assert languages.normalize("deu") == "de" and languages.normalize("en-GB") == "en"
+    assert languages.normalize("C") == "" and languages.normalize("xx") == ""
     assert {"ger", "deu", "de"} <= languages.track_codes(["de"])
     assert languages.parse("sv, en,xx,sv") == ["sv", "en"]
     if os.name != "nt":

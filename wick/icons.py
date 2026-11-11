@@ -9,7 +9,7 @@ Website icon set, as recommended in "How to Favicon in 2024" (Evil Martians) and
 (16, 32 and 48), icon.svg (when the source is a drawing), apple-touch-icon.png (180, on a solid background:
 iOS shows transparency as black), icon-192.png and icon-512.png for the web app manifest, which is written too.
 
-SVG optimisation removes only what can't change how the drawing looks: comments, editor data (Inkscape,
+SVG optimization removes only what can't change how the drawing looks: comments, editor data (Inkscape,
 Illustrator, Sketch...), metadata, unused IDs and namespaces, layout whitespace, and digits beyond what the
 drawing's size can show. The result is drawn and compared with the original before it's used.
 """
@@ -40,7 +40,7 @@ def preset_of(sizes: tuple[int, ...]) -> str:
 # ---------------------------------------------------------------- drawing at a size
 
 def _square(img, size: int):
-    """``img`` scaled to fit ``size``×``size``, centred on a transparent square."""
+    """``img`` scaled to fit ``size``×``size``, centered on a transparent square."""
     from PIL import Image
 
     img = img.convert("RGBA")
@@ -56,7 +56,7 @@ def _square(img, size: int):
 
 
 def draw_svg(path_or_data: Path | bytes, size: int):
-    """An SVG drawn to fit ``size``×``size`` (centred, transparent around it) as a Pillow RGBA image."""
+    """An SVG drawn to fit ``size``×``size`` (centered, transparent around it) as a Pillow RGBA image."""
     from PIL import Image
     from PySide6.QtCore import QByteArray, QRectF, Qt
     from PySide6.QtGui import QImage, QPainter
@@ -106,7 +106,7 @@ def png_bytes(img) -> bytes:
         import oxipng
 
         return oxipng.optimize_from_memory(data, level=4, strip=oxipng.StripChunks.safe())
-    except Exception:  # noqa: BLE001 - an unoptimised PNG is still right
+    except Exception:  # noqa: BLE001 - an unoptimized PNG is still right
         return data
 
 
@@ -238,7 +238,7 @@ def web_snippet(has_svg: bool) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------- SVG optimisation
+# ---------------------------------------------------------------- SVG optimization
 
 _EDITOR_NS = (
     "http://www.inkscape.org/namespaces/inkscape", "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd",

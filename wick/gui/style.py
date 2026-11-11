@@ -1,6 +1,6 @@
-"""Design system: colour tokens, typography, icons and the application stylesheet.
+"""Design system: color tokens, typography, icons and the application stylesheet.
 
-Light/dark tokens follow Apple's Human Interface colour roles. Every text colour
+Light/dark tokens follow Apple's Human Interface color roles. Every text color
 used on its background meets WCAG AA (4.5:1) - see tests/test_style.py.
 When Windows High Contrast is on, no custom styling is applied at all.
 """
@@ -70,17 +70,17 @@ DARK = Tokens(
 )
 
 _current: Tokens = LIGHT
-_system_accent = False      # Settings › Appearance › "Use the Windows accent colour"
+_system_accent = False      # Settings › Appearance › "Use the Windows accent color"
 
 
 def set_system_accent(on: bool) -> None:
-    """Use Windows' accent colour instead of the app's blue (from the next apply_style)."""
+    """Use Windows' accent color instead of the app's blue (from the next apply_style)."""
     global _system_accent
     _system_accent = bool(on)
 
 
 def windows_accent() -> str | None:
-    """The accent colour chosen in Windows' Settings › Personalisation › Colours ("#RRGGBB"), or None. Asked of
+    """The accent color chosen in Windows' Settings › Personalization › Colors ("#RRGGBB"), or None. Asked of
     Windows' own UISettings API (the supported way), not read from its private registry values."""
     from .winrt import accent_color
 
@@ -94,8 +94,8 @@ def _mix(a: QColor, b: QColor, t: float) -> str:
 
 
 def with_accent(t: Tokens, accent: str) -> Tokens:
-    """``t`` with every accent colour derived from ``accent``, each nudged until it meets the same contrast
-    rules as the app's own blue (AA: 4.5:1 for text on buttons, and for accent-coloured text on cards)."""
+    """``t`` with every accent color derived from ``accent``, each nudged until it meets the same contrast
+    rules as the app's own blue (AA: 4.5:1 for text on buttons, and for accent-colored text on cards)."""
     import dataclasses
 
     base = QColor(accent)
@@ -123,7 +123,7 @@ def tokens() -> Tokens:
 # ---------------------------------------------------------------- accessibility
 
 def high_contrast_active() -> bool:
-    """Windows High Contrast mode: the user's colours must win, so we don't style."""
+    """Windows High Contrast mode: the user's colors must win, so we don't style."""
     if os.name != "nt":
         return False
     try:
@@ -144,9 +144,9 @@ def high_contrast_active() -> bool:
 
 
 def high_contrast_tokens(pal: QPalette) -> Tokens:
-    """The app's colours taken from Windows' contrast theme (the user's own choices), for everything the app
-    draws itself: icons, switches, the sidebar, charts. No colour coding of its own: success, warning and
-    danger use the theme's text colour (the words and icons still say which is which)."""
+    """The app's colors taken from Windows' contrast theme (the user's own choices), for everything the app
+    draws itself: icons, switches, the sidebar, charts. No color coding of its own: success, warning and
+    danger use the theme's text color (the words and icons still say which is which)."""
     def c(role, group=QPalette.Active) -> str:
         return pal.color(group, role).name().upper()
 
@@ -390,7 +390,7 @@ def screen_scale() -> float:
 
 
 def icon_pixmap(name: str, color: str, size: int, dpr: float | None = None, stroke: float = 1.8) -> QPixmap:
-    """Rendered once per name/colour/size/scale (QPixmap copies are cheap and implicitly shared). ``dpr``:
+    """Rendered once per name/color/size/scale (QPixmap copies are cheap and implicitly shared). ``dpr``:
     the display scaling to render for (default: the screens' highest, so it's sharp, not stretched)."""
     return QPixmap(_icon_pixmap(name, color, size, round(dpr or screen_scale(), 3), stroke))
 
@@ -408,7 +408,7 @@ def _icon_pixmap(name: str, color: str, size: int, dpr: float, stroke: float) ->
 
 class _IconEngine(QIconEngine):
     """Draws the icon at exactly the size and display scaling it's shown at (Qt asks per screen: 100%, 150%,
-    250%...), instead of stretching one pre-rendered pixmap. Colours per mode: normal, disabled, selected."""
+    250%...), instead of stretching one pre-rendered pixmap. Colors per mode: normal, disabled, selected."""
 
     def __init__(self, name: str, colors: dict, stroke: float = 1.8):
         super().__init__()
@@ -438,7 +438,7 @@ class _IconEngine(QIconEngine):
 
 
 def icon(name: str, color: str | None = None, size: int = 20) -> QIcon:
-    """The named icon in the theme's colours (``color`` for normal and selected, when given). ``size`` is
+    """The named icon in the theme's colors (``color`` for normal and selected, when given). ``size`` is
     unused: the icon is drawn at whatever size it's shown."""
     t = tokens()
     return QIcon(_IconEngine(name, {QIcon.Normal: color or t.text2, QIcon.Disabled: t.text3,
@@ -851,7 +851,7 @@ def keyboard_focus(w: QWidget) -> bool:
 class _FocusVisible(QObject):
     """Marks the focused widget ``kbfocus`` when the focus came from the keyboard (what the stylesheet's focus
     rings and keyboard_focus() go by), and unmarks it when the focus leaves. Also gives dialogs' title bars the
-    dialog's colours on Windows 11 (see _tint_title_bar)."""
+    dialog's colors on Windows 11 (see _tint_title_bar)."""
 
     _KEYBOARD = (Qt.TabFocusReason, Qt.BacktabFocusReason, Qt.ShortcutFocusReason)
     _IGNORE = (Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta)
@@ -885,8 +885,8 @@ _focus_visible: _FocusVisible | None = None
 
 
 def _tint_title_bar(w: QWidget) -> None:
-    """Windows 11: a dialog's title bar in the dialog's own colours. Windows would otherwise paint it in the
-    accent colour (when "Show accent colour on title bars" is on), unlike the app's own window, which draws its
+    """Windows 11: a dialog's title bar in the dialog's own colors. Windows would otherwise paint it in the
+    accent color (when "Show accent color on title bars" is on), unlike the app's own window, which draws its
     own title bar."""
     try:
         import ctypes
@@ -961,10 +961,10 @@ def apply_style(mode: str) -> Tokens:
         _current = with_accent(_current, accent)
     global _system_palette
     if _system_palette is None:
-        _system_palette = QPalette(app.palette())          # (Windows' own colours, before ours are applied)
+        _system_palette = QPalette(app.palette())          # (Windows' own colors, before ours are applied)
     if high_contrast_active():
-        # The user's contrast theme wins: Windows draws the controls in its colours, and what the app draws
-        # itself (icons, switches, charts) takes the same colours.
+        # The user's contrast theme wins: Windows draws the controls in its colors, and what the app draws
+        # itself (icons, switches, charts) takes the same colors.
         app.setStyleSheet("")
         app.setPalette(_system_palette)
         _current = high_contrast_tokens(_system_palette)

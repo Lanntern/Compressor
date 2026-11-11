@@ -12,14 +12,14 @@ from pathlib import Path
 from .fileops import BIN_NAME
 
 PHOTOS, VIDEOS, MUSIC, DOCUMENTS, CACHES, BIN = "photos", "videos", "music", "documents", "caches", "bin"
-ORDER = (PHOTOS, VIDEOS, MUSIC, DOCUMENTS, CACHES, BIN)          # fixed: a category keeps its colour
+ORDER = (PHOTOS, VIDEOS, MUSIC, DOCUMENTS, CACHES, BIN)          # fixed: a category keeps its color
 LABELS = {PHOTOS: "Photos", VIDEOS: "Videos", MUSIC: "Music", DOCUMENTS: "Documents", CACHES: "App caches",
           BIN: BIN_NAME}
 
 
 @dataclass
 class Breakdown:
-    drive: str                       # "C:" / "/" (where the analysed folders are)
+    drive: str                       # "C:" / "/" (where the analyzed folders are)
     total: int
     free: int
     sizes: dict[str, int] = field(default_factory=dict)
