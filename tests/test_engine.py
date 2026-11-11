@@ -148,10 +148,34 @@ def test_all_formats_roundtrip(media_dir, fmt, mode):
     if run_id:
         problems = []
         undo_run(run_id, lambda rec, ok, msg: problems.append(f"{rec.original}: {msg}") if not ok else None)
-        assert not problems
+        assert not problems, (problems, _bin_report(media_dir))
     for name, data in originals.items():
         assert (media_dir / name).read_bytes() == data, name
     assert sorted(p.name for p in media_dir.iterdir()) == sorted(originals)
+
+
+def _bin_report(folder: Path) -> str:
+    """What the Recycle Bin holds from ``folder`` (Windows), to tell "never recycled" (Windows deleted it
+    instead), "record but no data" and "there, but not found" apart when an undo fails."""
+    if os.name != "nt":
+        return ""
+    from wick import fileops, trash_restore
+
+    lines = [f"bin capacity {fileops.recycle_bin_capacity(folder)}"]
+    want = str(folder).lower()
+    for b in trash_restore._windows_bins(folder):
+        try:
+            names = os.listdir(b)
+        except OSError as e:
+            lines.append(f"{b}: unreadable ({e})")
+            continue
+        lines.append(f"{b}: {len(names)} entries")
+        for n in names:
+            if n.startswith("$I"):
+                info = trash_restore._read_windows_info(os.path.join(b, n))
+                if info is None or info[0].lower().startswith(want):
+                    lines.append(f"  {n}: {info}, data present: {(b / ('$R' + n[2:])).exists()}")
+    return "\n".join(lines)
 
 
 @needs_image_tools

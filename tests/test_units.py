@@ -179,6 +179,42 @@ def test_parse_windows_recycle_info():
     assert trash_restore.parse_windows_info(b"junk") is None
 
 
+def test_recycle_records_read_through_brief_locks(tmp_path, monkeypatch):
+    """A $I record another program has open for a moment is read again, not taken for missing (undo would
+    say the original was gone from the Recycle Bin while it was still there)."""
+    import builtins
+
+    path = "C:\\Users\\Åsa\\Bilder\\pic.bmp"
+    ft = int((1_700_000_000 * 1e7) + 116444736000000000)
+    rec = tmp_path / "$IABC123.bmp"
+    rec.write_bytes(struct.pack("<qqqI", 2, 10, ft, len(path) + 1) + (path + "\x00").encode("utf-16-le"))
+    real_open, busy = builtins.open, [2]
+
+    def flaky_open(file, *a, **k):
+        if str(file) == str(rec) and busy[0]:
+            busy[0] -= 1
+            e = PermissionError(13, "The process cannot access the file because it is being used")
+            e.winerror = 32                                    # (sharing violation, as on Windows)
+            raise e
+        return real_open(file, *a, **k)
+
+    monkeypatch.setattr(builtins, "open", flaky_open)
+    monkeypatch.setattr(trash_restore.time, "sleep", lambda _s: None)
+    assert trash_restore._read_windows_info(str(rec)) == (path, 1_700_000_000.0) and busy[0] == 0
+    busy[0] = 99                                               # locked for good: unreadable, not a crash
+    assert trash_restore._read_windows_info(str(rec)) is None
+    assert trash_restore._read_windows_info(str(tmp_path / "$Igone.bmp")) is None
+    denied, tries = PermissionError(13, "Access is denied"), []
+    denied.winerror = 5                                        # off-limits for good: not waited for
+
+    def no_access(file, *a, **k):
+        tries.append(file)
+        raise denied
+
+    monkeypatch.setattr(builtins, "open", no_access)
+    assert trash_restore._read_windows_info(str(rec)) is None and len(tries) == 1
+
+
 @pytest.mark.skipif(os.name == "nt", reason="freedesktop Trash layout is Linux-only")
 def test_freedesktop_restore(tmp_path):
     trash = tmp_path / "Trash"

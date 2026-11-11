@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import struct
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +49,24 @@ def parse_windows_info(data: bytes) -> tuple[str, float] | None:
     return path, unix
 
 
+def _read_windows_info(path: str) -> tuple[str, float] | None:
+    """Read and parse one ``$I`` record. A record another program has open for a moment (an antivirus scan,
+    the search indexer, the shell) is tried again rather than taken for missing: skipping it would report
+    the original as gone from the bin while it's still there. None if it really can't be read."""
+    for attempt in range(5):
+        try:
+            with open(path, "rb") as f:
+                return parse_windows_info(f.read(4096))
+        except FileNotFoundError:
+            return None
+        except OSError as e:
+            # Only "in use by another program" (sharing/lock violations) passes; anything else won't change.
+            if attempt == 4 or getattr(e, "winerror", None) not in (None, 32, 33):
+                return None
+            time.sleep(0.05 * 2 ** attempt)        # 0.05 + 0.1 + 0.2 + 0.4 s at most
+    return None
+
+
 def _windows_bins(original: Path) -> list[Path]:
     drive = os.path.splitdrive(str(original))[0]
     root = Path(drive + "\\") / "$Recycle.Bin"
@@ -72,11 +91,7 @@ def _windows_candidates(original: Path, bins: list[Path]) -> list[TrashedItem]:
         for e in entries:
             if not e.name.startswith("$I"):
                 continue
-            try:
-                with open(e.path, "rb") as f:
-                    parsed = parse_windows_info(f.read(4096))
-            except OSError:
-                continue
+            parsed = _read_windows_info(e.path)
             if not parsed or parsed[0].lower() != want:
                 continue
             data = b / ("$R" + e.name[2:])
@@ -178,11 +193,7 @@ def _all_windows(bins: list[Path]) -> list[TrashedItem]:
         for e in entries:
             if not e.name.startswith("$I"):
                 continue
-            try:
-                with open(e.path, "rb") as f:
-                    parsed = parse_windows_info(f.read(4096))
-            except OSError:
-                continue
+            parsed = _read_windows_info(e.path)
             data = b / ("$R" + e.name[2:])
             if parsed and data.exists():
                 found.append(TrashedItem(Path(parsed[0]), parsed[1], data, Path(e.path)))
