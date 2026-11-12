@@ -47,7 +47,7 @@ class CleanupTab(Page):
         common = button("Scan common checks…", "", "broom", "Run several checks with one shared folder listing")
         common.clicked.connect(self.scan_common)
         self.body.addLayout(hbox(common, text("Choose folders or drives, then review results in each tool.",
-                                             Type.FOOTNOTE, secondary=True), None))
+                                             Type.FOOTNOTE, secondary=True, wrap=True), None))
         self.body.addWidget(self.stack, 1)
 
     def section(self, index: int) -> ToolSection:

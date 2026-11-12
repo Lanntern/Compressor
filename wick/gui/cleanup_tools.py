@@ -187,15 +187,15 @@ def _appcompress_options(sec: ToolSection):
     box.toggled.connect(lambda on: sec.qs.setValue('appcompress/recompress', on))
     help_button = button('?', '', None, explanation)
     help_button.setAccessibleName('Explain compression after game updates')
-    help_button.setFixedWidth(28)
     help_button.clicked.connect(lambda: inform(sec, 'Why compress again after updates?', explanation))
     watch = QWidget()
     watch.setLayout(hbox(box, help_button, None))
-    idle = QCheckBox('Only after 5 minutes without keyboard/mouse input')
+    idle = QCheckBox('Wait for 5 minutes without input')
     idle.setChecked(cast(bool, sec.qs.value('appcompress/idle_only', True, bool)))
-    idle.setToolTip('Reduces interference with other work. Running games and battery policy are checked too.')
+    idle.setToolTip('Waits for 5 minutes without keyboard or mouse input to reduce interference with other work. '
+                    'Running games and battery policy are checked too.')
     idle.toggled.connect(lambda on: sec.qs.setValue('appcompress/idle_only', on))
-    tray = QCheckBox('Keep watching game updates in the tray when the window closes')
+    tray = QCheckBox('Keep watching in the tray after closing')
     tray.setChecked(cast(bool, sec.qs.value('appcompress/tray', False, bool)))
     tray.setToolTip('Wick stays running in the notification area. Use Quit in the tray menu to stop watching.')
     tray.toggled.connect(lambda on: sec.qs.setValue('appcompress/tray', on))
@@ -213,7 +213,7 @@ def _appcompress_options(sec: ToolSection):
 
     startup.toggled.connect(set_startup)
     sec.app_algorithm, sec.app_skip = algorithm, skip
-    samples = QCheckBox('Improve estimates with temporary file samples (slower)')
+    samples = QCheckBox('Test temporary samples for estimates (slower)')
     samples.setChecked(cast(bool, sec.qs.value('appcompress/sample', False, bool)))
     samples.setToolTip('Reads small portions of up to 8 files and compresses temporary copies using the chosen '
                        'algorithm. Originals are not changed. Sample files are deleted afterward.')

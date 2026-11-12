@@ -36,13 +36,13 @@ class GameResultsDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         layout.addWidget(self.table)
-        self.update = button("Download / Refresh Public Results")
-        self.update.clicked.connect(self.fetch)
+        self.download_button = button("Download / Refresh Public Results")
+        self.download_button.clicked.connect(self.fetch)
         source = button("Source / Contribute…", "", None, "Open CompactGUI's public results and contribution information")
         source.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(game_results.PAGE)))
         close = button("Close")
         close.clicked.connect(self.close)
-        layout.addLayout(hbox(self.update, source, None, close))
+        layout.addLayout(hbox(self.download_button, source, None, close))
         self.fill()
 
     def fill(self):
@@ -64,7 +64,7 @@ class GameResultsDialog(QDialog):
         if os.environ.get('WICK_NO_NETWORK'):
             self.note.setText('Network access is disabled.')
             return
-        self.update.setEnabled(False)
+        self.download_button.setEnabled(False)
         self.note.setText('Downloading public results… Your installed-game list stays on this PC.')
         self.content = bytearray()
         self.download_error = ''
@@ -95,7 +95,7 @@ class GameResultsDialog(QDialog):
         finally:
             self.reply = None
             reply.deleteLater()
-            self.update.setEnabled(True)
+            self.download_button.setEnabled(True)
 
     def closeEvent(self, event):
         if self.reply is not None:
