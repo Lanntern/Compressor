@@ -2019,4 +2019,10 @@ def test_app_table_separates_sizes_savings_and_settings(win, tmp_path):
     assert section.tree.topLevelItem(0).text(4) == "–"
     assert section.tree.topLevelItem(0).text(5) == "Rescan"
     section.app_algorithm.setCurrentIndex(original)
+    candidate.group = "Games"
+    other = Candidate(tmp_path / "Other", 20, group="Games", extra={"disk": 80, "before_first": None})
+    section._scanned(ScanResult("appcompress", [candidate, other]))
+    group = section.tree.topLevelItem(0)
+    assert group.text(3) == "–"      # do not sum a partial historical baseline
+    assert group.text(4) == "–"      # do not present incomplete estimates as a group total
 

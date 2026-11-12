@@ -546,11 +546,13 @@ class ToolSection(QWidget):
             if g:
                 if self.tool.key == "appcompress":
                     disk = sum(i.extra.get("disk", 0) for i in items)
-                    before = sum(i.extra.get("before_first") or 0 for i in items)
+                    before = (sum(i.extra["before_first"] for i in items)
+                              if all(i.extra.get("before_first") is not None for i in items) else None)
                     saving = sum(i.size for i in items)
+                    estimated = human(saving) if not any(i.extra.get("estimate_pending") for i in items) else "–"
                     parent = SortItem([self.tool.group_title(g, items), "", human(disk),
-                                       human(before) if before else "–", f"~{human(saving)}", "", "", "", ""])
-                    set_sort_keys(parent, {2: disk, 3: before, 4: saving})
+                                       human(before) if before is not None else "–", estimated, "", "", "", ""])
+                    set_sort_keys(parent, {2: disk, 3: before or 0, 4: saving})
                 else:
                     parent = SortItem([self.tool.group_title(g, items), "", human(sum(i.size for i in items)), ""])
                     set_sort_keys(parent, {C_SIZE: sum(i.size for i in items)})
@@ -603,7 +605,7 @@ class ToolSection(QWidget):
             if c.extra.get("outcome"):
                 notes.append(c.extra["outcome"])
             detail = "; ".join(notes)
-            saving = "–" if c.extra.get("estimate_pending") else f"~{human(c.size)} ({c.size / max(1, disk):.0%})"
+            saving = "–" if c.extra.get("estimate_pending") else f"{human(c.size)} ({c.size / max(1, disk):.0%})"
             it = SortItem([c.title, str(c.path.parent), human(disk), human(before) if before is not None else "–",
                            saving, estimate, c.extra.get("algorithm", "").upper(), c.extra.get("state", ""), detail])
             set_sort_keys(it, {2: disk, 3: before or 0, 4: c.size})
@@ -800,9 +802,10 @@ class ToolSection(QWidget):
                    f"<b>{len(chosen):,} selected · {human(size)}</b>")
         elif self.tool.key == "appcompress" and self.result.items:
             hidden = sum(c.warning != "" for c in self.result.items) if self.hide_unsuggested.isChecked() else 0
+            known_estimates = not any(c.extra.get("estimate_pending") for c in chosen)
             msg = (f"{len(self.result.items):,} folders · <b>{len(chosen):,} selected</b>"
                    + (f" · {hidden:,} not suggested, hidden" if hidden else "")
-                   + (f" · ~{human(size)} estimated savings" if size else ""))
+                   + (f" · Est. saving {human(size)}" if size and known_estimates else ""))
         elif not all_items:
             msg = "Nothing found. " + " ".join(self.result.notes)
         else:
@@ -829,7 +832,9 @@ class ToolSection(QWidget):
                                                   for c in chosen):
                 label = "Clean Up"   # Docker's and Windows' own items don't go to the Recycle Bin: don't say so
             estimate = "~" if action_id == actions.COMPACT else ""
-            b.setText(f"{label} ({estimate}{human(size)})" if chosen and size and action_id != actions.DECOMPACT else label)
+            show_size = (chosen and size and action_id != actions.DECOMPACT
+                         and not any(c.extra.get("estimate_pending") for c in chosen))
+            b.setText(f"{label} ({estimate}{human(size)})" if show_size else label)
         rows = bool(self._items()) if self.result is not None else False    # (nothing found: nothing to select)
         self.select_all.setEnabled(rows and not self.busy())
         self.select_all.setVisible(self.result is None or self.result.rebuild is None)   # (folder sizes: none are)
