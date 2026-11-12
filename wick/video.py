@@ -701,7 +701,8 @@ def smart_quality(src: Path, info: VideoInfo, s: Settings, encoder: str,
 
     def attempt(q: int):
         scores = []
-        for start, length in segments:
+        for number, (start, length) in enumerate(segments, 1):
+            steps.report(f"Testing {quality_label(encoder)} {q}: sample {number} of {len(segments)}")
             if cancel is not None and cancel.is_set():
                 raise tools.Cancelled()
             sample = temp_name(src.parent, ".mkv", "-sample")
@@ -750,7 +751,12 @@ def measure(src: Path, info: VideoInfo, out: Path, s: Settings, cancel: threadin
                 return None
             scores.append(quality.score_video_output(src, out, start, length, size, crop_filter(info), metric,
                                                      grain))
+    except tools.Cancelled:
+        raise
     except Exception:  # noqa: BLE001 - a score is information, never a reason to fail
+        from .log import log
+
+        log.warning("Video quality measurement unavailable for %s", src, exc_info=True)
         return None
     return quality.worst(scores) if scores else None
 
@@ -824,6 +830,7 @@ def preview_video(src: Path, info: VideoInfo, s: Settings, cancel: threading.Eve
     start = max(0.0, min(start, info.duration - length))
     sample = temp_name(src.parent, ".mkv", "-preview")
     try:
+        steps.report(f"Encoding {codec.upper()} preview sample ({encoder})")
         try:
             tools.run(build_args(src, sample, info, s, encoder, q, segment=(start, length), progress=False),
                       timeout=1800)
@@ -839,13 +846,19 @@ def preview_video(src: Path, info: VideoInfo, s: Settings, cancel: threading.Eve
         audio_bps = len(info.audio_streams()) * (s.audio_bitrate * 1000 if s.audio_bitrate else _DEFAULT_AUDIO_BPS)
         est = int((video_bps + audio_bps) * info.duration / 8)
         # Always show how close the sample is (a measured choice puts its setting in front).
+        steps.report("Measuring preview quality")
         try:
             size = frame_size(info, s)
             sc = quality.score_video_segment(src, start, length, sample, size, crop_filter(info))
             note = f"{note}, {sc} ({sc.verdict()})" if note else f"{sc} ({sc.verdict()})"
+        except tools.Cancelled:
+            raise
         except Exception:  # noqa: BLE001 - the score is a bonus
-            pass
+            from .log import log
+
+            log.warning("Preview quality measurement unavailable for %s", src, exc_info=True)
         mid = length / 2
+        steps.report("Extracting comparison frames")
         show = display_filter(info)
         tone = show.replace("bwdif=mode=send_frame,", "").replace("bwdif=mode=send_frame", "")  # sample: progressive
         before = _frame_png(src, start + mid, f"0:{info.main_video_index}", show)
@@ -857,8 +870,15 @@ def preview_video(src: Path, info: VideoInfo, s: Settings, cancel: threading.Eve
             b = _frame_sequence(sample, "0:v:0", folder, "b", frame_count, length, vf=tone)
             frames = list(zip(a, b, strict=False))     # (the shorter sequence decides)
             times = [start + i * length / frame_count for i in range(len(frames))]
+        except tools.Cancelled:
+            import shutil
+
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
         except Exception:  # noqa: BLE001 - the single middle frame still works
-            pass
+            from .log import log
+
+            log.warning("Preview frame sequence unavailable for %s; using a single frame", src, exc_info=True)
         return VideoPreview(before, after, est, start, length, encoder, note, frames, times, folder)
     finally:
         remove_quietly(sample)

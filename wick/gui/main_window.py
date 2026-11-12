@@ -970,7 +970,9 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
         from PySide6.QtWidgets import QApplication
 
-        QApplication.quit()
+        from .preview import quit_after_previews
+
+        quit_after_previews(QApplication.instance())
 
 
 __all__ = ["MainWindow", "app_icon", "__version__"]

@@ -59,6 +59,7 @@ class FileJobPage(Page):
         self.paths: list[Path] = []
         self.entries: list[FileEntry] = []
         self.rows: dict[int, QTreeWidgetItem] = {}
+        self._file_steps: dict[int, str] = {}
         self.scan_thread: ScanThread | None = None
         self.job_thread: JobThread | None = None
         self._rescan = False
@@ -335,10 +336,12 @@ class FileJobPage(Page):
         self.pauser.attach(self.job_thread)
 
     def _started_one(self, e) -> None:
+        self._file_steps[id(e)] = "Starting"
         self._set_status(e, "running", "Working…")
         self.job_status.file_started(e)
 
     def _step(self, e, message: str) -> None:
+        self._file_steps[id(e)] = message
         self._set_status(e, "running", f"{message}…")
         self.job_status.file_step(e, message)
 
@@ -352,10 +355,12 @@ class FileJobPage(Page):
         it.setToolTip(self.STATUS_COL, msg)
 
     def _progress(self, e, f: float) -> None:
-        self._set_status(e, "running", f"Working… {f * 100:.0f}%", f)
+        stage = self._file_steps.get(id(e), "Working")
+        self._set_status(e, "running", f"{stage} · {f * 100:.0f}%", f)
         self.job_status.file_progress(e, f)
 
     def _done_one(self, r) -> None:
+        self._file_steps.pop(id(r.entry), None)
         kind = {DONE: "done", FAILED: "failed", CANCELLED: "skipped"}.get(r.status, "skipped")
         msg = f"{r.message} (while {r.step[0].lower() + r.step[1:]})" if r.status == FAILED and r.step else r.message
         self._set_status(r.entry, kind, msg)

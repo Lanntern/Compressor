@@ -86,10 +86,14 @@ class JobStatus(Card):
         self._outputs: list[Path] = []
         self._details = ""
         self._running: dict[int, list] = {}      # id(entry) -> [name, size, step, fraction]
+        self._stage_times: dict[int, float] = {}
+        self._activity: dict[int, float] = {}
+        self._stall_logged: set[int] = set()
         self.setVisible(False)
 
     # ---------------------------------------------------------------- simple busy message (scanning)
     def busy(self, message: str, done: int = 0, total: int = 0) -> None:
+        self.bar.set_paused(False)
         self._set_buttons(stop=True)
         self._tick.stop()
         self.title.setText(message if len(message) < 90 else message[:87] + "…")
@@ -110,9 +114,13 @@ class JobStatus(Card):
     def start(self, n_files: int, total_bytes: int) -> None:
         self._n, self._bytes, self._bytes_done, self._finished = n_files, max(1, total_bytes), 0, 0
         self._running.clear()
+        self._stage_times.clear()
+        self._activity.clear()
+        self._stall_logged.clear()
+        self.bar.set_paused(False)
         self._last_name = ""
         self._t0 = time.monotonic()
-        self._set_buttons(stop=True, pause=True)
+        self._set_buttons(stop=True, pause=True, log=True)
         self.pause_btn.blockSignals(True)
         self.pause_btn.setChecked(False)
         self.pause_btn.setText("Pause")
@@ -129,6 +137,7 @@ class JobStatus(Card):
         self._taskbar("indeterminate")
 
     def file_started(self, entry) -> None:
+        self._stage_times[id(entry)] = self._activity[id(entry)] = time.monotonic()
         self._running[id(entry)] = [entry.path.name, entry.size, "Starting", None]
         self._last_name = entry.path.name
         self._render()
@@ -136,17 +145,28 @@ class JobStatus(Card):
     def file_step(self, entry, message: str) -> None:
         r = self._running.get(id(entry))
         if r is not None:
+            if r[2] != message:
+                r[3] = None
+                self._stage_times[id(entry)] = time.monotonic()
+            self._activity[id(entry)] = time.monotonic()
+            self._stall_logged.discard(id(entry))
             r[2] = message
             self._render()
 
     def file_progress(self, entry, fraction: float) -> None:
         r = self._running.get(id(entry))
         if r is not None:
+            if r[3] is None or fraction > r[3]:
+                self._activity[id(entry)] = time.monotonic()
+                self._stall_logged.discard(id(entry))
             r[3] = max(0.0, min(1.0, fraction))
             self._render()
 
     def file_finished(self, result) -> None:
         r = self._running.pop(id(result.entry), None)
+        self._stage_times.pop(id(result.entry), None)
+        self._activity.pop(id(result.entry), None)
+        self._stall_logged.discard(id(result.entry))
         self._bytes_done += r[1] if r else result.entry.size
         self._finished += 1
         self._render()
@@ -157,7 +177,7 @@ class JobStatus(Card):
         spent = time.monotonic() - self._t0
         took = _elapsed(spent)
         running = list(self._running.values())
-        paused = "Paused · " if self._paused_reason else ""
+        paused = ("Pausing · " if running else "Paused · ") if self._paused_reason else ""
         if self._n == 1:
             name = running[0][0] if running else self._last_name
             self.title.setText(f"{paused}{self.verb} {name}")
@@ -166,12 +186,25 @@ class JobStatus(Card):
         partial = sum(size * f for _n, size, _s, f in running if f is not None)
         known = self._bytes_done + partial
         left = ""
-        if spent > 20 and 0.05 < known / self._bytes < 0.98 and not self._paused_reason:
-            left = f" · about {_elapsed(spent * (self._bytes - known) / known)} left"   # by bytes done so far
         if self._paused_reason and not running:
             self.detail.setText(self._paused_reason)
         elif running:
             name, _size, step, _f = running[-1]
+            key = next(k for k, value in self._running.items() if value is running[-1])
+            now = time.monotonic()
+            stage_spent = now - self._stage_times.get(key, now)
+            quiet = now - self._activity.get(key, now)
+            if _f is not None:
+                step += f" ({_f * 100:.0f}%)"
+                if stage_spent >= 3 and 0.03 < _f < 0.98 and not self._paused_reason:
+                    left = f" · about {_elapsed(stage_spent * (1 - _f) / _f)} left in this stage"
+            if quiet >= 15:
+                left += f" · no progress update for {_elapsed(quiet)}; the tool may still be working"
+            if quiet >= 60 and key not in self._stall_logged:
+                from ..log import log
+
+                log.warning("No progress update for %.0fs: %s, stage %s", quiet, name, step)
+                self._stall_logged.add(key)
             who = "" if self._n == 1 else (f"{name}: " if len(running) == 1 else
                                             f"{name} and {len(running) - 1} more: ")
             then = f" · then paused: {self._paused_reason}" if self._paused_reason else ""
@@ -298,6 +331,7 @@ class JobStatus(Card):
     def set_paused(self, reason: str) -> None:
         """Show the job as paused ("" = running again). ``reason`` says why, and when it continues."""
         self._paused_reason = reason
+        self.bar.set_paused(bool(reason))
         self.pause_btn.blockSignals(True)
         self.pause_btn.setChecked(bool(reason))
         self.pause_btn.setText("Resume" if reason else "Pause")

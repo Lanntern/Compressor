@@ -65,6 +65,38 @@ VIDEO_TARGETS = {
     "audio_wav": ("Sound only: WAV", ".wav", "audio"),
 }
 SOUND_TARGETS = {k for k, v in VIDEO_TARGETS.items() if v[2] == "audio"}
+
+
+def suggested_image_targets(entries) -> dict:
+    """Common, compatible choices for the context menu. Specialized formats remain in Settings."""
+    if not entries:
+        return {}
+    animated = [bool(e.image and e.image.frames > 1) for e in entries]
+    icon_work = all(e.path.suffix.lower() in (".ico", ".icns", ".cur") for e in entries)
+    icon_candidate = all(e.image and e.image.width == e.image.height and 16 <= e.image.width <= 1024 for e in entries)
+    result = {}
+    for key, spec in IMAGE_TARGETS.items():
+        if key == "keep":      # turning has its own menu
+            continue
+        if key in ("icns", "cur") and not icon_work:
+            continue
+        if key == "ico" and not (icon_work or icon_candidate):
+            continue
+        if key == "svg" and not all(e.path.suffix.lower() == ".svg" for e in entries):
+            continue
+        if key == "mp4" and not all(animated):
+            continue
+        if any(animated) and not spec[2]:
+            continue
+        if key == "gif" and not any(animated) and not any(e.path.suffix.lower() == ".gif" for e in entries):
+            continue
+        aliases = {"jpeg": (".jpg", ".jpeg"), "tiff": (".tif", ".tiff")}.get(key, (spec[1],))
+        if key != "svg" and all(e.path.suffix.lower() in aliases for e in entries):
+            continue
+        result[key] = spec
+    return result
+
+
 _COPYABLE = {"mp3": {"mp3"}, "aac": {"aac"}, "opus": {"opus"}, "flac": {"flac"}}
 # id: (label, extension, Pandoc's writer)
 DOCUMENT_TARGETS = {

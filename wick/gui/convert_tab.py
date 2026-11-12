@@ -587,6 +587,17 @@ class ConvertTab(FileJobPage):
                                             "archives": convert.ARCHIVE_TARGETS,
                                             "pdfs": {k: convert.PDF_TARGETS[k] for k in convert.PDF_PAGE_TARGETS}}
             targets = all_targets.get(group, convert.IMAGE_TARGETS)
+            if group == "image":
+                targets = convert.suggested_image_targets(entries)
+            elif group == "video":
+                targets = {k: v for k, v in targets.items() if k != "keep" and
+                           (k not in convert.SOUND_TARGETS or all(e.video and e.video.audio_streams() for e in entries)) and
+                           not all(e.video and e.video.codec == v[2] for e in entries)}
+            elif group == "audio":
+                lossless = {"flac", "alac", "pcm_s16le", "pcm_s24le", "pcm_s32le", "wavpack", "ape"}
+                targets = {k: v for k, v in targets.items() if
+                           not all(e.path.suffix.lower() == v[1] for e in entries) and
+                           (k not in ("flac", "wav") or all(e.audio and e.audio.codec in lossless for e in entries))}
             field = {"video": "video_target", "audio": "audio_target", "documents": "document_target",
                      "pdfs": "pdf_target", "fonts": "font_target", "comics": "comic_target",
                      "archives": "archive_target"}.get(group, "image_target")

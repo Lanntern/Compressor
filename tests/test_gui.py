@@ -1788,3 +1788,84 @@ def test_shift_click_ticks_a_range(win, monkeypatch):
     monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.ShiftModifier))
     c._tree_clicked(items[4], 0)                              # Shift-click row 4: rows 1-4 ticked
     assert [it.checkState(0) == Qt.Checked for it in items] == [False, True, True, True, True, False]
+
+
+def test_pausing_freezes_loading_bar_and_resuming_restarts_it(win):
+    from PySide6.QtWidgets import QApplication
+
+    from wick.gui.jobstatus import JobStatus
+
+    status = JobStatus(parent=win)
+    status.start(1, 100)
+    QApplication.processEvents()
+    assert status.bar._tick.isActive()
+    status.set_paused("Paused by you")
+    assert not status.bar._tick.isActive() and status.bar._paused_at is not None
+    status.set_paused("")
+    assert status.bar._tick.isActive() and status.bar._paused_at is None
+    status._tick.stop()
+    status.close()
+    status.deleteLater()
+
+
+def test_progress_keeps_stage_percentage_and_estimates(win, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from wick.gui import jobstatus
+
+    clock = [100.0]
+    monkeypatch.setattr(jobstatus.time, "monotonic", lambda: clock[0])
+    status = jobstatus.JobStatus(parent=win)
+    entry = SimpleNamespace(path=tmp_path / "clip.mp4", size=100)
+    status.start(1, 100)
+    status.file_started(entry)
+    status.file_step(entry, "Encoding AV1")
+    clock[0] = 108
+    status.file_progress(entry, 0.5)
+    assert "Encoding AV1" in status.detail.text() and "50%" in status.detail.text()
+    assert "left in this stage" in status.detail.text()
+    status.file_step(entry, "Checking the result")
+    assert "50%" not in status.detail.text() and status.bar.maximum() == 0
+    clock[0] = 125
+    status._render()
+    assert "no progress update" in status.detail.text()
+    status._tick.stop()
+    status.close()
+    status.deleteLater()
+
+
+@pytest.mark.parametrize("extension", ["gif", "mp4"])
+@pytest.mark.parametrize("action", ["close", "reject"])
+def test_close_busy_preview_never_waits_on_ui_thread(win, tmp_path, monkeypatch, extension, action):
+    import threading
+
+    from wick.formats import ImageInfo, VIDEO
+    from wick.gui.preview import PreviewDialog, PreviewThread
+    from wick.probe import VideoInfo
+    from wick.scanner import FileEntry
+    from wick.settings import Settings
+
+    path = tmp_path / f"preview.{extension}"
+    if extension == "gif":
+        Image.new("RGB", (32, 24), "red").save(path)
+    else:
+        path.write_bytes(b"test video header")
+    entry = FileEntry(path, path.stat().st_size, VIDEO if extension == "mp4" else "gif", 0,
+                      image=ImageInfo(32, 24),
+                      video=VideoInfo("h264", 32, 24, "yuv420p", 24, 2, 1000, 0), picked=True)
+    release, finished = threading.Event(), threading.Event()
+    monkeypatch.setattr(PreviewThread, "run", lambda self: release.wait(2))
+    dialog = PreviewDialog(entry, Settings(video_encoder="cpu"), win)
+    dialog.show()
+    worker = dialog.worker
+    worker.finished.connect(finished.set)
+    try:
+        assert _wait(worker.isRunning, 1)
+        started = time.monotonic()
+        getattr(dialog, action)()
+        assert time.monotonic() - started < 0.3
+        assert not dialog.isVisible() and worker.cancel.is_set()
+    finally:
+        release.set()
+        assert _wait(finished.is_set, 3)
+        dialog.deleteLater()

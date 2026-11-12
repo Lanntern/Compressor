@@ -460,6 +460,7 @@ def run_job(
         if cancel.is_set():
             r = FileResult(entry, CANCELLED, "Cancelled")
         else:
+            log.info("Starting %s: %s", tool or "compression", entry.path)
             events.file_started(entry)
             with steps.reporting(functools.partial(events.file_step, entry)):
                 r = processor(entry, plan, s, writer, cancel, functools.partial(events.file_progress, entry))
@@ -469,6 +470,8 @@ def run_job(
             results.append(r)
         if r.status == FAILED:
             log.warning("%s: %s", entry.path, r.message)
+        else:
+            log.info("%s: %s (%s)", entry.path, r.status, r.message)
         events.file_finished(r)
 
     images = [(e, p) for e, p in items if e.kind != VIDEO and p.convert]

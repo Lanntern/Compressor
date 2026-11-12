@@ -385,7 +385,7 @@ class HomeTab(Page):
         for o in ov.opportunities:
             e = o.entry
             it = SortItem([e.path.name, KIND_LABEL.get(e.kind, e.kind), describe(e), human(e.size),
-                           f"−{human(o.saving)} ({100 * o.saving / max(1, e.size):.0f}%)",
+                           f"~{human(o.saving)} ({100 * o.saving / max(1, e.size):.0f}%)",
                            o.confidence, "", "", o.why])
             it.setText(C_MODIFIED, format_date(e.mtime))
             set_sort_keys(it, {C_SIZE: e.size, C_SAVE: o.saving, C_CONF: rank.get(o.confidence, 0), C_MODIFIED: e.mtime})
