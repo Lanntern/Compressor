@@ -1994,7 +1994,7 @@ def test_app_algorithm_names_and_checkbox_file_types(win):
     group.deleteLater()
 
 
-def test_app_table_separates_sizes_savings_and_settings(win, tmp_path):
+def test_app_table_separates_sizes_savings_and_settings(win, tmp_path, monkeypatch, no_dialogs):
     from wick.cleanup.common import Candidate, ScanResult
     from wick.gui.filelist import SORT_ROLE
 
@@ -2025,4 +2025,14 @@ def test_app_table_separates_sizes_savings_and_settings(win, tmp_path):
     group = section.tree.topLevelItem(0)
     assert group.text(3) == "–"      # do not sum a partial historical baseline
     assert group.text(4) == "–"      # do not present incomplete estimates as a group total
+
+    from types import SimpleNamespace
+    from wick.cleanup import actions
+
+    # A second compression must replace a previous decompression's status.
+    candidate.extra.update(before_this_run=60, disk_after=40, last_action="Decompressed")
+    with monkeypatch.context() as patch:
+        patch.setattr(section, "worker", SimpleNamespace(action=actions.COMPACT, isRunning=lambda: False))
+        section._applied([SimpleNamespace(item=candidate, ok=True, freed=20, message="Compressed")], None)
+    assert candidate.extra["state"] == "Compressed"
 

@@ -995,8 +995,8 @@ class ToolSection(QWidget):
                     if item.extra.get("before_first") is None:
                         item.extra["before_first"] = item.extra["before_this_run"]
                     item.extra.update(disk=item.extra["disk_after"], checked=False, outcome=outcome.message,
-                                      state="Decompressed" if item.extra.get("last_action") == "Decompressed" else
-                                      "Compressed" if outcome.ok else "Check result")
+                                      state=("Decompressed" if getattr(self.worker, "action", "") == actions.DECOMPACT else
+                                             "Compressed") if outcome.ok else "Check result")
                     item.extra["estimate_pending"] = True
                     item.selected, item.size = False, 0
             self._fill(self.result)
