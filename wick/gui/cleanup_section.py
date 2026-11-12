@@ -672,9 +672,10 @@ class ToolSection(QWidget):
                                                   for c in chosen):
                 label = "Clean Up"   # Docker's and Windows' own items don't go to the Recycle Bin: don't say so
             b.setText(f"{label} ({human(size)})" if chosen and size else label)
-        self.select_all.setEnabled(self.result is not None and not self.busy())
+        rows = bool(self._items()) if self.result is not None else False    # (nothing found: nothing to select)
+        self.select_all.setEnabled(rows and not self.busy())
         self.select_all.setVisible(self.result is None or self.result.rebuild is None)   # (folder sizes: none are)
-        self.select_none.setEnabled(self.result is not None and not self.busy())
+        self.select_none.setEnabled(rows and not self.busy())
 
     # ---- actions
     def run_primary(self) -> None:

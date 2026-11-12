@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QScrollArea, QVBox
 from .. import APP_NAME, __version__, index, tools
 from ..fileops import BIN_NAME
 from ..formats import human
-from . import integration
+from . import devmode, integration
 from .dialogs import ask, inform, warn
 from .style import Space, Type
 from .theme import THEMES
@@ -324,7 +324,7 @@ class AppSettingsTab(Page):
         dl.addWidget(text("Developer", Type.HEADLINE, bold=True, name="sectionTitle"))
         card = Card()
         self.fluent_icons = ToggleSwitch("Use Windows' icons")
-        self.fluent_icons.setChecked(self.qs.value("dev/fluent_icons", False, bool))
+        self.fluent_icons.setChecked(self.qs.value("dev/fluent_icons", devmode.fluent_default(), bool))
         self.fluent_icons.toggled.connect(self._fluent_toggled)
         card.lay.addWidget(setting_row("Use Windows' icons", "Draw icons with Segoe Fluent Icons (Windows 11) or "
                                        "Segoe MDL2 Assets (Windows 10) where they have one; Wick's own "

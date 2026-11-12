@@ -1763,3 +1763,25 @@ def test_every_control_has_a_name_for_screen_readers(win):
                 problems.append(f"symbol only {label!r}: " + what)
     about.deleteLater()
     assert not problems, "\n".join(sorted(set(problems)))
+
+
+def test_shift_click_ticks_a_range(win, monkeypatch):
+    """Click one row, Shift-click another: both and every row between get the first row's state."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QTreeWidget, QTreeWidgetItem
+
+    from wick.gui.filelist import click_to_check
+
+    tree = QTreeWidget()
+    items = [QTreeWidgetItem(tree, [f"f{i}"]) for i in range(6)]
+    for it in items:
+        it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+        it.setCheckState(0, Qt.Unchecked)
+    click_to_check(tree)
+    tree.show()
+    c = tree._click_to_check
+    c._tree_pressed(items[1], 0)
+    c._tree_clicked(items[1], 0)                              # a plain click ticks row 1
+    monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.ShiftModifier))
+    c._tree_clicked(items[4], 0)                              # Shift-click row 4: rows 1-4 ticked
+    assert [it.checkState(0) == Qt.Checked for it in items] == [False, True, True, True, True, False]
