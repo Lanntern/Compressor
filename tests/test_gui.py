@@ -1518,6 +1518,8 @@ def test_convert_from_the_context_menu(win, tmp_path):
         Image.new("RGB", (64, 48), "teal").save(tmp_path / name)
     conv = win.converter
     conv.clear()
+    smaller = conv.smaller.isChecked()
+    conv.smaller.setChecked(False)         # this test deliberately exports tiny PNGs as larger JPEGs
     conv.output.setCurrentIndex(conv.output.findData("suffix"))       # (the page's choice doesn't apply here)
     conv.add_paths([str(tmp_path / "keep.png")])
     assert _wait(lambda: not conv.busy() and conv.tree.topLevelItemCount() == 1, 30)
@@ -1530,6 +1532,7 @@ def test_convert_from_the_context_menu(win, tmp_path):
     labels = [label for label, _ in integration._convert_items("video")]
     assert labels[-1] == "Other Format…" and "GIF" in labels
     conv.output.setCurrentIndex(conv.output.findData("beside"))
+    conv.smaller.setChecked(smaller)
     conv.clear()
 
 

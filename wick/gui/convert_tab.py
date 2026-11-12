@@ -133,7 +133,7 @@ class ConvertTab(FileJobPage):
         self.dates = QCheckBox("Keep original file dates")
         self.dates.setChecked(qs.value("convert/dates", True, bool))
         self.smaller = QCheckBox("Only keep a result if it's smaller")
-        self.smaller.setChecked(qs.value("convert/smaller", False, bool))
+        self.smaller.setChecked(qs.value("convert/smaller", True, bool))
         card.lay.addLayout(option_row(("", self.dates), ("", self.smaller), ("", self.more_btn),
                                       ("", self._presets_button())))
         from ..compat import jxl_note

@@ -267,8 +267,9 @@ def process_file(
         too_small = saved_pct < s.min_savings_pct or (st.st_size - new_size) < s.min_savings_kb * 1024
         if s.fit_under_kb and st.st_size > s.fit_under_kb * 1024 >= new_size:
             too_small = False             # made to fit a size limit: that's the point, however small the saving
-        # (Saved As a file the person chose: kept whatever its size; they asked for this result there.)
-        if plan.dest is None and (new_size >= st.st_size or (s.require_savings and too_small)):
+        # Video Save As also honors the savings rule; opting out permits an explicit larger export.
+        if (plan.dest is None or (entry.kind == VIDEO and s.require_savings)) and \
+                (new_size >= st.st_size or (s.require_savings and too_small)):
             remove_quietly(tmp)
             need = f"{s.min_savings_pct:g}%" + (f" and {human(s.min_savings_kb * 1024)}" if s.min_savings_kb else "")
             return FileResult(entry, SKIPPED, f"Would only save {max(saved_pct, 0):.1f}% "
@@ -341,7 +342,8 @@ def process_convert(entry: FileEntry, plan: Plan, s: Settings, writer, cancel=No
                 tmp = convert.turn_video(entry.path, opts, cancel)
             elif entry.kind == VIDEO:
                 assert entry.video is not None
-                vs = dataclasses.replace(s, video_max_height=opts.video_height, video_max_fps=opts.video_fps)
+                vs = dataclasses.replace(s, video_max_height=opts.video_height, video_max_fps=opts.video_fps,
+                                         require_savings=opts.only_if_smaller)
                 tmp = convert.convert_video(entry.path, entry.video, plan.route, vs, on_progress, cancel)
                 if opts.turn or opts.flip:
                     encoded = tmp

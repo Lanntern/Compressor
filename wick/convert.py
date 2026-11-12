@@ -120,7 +120,7 @@ class ConvertOptions:
     video_target: str = "mp4_h264"  # VIDEO_TARGETS key or "none"
     quality: int = 90              # lossy image quality
     lossless: bool = False         # WebP / JPEG XL lossless
-    only_if_smaller: bool = False
+    only_if_smaller: bool = True
     audio_target: str = "mp3"      # AUDIO_TARGETS key or "none"
     document_target: str = "docx"  # DOCUMENT_TARGETS key or "none"
     max_side: int = 0              # images: longest side in pixels (0 = keep; never enlarged)
@@ -777,16 +777,31 @@ def video_args(src: Path, dst: Path, info: VideoInfo, target: str, s: Settings) 
 def convert_video(src: Path, info: VideoInfo, target: str, s: Settings,
                   on_progress: Callable[[float], None] | None = None,
                   cancel: threading.Event | None = None) -> Path:
-    from .video import verify_video
+    from .video import (build_args, check_quality_budget, choose_encoder, measure, measures_quality,
+                        smart_quality, source_rate_limit, verify_video)
 
     out = temp_name(src.parent, VIDEO_TARGETS[target][1])
     try:
+        codec = VIDEO_TARGETS[target][2]
+        if codec in ("av1", "hevc"):
+            vs = Settings.from_dict({**s.to_dict(), "video_codec": codec})
+            encoder = choose_encoder(codec, vs.video_encoder)
+            q = None
+            if measures_quality(vs):
+                steps.report("Encoding short samples to choose the quality")
+                q, _choice = smart_quality(src, info, vs, encoder, cancel)
+            args = build_args(src, out, info, vs, encoder, q)
+        else:
+            args = video_args(src, out, info, target, s)
         steps.report("Encoding " + re.sub(r",[^)]*\)", ")", VIDEO_TARGETS[target][0]))     # "MP4 (H.264)"
-        tools.run_ffmpeg_progress(video_args(src, out, info, target, s), info.duration, on_progress, cancel)
+        tools.run_ffmpeg_progress(args, info.duration, on_progress, cancel)
         steps.report("Checking the result")
         verify_video(info, out, VIDEO_TARGETS[target][2], dst_is_mp4=out.suffix == ".mp4",
                      expected_size=s.video_target_size(info.width, info.height)
                      if VIDEO_TARGETS[target][2] in ("av1", "hevc") or s.video_max_height else None)
+        if codec in ("av1", "hevc") and measures_quality(vs) and source_rate_limit(info, vs, encoder):
+            steps.report("Measuring how close it looks to the original")
+            check_quality_budget(measure(src, info, out, vs, cancel), info, vs, encoder)
         return out
     except BaseException:
         remove_quietly(out)

@@ -108,6 +108,8 @@ def lookup(p: Path, size: int, mtime: float, kind: str):
         return None
     try:
         if kind == "video":
+            if "video_bit_rate" not in data:
+                return None    # re-probe old records: picture rate is needed for the compression budget
             streams = [StreamInfo(**s) for s in data.pop("streams", [])]
             return VideoInfo(**data, streams=streams)
         if kind == "audio":
