@@ -32,7 +32,7 @@ class StreamingTests(unittest.TestCase):
 
     def test_shared_inventory_reuses_listings_and_does_not_outlive_batch(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             roots = [root / "drive-a", root / "drive-b"]
             for folder in roots:
                 folder.mkdir()
@@ -48,7 +48,7 @@ class StreamingTests(unittest.TestCase):
 
     def test_cancelled_walk_is_not_cached(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             for i in range(3):
                 (root / f"{i}.bin").write_bytes(b"x")
             cancel = threading.Event()
@@ -90,6 +90,7 @@ class AppCompressionTests(unittest.TestCase):
     def test_all_algorithms_and_rejected_unknown_algorithm(self):
         for mode in appcompress.ALGORITHMS:
             args = appcompress._compact_args(Path("game"), False, mode)
+            self.assertNotIn("/i", args)  # /i hides access-denied failures behind exit code 0
             self.assertIn("/exe:" + mode, args)
         with self.assertRaises(ValueError):
             appcompress._compact_args(Path("game"), False, "malicious;command")
@@ -97,7 +98,7 @@ class AppCompressionTests(unittest.TestCase):
 
     def test_compression_applies_exclusions_and_uses_explicit_paths(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "game.bin").write_bytes(b"x")
             (root / "video.mp4").write_bytes(b"media")
             with patch.object(appcompress, "volume_type", return_value="NTFS"), \
@@ -109,9 +110,21 @@ class AppCompressionTests(unittest.TestCase):
             self.assertNotIn(str(root / "video.mp4"), args)
             self.assertFalse(any(a.startswith("/s:") for a in args))
 
+    def test_native_errors_are_reported_and_logged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "game.bin").write_bytes(b"x")
+            lines = []
+            with patch.object(appcompress, "volume_type", return_value="NTFS"), \
+                    patch.object(tools, "run", return_value=subprocess.CompletedProcess([], 1, "[ERR]", "Access denied")):
+                with self.assertLogs("wick", level="WARNING"):
+                    code = appcompress.run_compact(root, on_line=lines.append)
+            self.assertEqual(code, 1)
+            self.assertTrue(any("Access denied" in line for line in lines))
+
     def test_elevated_helper_uses_data_only_and_one_prompt(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "Game's files"
+            root = Path(directory).resolve() / "Game's files"
             root.mkdir()
             (root / "file.bin").write_bytes(b"x")
             created = []
@@ -168,7 +181,7 @@ class AppCompressionTests(unittest.TestCase):
 
     def test_preserved_old_timestamps_still_detect_new_uncompressed_files(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             old = root / "old.bin"
             old.write_bytes(b"x" * 65536)
             os.utime(old, (1, 1))
@@ -185,7 +198,7 @@ class AppCompressionTests(unittest.TestCase):
 
     def test_sample_uses_temporary_copies_and_cleans_up(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             original = root / "game.bin"
             content = b"sample" * 12000
             original.write_bytes(content)

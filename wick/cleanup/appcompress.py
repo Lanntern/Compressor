@@ -291,7 +291,7 @@ def _compact_args(folder: Path, undo: bool, algorithm_name: str = DEFAULT_ALGORI
     mode = ["/u", "/exe"] if undo else ["/c", f"/exe:{algorithm(algorithm_name)}"]
     executable = str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "compact.exe") \
         if IS_WINDOWS else "compact.exe"
-    return [executable, *mode, f"/s:{folder}", "/i", "/a", "/f"]
+    return [executable, *mode, f"/s:{folder}", "/a", "/f"]
 
 
 def _compact_files(folder, skip, cancel, changed_since=0):
@@ -401,8 +401,14 @@ def run_compact(folder: Path, undo: bool = False, on_line: Callable[[str], None]
             except tools.Cancelled:
                 return 1223
             code = max(code, result.returncode)
-            if on_line and result.stdout:
-                on_line(result.stdout[-800:])
+            output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+            if on_line and output:
+                on_line(output[-800:])
+            if result.returncode:
+                from ..log import log
+
+                log.warning("Windows compression failed for %s (exit %s): %s",
+                            command[-1], result.returncode, output[-800:])
         return 1223 if cancelled(cancel) else code
 
     # Only argument data is stored on disk, never executable PowerShell. The fixed command runs bounded batches.
