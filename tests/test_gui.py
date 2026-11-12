@@ -1948,3 +1948,75 @@ def test_app_compression_algorithms_and_explorer_folder_route(win, tmp_path):
     assert not section.busy()                # Explorer adds for review; it never compresses automatically
     assert {section.app_algorithm.itemData(i) for i in range(section.app_algorithm.count())} == set(appcompress.ALGORITHMS)
 
+
+def test_folder_scope_shows_paths_and_edits_are_staged(win, tmp_path):
+    from wick.gui.folders import FolderManager
+
+    original = win.home.roots
+    roots = [tmp_path / "one", tmp_path / "two"]
+    try:
+        win.home.roots = roots
+        win.home._show_folders()
+        assert str(roots[0]) in win.home.folder_label.text()
+        assert str(roots[1]) in win.home.folder_label.toolTip()
+        dialog = FolderManager(win.home, roots, lambda: [], win.qsettings)
+        assert dialog.list.item(0).text() == str(roots[0])
+        dialog.list.setCurrentRow(0)
+        dialog.remove()
+        assert dialog.paths() == [roots[1]]
+        assert win.home.roots == roots       # a cancelled edit must not change the active scope
+        dialog.reject()
+        dialog.deleteLater()
+    finally:
+        win.home.roots = original
+        win.home._show_folders()
+
+
+def test_app_algorithm_names_and_checkbox_file_types(win):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QLabel
+    from wick.cleanup import appcompress
+    from wick.gui.app_controls import FileTypePicker, algorithm_picker
+
+    group, combo = algorithm_picker("xpress4k")
+    assert [combo.itemText(i) for i in range(combo.count())] == [v[0] for v in appcompress.ALGORITHMS.values()]
+    combo.setCurrentIndex(combo.findData("lzx"))
+    assert any(label.text() == appcompress.ALGORITHMS["lzx"][1] for label in group.findChildren(QLabel))
+    picker = FileTypePicker(".mp4,.custom")
+    assert picker.values() == [".custom", ".mp4"]
+    item = next(picker.types.item(i) for i in range(picker.types.count()) if picker.types.item(i).text() == ".mp4")
+    item.setCheckState(Qt.Unchecked)
+    assert picker.values() == [".custom"]
+    picker.custom.setText("pak")
+    picker.add_custom()
+    assert picker.values() == [".custom", ".pak"]
+    picker.deleteLater()
+    group.deleteLater()
+
+
+def test_app_table_separates_sizes_savings_and_settings(win, tmp_path):
+    from wick.cleanup.common import Candidate, ScanResult
+    from wick.gui.filelist import SORT_ROLE
+
+    page = win.cleanup
+    section = page.section(next(i for i, tool in enumerate(page._tools) if tool.key == "appcompress"))
+    candidate = Candidate(tmp_path / "Game", 40, extra={
+        "disk": 60, "logical": 100, "before_first": None, "algorithm": "xpress4k",
+        "state": "Not compressed", "estimate_source": "rough estimate", "skip_extensions": []})
+    section._scanned(ScanResult("appcompress", [candidate]))
+    assert section.tree.columnCount() == 9 and section.tree.isColumnHidden(3)
+    row = section.tree.topLevelItem(0)
+    assert row.data(2, SORT_ROLE) == 60 and row.data(4, SORT_ROLE) == 40
+    assert row.text(5) == "Rough" and row.text(6) == "XPRESS4K"
+    assert row.text(7) == "Not compressed" and row.text(8) == ""
+    candidate.extra["before_first"] = 100
+    section._scanned(ScanResult("appcompress", [candidate]))
+    assert not section.tree.isColumnHidden(3)
+    original = section.app_algorithm.currentIndex()
+    wanted = "xpress8k" if section.app_algorithm.currentData() == "lzx" else "lzx"
+    section.app_algorithm.setCurrentIndex(section.app_algorithm.findData(wanted))
+    assert candidate.extra["algorithm"] == wanted and candidate.extra["estimate_pending"]
+    assert section.tree.topLevelItem(0).text(4) == "–"
+    assert section.tree.topLevelItem(0).text(5) == "Rescan"
+    section.app_algorithm.setCurrentIndex(original)
+

@@ -87,6 +87,22 @@ class StreamingTests(unittest.TestCase):
 
 
 class AppCompressionTests(unittest.TestCase):
+    def test_library_sources_expand_to_games_and_preserve_explicit_folders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            common_folder = root / "Library" / "steamapps" / "common"
+            first, second, own = common_folder / "First Game", common_folder / "Second Game", root / "Own App"
+            for folder in (first, second, own):
+                folder.mkdir(parents=True)
+            with (patch.object(appcompress, "steam_libraries", return_value=[root / "Library"]),
+                  patch.object(appcompress, "IS_WINDOWS", False),
+                  patch.object(appcompress, "compression_records", return_value={})):
+                self.assertEqual(appcompress.default_sources(), [common_folder])
+                self.assertEqual(set(appcompress.expand_sources([common_folder, own])), {first, second, own})
+                self.assertEqual(appcompress.migrate_sources([first, second, own]), [common_folder, own])
+                self.assertEqual(appcompress.migrate_sources([first, own]), [first, own])
+            self.assertEqual(appcompress.source_label(common_folder), f"Steam: {common_folder}")
+
     def test_all_algorithms_and_rejected_unknown_algorithm(self):
         for mode in appcompress.ALGORITHMS:
             args = appcompress._compact_args(Path("game"), False, mode)

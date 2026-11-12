@@ -18,7 +18,6 @@ from pathlib import Path
 
 from .caches import steam_libraries
 from .common import Candidate, ProgressFn, ScanResult, cancelled
-from ..formats import human
 
 IS_WINDOWS = os.name == "nt"
 ESTIMATED_RATIO = 0.62   # typical size after LZX for programs/games (shown as an estimate)
@@ -170,25 +169,70 @@ def measure(folder: Path, cancel: threading.Event | None = None, seen: set[str] 
     return logical, disk, count
 
 
-def default_folders() -> list[Path]:
-    """Installed games and programs that usually compress well."""
-    out: list[Path] = []
-    for lib in steam_libraries():
-        common = lib / "steamapps" / "common"
-        if common.is_dir():
-            out += [p for p in common.iterdir() if p.is_dir()]
+def source_label(path: Path) -> str:
+    if (path.name.lower() == "common" and path.parent.name.lower() == "steamapps") or \
+            (path / "steamapps" / "common").is_dir():
+        return f"Steam: {path}"
+    if path.name.lower() == "epic games":
+        return f"Epic Games: {path}"
+    if path.name.lower() == "games" and path.parent.name.lower() == "gog galaxy":
+        return f"GOG: {path}"
+    return str(path)
+
+
+def _library_contents(path: Path) -> Path | None:
+    if (path / "steamapps" / "common").is_dir():
+        return path / "steamapps" / "common"
+    if source_label(path) != str(path):
+        return path
+    return None
+
+
+def expand_sources(sources: list[Path]) -> list[Path]:
+    """Library sources expand to individual games; an explicitly chosen app folder stays one folder."""
+    folders = []
+    for source in sources:
+        common = _library_contents(source)
+        if common is None:
+            folders.append(source)
+            continue
+        try:
+            folders.extend(p for p in sorted(common.iterdir()) if p.is_dir() and not p.is_symlink()
+                           and p.name.lower() != "launcher" and not getattr(p, "is_junction", lambda: False)())
+        except OSError:
+            continue
+    return list(dict.fromkeys(folders))
+
+
+def default_sources() -> list[Path]:
+    out = [lib / "steamapps" / "common" for lib in steam_libraries()
+           if (lib / "steamapps" / "common").is_dir()]
     if IS_WINDOWS:
         for env in ("ProgramFiles", "ProgramFiles(x86)"):
             base = os.environ.get(env)
             if base:
-                epic = Path(base) / "Epic Games"
-                if epic.is_dir():
-                    out += [p for p in epic.iterdir() if p.is_dir() and p.name != "Launcher"]
-                gog = Path(base) / "GOG Galaxy" / "Games"
-                if gog.is_dir():
-                    out += [p for p in gog.iterdir() if p.is_dir()]
-    out += [r["path"] for r in compression_records(True).values() if r["path"].is_dir()]
+                out += [p for p in (Path(base) / "Epic Games", Path(base) / "GOG Galaxy" / "Games") if p.is_dir()]
+    for record in compression_records(True).values():
+        folder = record["path"]
+        if folder.is_dir() and not any(folder.is_relative_to(root) for root in out):
+            out.append(folder)
     return list(dict.fromkeys(out))
+
+
+def migrate_sources(folders: list[Path]) -> list[Path]:
+    """Collapse a complete legacy library list without broadening an explicitly chosen subset."""
+    out = list(dict.fromkeys(folders))
+    for root in default_sources():
+        if _library_contents(root) is None:
+            continue
+        children = expand_sources([root])
+        if children and all(p in out for p in children):
+            out = [root, *(p for p in out if p not in children and p != root)]
+    return out
+
+
+def default_folders() -> list[Path]:
+    return expand_sources(default_sources())
 
 
 def find_compressible(folders: list[Path], progress: ProgressFn | None = None,
@@ -232,14 +276,14 @@ def find_compressible(folders: list[Path], progress: ProgressFn | None = None,
         public = community.get(game_results.steam_id(folder), {})
         public_mode = public.get("modes", {}).get(selected_algorithm)
         ratio = public_mode["ratio"] if public_mode else ALGORITHMS[selected_algorithm][2]
-        estimate_source = (f"community estimate ({public_mode['samples']} samples, game versions may differ)"
+        estimate_source = (f"community estimate ({public_mode['samples']} samples)"
                            if public_mode else "rough estimate")
         if sample and not public_mode:
             if progress:
                 progress(f"Testing a temporary sample of {folder.name} ({selected_algorithm.upper()})", i, len(folders))
             try:
                 ratio, samples = sample_ratio(folder, selected_algorithm, skipped, cancel)
-                estimate_source = f"sample estimate ({samples} files; the full game can differ)"
+                estimate_source = f"sample estimate ({samples} files)"
             except Exception as error:
                 if cancelled(cancel):
                     result.cancelled = True
@@ -268,22 +312,19 @@ def find_compressible(folders: list[Path], progress: ProgressFn | None = None,
             state = "Previously compressed here; later decompressed"
         if history and warn == "Already compressed":
             warn = ""
-        measured = (f"Before first compression: {human(history['before'])}; " if history else "")
-        measured += f"On disk now: {human(disk)}; logical size: {human(logical)}"
-        if history:
-            measured += f"; last recorded algorithm: {history['settings'].get('algorithm', 'lzx').upper()}"
+
         writable = os.access(folder, os.W_OK)
         result.items.append(Candidate(
             folder, saving, title=folder.name,
-            detail=f"{state} · {count:,} files · {measured} · {selected_algorithm.upper()} · "
-                   f"{estimate_source}: {saving / max(1, disk) * 100:.0f}% smaller; actual savings vary"
-                   + ("" if writable else " · needs administrator"),
+            detail=estimate_source,
             selected=not bool(history) and saving >= logical * 0.05,
             is_dir=True, group="Games" if "steamapps" in str(folder).lower() or "games" in str(folder).lower()
             else "Programs", warning=warn,
             extra={"logical": logical, "disk": disk, "files": count, "admin": not writable,
                    "algorithm": selected_algorithm, "skip_extensions": skipped,
-                   "before_first": history["before"] if history else disk}))
+                   "before_first": history["before"] if history else None,
+                   "state": state, "estimate_source": estimate_source,
+                   "last_algorithm": history["settings"].get("algorithm", "lzx") if history else ""}))
     return result
 
 
