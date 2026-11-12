@@ -1024,6 +1024,11 @@ class ToolSection(QWidget):
         inform(self, "The clean-up stopped", f"{message}\n\nDetails are in the log ({log_file()}).")
 
     def _finished(self) -> None:
+        if self.result is not None and not getattr(self, "_scan_complete", True):
+            self._scan_complete = True
+            self.result.cancelled = True
+            self.result.notes.append("Scan stopped; showing only the results found so far.")
+            self._fill(self.result)
         self._set_busy(False)
         if self.placeholder.loading:   # stopped or failed before results
             self.placeholder.show_message("Press Scan to see what can be cleaned up.")

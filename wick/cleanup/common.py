@@ -130,10 +130,10 @@ def walk_files(roots: list[Path], *, skip_program_folders: bool = True, include_
         return
     key = (tuple(os.path.normcase(os.path.abspath(p)) for p in roots), skip_program_folders, include_hidden)
     if cache is not None and key in cache:
-        files, directories = cache[key]
+        cached_files, cached_directories = cache[key]
         if dirs_out is not None:
-            dirs_out.extend(directories)
-        for item in files:
+            dirs_out.extend(cached_directories)
+        for item in cached_files:
             if cancelled(cancel):
                 return
             yield item
