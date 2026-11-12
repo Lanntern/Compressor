@@ -21,6 +21,7 @@ from ..images import NotWorthIt, decode_for_display, measure_quality
 from ..plan import plan_entry
 from ..scanner import FileEntry
 from ..settings import Settings
+from ..video import VideoPreview
 from .. import steps, tools
 from ..log import log
 from .settings_panel import BIN_NAME
@@ -65,7 +66,7 @@ class PreviewThread(QThread):
         super().__init__(parent)
         self.entry, self.settings, self.sample_start = entry, settings, start
         self.cancel = threading.Event()
-        self._video_result = None
+        self._video_result: VideoPreview | None = None
 
     def run(self) -> None:
         with tools.cancelling(self.cancel), steps.reporting(self.step.emit):

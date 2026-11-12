@@ -294,7 +294,7 @@ def run(
                     if cancel.is_set():
                         raise Cancelled()
                     remaining = None if timeout is None else timeout - (time.monotonic() - started)
-                    if remaining is not None and remaining <= 0:
+                    if timeout is not None and remaining is not None and remaining <= 0:
                         raise subprocess.TimeoutExpired(cmd, timeout)
                     try:
                         out, err = p.communicate(timeout=min(0.1, remaining) if remaining is not None else 0.1)
