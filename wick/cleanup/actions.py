@@ -11,11 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .. import cfa, journal
+from ..formats import human
 from ..fileops import BIN_NAME, copy_times, move_to_trash, remove_quietly, temp_name, trash_available
 from . import appcompress
 from .common import Candidate
 
 TRASH, HARDLINK, COMPACT, TAKEOUT, RENAME = "trash", "hardlink", "compact", "takeout", "rename"
+DECOMPACT = "decompact"
 
 
 @dataclass
@@ -257,16 +259,31 @@ def hardlink_item(item: Candidate, writer: journal.RunWriter) -> Outcome:
 
 def compact_item(item: Candidate, writer: journal.RunWriter, on_line=None,
                  cancel: threading.Event | None = None) -> Outcome:
-    before = item.extra.get("disk") or appcompress.measure(item.path)[1]
-    code = appcompress.run_compact(item.path, False, on_line, cancel, elevate=item.extra.get("admin", False))
+    before = appcompress.measure(item.path, cancel)[1]
+    if cancel is not None and cancel.is_set():
+        return Outcome(item, False, "Cancelled before compression; nothing changed")
+    from .inuse import busy_projects
+
+    if item.path in busy_projects([item.path]):
+        return Outcome(item, False, "The app/game is running; close it first")
+    selected = appcompress.algorithm(item.extra.get("algorithm", appcompress.DEFAULT_ALGORITHM))
+    skipped = sorted(appcompress.exclusions(item.extra.get("skip_extensions", [])))
+    code = appcompress.run_compact(item.path, False, on_line, cancel, elevate=item.extra.get("admin", False),
+                                   algorithm_name=selected, skip_extensions=skipped,
+                                   changed_since=item.extra.get("changed_since", 0))
     after = appcompress.measure(item.path)[1]
+    item.extra.update(before_this_run=before, disk_after=after)
     freed = max(0, before - after)
-    if code != 0 and freed == 0:
+    if code != 0 and before == after:
         return Outcome(item, False, f"compact failed (exit {code})" + (" or was cancelled" if cancel and
                                                                        cancel.is_set() else ""))
     writer.add(journal.FileRecord(
         original=str(item.path), output=str(item.path), original_size=before, output_size=after, kind="cleanup",
-        method="Compressed with Windows LZX (transparent)", reversible=True, trashed_at=time.time(), mode=COMPACT))
+        method=f"Compressed with Windows {selected.upper()} (transparent)", reversible=True, trashed_at=time.time(), mode=COMPACT,
+        compression={"algorithm": selected, "skip_extensions": skipped,
+                     "uncompressed_fingerprint": appcompress.uncompressed_snapshot(item.path, skipped)[1]}))
+    if code != 0:
+        return Outcome(item, False, f"Partially compressed; compact exited with {code}. Undo is available in History.", freed)
     return Outcome(item, True, "Compressed", freed)
 
 
@@ -274,6 +291,24 @@ def _still_empty(item: Candidate) -> bool:
     from .empties import still_empty
 
     return still_empty(item.path, item.is_dir)
+
+
+def decompress_item(item: Candidate, writer, on_line=None, cancel=None) -> Outcome:
+    from .inuse import busy_projects
+
+    if item.path in busy_projects([item.path]):
+        return Outcome(item, False, "The app/game is running; close it first")
+    before = appcompress.measure(item.path)[1]
+    code = appcompress.run_compact(item.path, undo=True, on_line=on_line, cancel=cancel,
+                                   elevate=item.extra.get("admin", False))
+    after = appcompress.measure(item.path)[1]
+    item.extra.update(before_this_run=before, disk_after=after, last_action="Decompressed")
+    if code != 0:
+        return Outcome(item, False, f"Decompression stopped (exit {code}); it can be run again")
+    _mark_folder_decompressed(item.path)
+    writer.add(journal.FileRecord(str(item.path), str(item.path), before, after, "cleanup",
+                                  "Decompressed Windows app/game files", False, time.time(), mode=DECOMPACT))
+    return Outcome(item, True, f"Decompressed; {human(max(0, after - before))} more space on disk")
 
 
 def apply(items: list[Candidate], action: str, tool: str, root: Path,
@@ -334,6 +369,8 @@ def apply(items: list[Candidate], action: str, tool: str, root: Path,
             o = hardlink_item(item, writer)
         elif action == COMPACT:
             o = compact_item(item, writer, on_line, cancel)
+        elif action == DECOMPACT:
+            o = decompress_item(item, writer, on_line, cancel)
         elif item.extra.get("docker"):
             o = docker_item(item, writer)
         elif tool == "empty" and not _still_empty(item):
@@ -405,8 +442,19 @@ def undo_compact(rec: journal.FileRecord) -> str:
     code = appcompress.run_compact(folder, undo=True, elevate=admin)
     if code != 0:
         raise RuntimeError(f"compact /u failed (exit {code})")
+    _mark_folder_decompressed(folder)
     return "Decompressed"
+
+
+def _mark_folder_decompressed(folder: Path) -> None:
+    # Decompressing the folder supersedes every earlier compression record for it, including update runs.
+    key = os.path.normcase(os.path.abspath(folder))
+    for run in journal.list_runs():
+        for previous in run.files:
+            if previous.mode == COMPACT and os.path.normcase(os.path.abspath(previous.original)) == key and not previous.undone:
+                journal.mark_undone(run.run_id, previous.original, "Folder decompressed")
 
 
 __all__ = ["apply", "empty_from_trash", "takeout_items", "Outcome", "TRASH", "HARDLINK", "COMPACT", "undo_hardlink",
            "undo_compact", "copy_times"]
+

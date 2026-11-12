@@ -15,6 +15,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
+from contextlib import contextmanager
 from collections.abc import Callable, Iterator, Sequence
 from functools import lru_cache
 from pathlib import Path
@@ -241,6 +243,20 @@ def tool_status() -> dict[str, str | None]:
     return {name: find_tool(name) for name in TOOL_NAMES}
 
 
+_cancel_context = threading.local()
+
+
+@contextmanager
+def cancelling(cancel: threading.Event):
+    """Make nested external tools cancellable on this thread (including preview image tools)."""
+    previous = getattr(_cancel_context, "event", None)
+    _cancel_context.event = cancel
+    try:
+        yield
+    finally:
+        _cancel_context.event = previous
+
+
 def run(
     args: Sequence[str | os.PathLike],
     *,
@@ -249,7 +265,15 @@ def run(
     check: bool = True,
     text: bool = True,
 ) -> subprocess.CompletedProcess:
+    from .log import log
+
+    cancel = getattr(_cancel_context, "event", None)
+    if cancel is not None and cancel.is_set():
+        raise Cancelled()
     cmd = [str(a) for a in args]
+    started = time.monotonic()
+    log.info("Running %s", Path(cmd[0]).name)
+    log.debug("Starting tool: %s", cmd)
     with subprocess.Popen(
         cmd,
         cwd=cwd,
@@ -263,12 +287,26 @@ def run(
     ) as p:
         _considerate(p)
         try:
-            out, err = p.communicate(timeout=timeout)
+            if cancel is None:
+                out, err = p.communicate(timeout=timeout)
+            else:
+                while True:
+                    if cancel.is_set():
+                        raise Cancelled()
+                    remaining = None if timeout is None else timeout - (time.monotonic() - started)
+                    if timeout is not None and remaining is not None and remaining <= 0:
+                        raise subprocess.TimeoutExpired(cmd, timeout)
+                    try:
+                        out, err = p.communicate(timeout=min(0.1, remaining) if remaining is not None else 0.1)
+                        break
+                    except subprocess.TimeoutExpired:
+                        continue
         except BaseException:                       # (timeout, Ctrl+C: as subprocess.run does)
             p.kill()
             p.communicate()
             raise
     proc = subprocess.CompletedProcess(cmd, p.returncode, out, err)
+    log.info("%s finished in %.2fs (exit %s)", Path(cmd[0]).name, time.monotonic() - started, p.returncode)
     if check and proc.returncode != 0:
         stderr = proc.stderr if text else proc.stderr.decode("utf-8", "replace")
         raise ToolError([str(a) for a in args], proc.returncode, stderr)
@@ -285,6 +323,9 @@ def run_ffmpeg_progress(
 
     Calls ``on_progress(fraction)`` and kills ffmpeg if ``cancel`` is set.
     """
+    cancel = cancel if cancel is not None else getattr(_cancel_context, "event", None)
+    if cancel is not None and cancel.is_set():
+        raise Cancelled()
     with tempfile.TemporaryFile() as errf:
         proc = subprocess.Popen(
             [str(a) for a in args],
@@ -295,6 +336,20 @@ def run_ffmpeg_progress(
         )
         _considerate(proc)
         cancelled = False
+        finished = threading.Event()
+
+        def watch_cancel() -> None:
+            # Reading stdout can block indefinitely when an encoder hangs without printing a line.
+            while not finished.wait(0.1):
+                if cancel is not None and cancel.is_set():
+                    try:
+                        proc.kill()
+                    except OSError:
+                        pass    # already exited
+                    return
+
+        if cancel is not None:
+            threading.Thread(target=watch_cancel, daemon=True, name="encoder-cancel").start()
         try:
             assert proc.stdout is not None
             for raw in proc.stdout:
@@ -313,8 +368,11 @@ def run_ffmpeg_progress(
             proc.kill()     # nobody reads its output any more: waiting below would hang once the pipe is full
             raise
         finally:
+            finished.set()
             proc.wait()
-        if cancelled:
+            if proc.stdout is not None:
+                proc.stdout.close()
+        if cancelled or (cancel is not None and cancel.is_set()):
             raise Cancelled()
         if proc.returncode != 0:
             errf.seek(0)

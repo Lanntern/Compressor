@@ -847,6 +847,8 @@ class ProgressBar(QProgressBar):
         self.setFixedHeight(Space.XS + 2)
         self._clock = QElapsedTimer()
         self._clock.start()
+        self._paused_at: int | None = None
+        self._paused_ms = 0
         self._tick = QTimer(self, interval=16, timerType=Qt.PreciseTimer)
         self._tick.timeout.connect(self.update)
 
@@ -870,10 +872,19 @@ class ProgressBar(QProgressBar):
         self._sync_timer()
 
     def _sync_timer(self) -> None:
-        if self._busy() and self.isVisible():
+        if self._busy() and self.isVisible() and self._paused_at is None:
             self._tick.start()
         else:
             self._tick.stop()
+
+    def set_paused(self, paused: bool) -> None:
+        if paused and self._paused_at is None:
+            self._paused_at = self._clock.elapsed()
+        elif not paused and self._paused_at is not None:
+            self._paused_ms += self._clock.elapsed() - self._paused_at
+            self._paused_at = None
+        self._sync_timer()
+        self.update()
 
     def paintEvent(self, _e) -> None:  # noqa: N802
         t = tokens()
@@ -887,7 +898,8 @@ class ProgressBar(QProgressBar):
         p.setClipPath(track)
         if self._busy():
             span = r.width() * 0.3
-            phase = (self._clock.elapsed() % 1400) / 1400            # one pass every 1.4 s
+            elapsed = self._clock.elapsed() if self._paused_at is None else self._paused_at
+            phase = ((elapsed - self._paused_ms) % 1400) / 1400      # one pass every 1.4 s
             x = -span + (r.width() + span) * phase
             fill = QRectF(x, 0, span, r.height())
         else:

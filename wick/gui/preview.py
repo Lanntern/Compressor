@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import copy
+import html
 import re
+import threading
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QThread, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QHBoxLayout, QSizePolicy, QSlider, QSpinBox, QTabBar, QVBoxLayout, QWidget,
+    QApplication, QComboBox, QDialog, QHBoxLayout, QSizePolicy, QSlider, QSpinBox, QTabBar, QVBoxLayout, QWidget,
 )
 
 from ..engine import preview_file
@@ -19,22 +21,58 @@ from ..images import NotWorthIt, decode_for_display, measure_quality
 from ..plan import plan_entry
 from ..scanner import FileEntry
 from ..settings import Settings
-from .dialogs import inform
+from ..video import VideoPreview
+from .. import steps, tools
+from ..log import log
 from .settings_panel import BIN_NAME
 from .style import Radius, Space, Type, tokens, ui_font
 from .widgets import ElidedLabel, button, text
+
+
+_background_previews: set = set()
+
+
+def _release_preview(worker) -> None:
+    if worker not in _background_previews:
+        return
+    worker.discard_video()
+    _background_previews.discard(worker)
+    worker.deleteLater()
+
+
+def quit_after_previews(app) -> None:
+    """Keep the event loop alive during final decoder cleanup, without blocking a closing window."""
+    if not _background_previews:
+        app.quit()
+        return
+    app.setQuitOnLastWindowClosed(False)
+
+    def check() -> None:
+        if _background_previews:
+            QTimer.singleShot(50, check)
+        else:
+            app.quit()
+
+    check()
 
 
 class PreviewThread(QThread):
     ready = Signal(bytes, bytes, int, str)   # original png, converted png, (estimated) new size, description
     video_ready = Signal(object, str)        # VideoPreview, description
     failed = Signal(str)
+    step = Signal(str)
 
     def __init__(self, entry: FileEntry, settings: Settings, parent=None, start: float | None = None):
         super().__init__(parent)
         self.entry, self.settings, self.sample_start = entry, settings, start
+        self.cancel = threading.Event()
+        self._video_result: VideoPreview | None = None
 
     def run(self) -> None:
+        with tools.cancelling(self.cancel), steps.reporting(self.step.emit):
+            self._run()
+
+    def _run(self) -> None:
         try:
             plan = plan_entry(self.entry, self.settings)
             if not plan.convert:
@@ -44,9 +82,12 @@ class PreviewThread(QThread):
                 self._video(plan)
             else:
                 self._image(plan)
+        except tools.Cancelled:
+            return
         except NotWorthIt as e:
             self.failed.emit(str(e))
         except Exception as e:  # noqa: BLE001
+            log.exception("Preview failed for %s", self.entry.path)
             self.failed.emit(str(e))
 
     def _image(self, plan) -> None:
@@ -62,7 +103,9 @@ class PreviewThread(QThread):
                     e = self.entry
                     desc += f" · {measure_quality(e.path, e.kind, e.image, plan, self.settings, out)}"
                 except Exception:  # noqa: BLE001 - the score is a bonus
-                    pass
+                    log.warning("Preview quality measurement failed for %s", self.entry.path, exc_info=True)
+            if self.cancel.is_set():
+                return
             self.ready.emit(decode_for_display(self.entry.path), decode_for_display(out), size, desc + " · verified")
         finally:
             remove_quietly(out)
@@ -71,10 +114,18 @@ class PreviewThread(QThread):
         from ..video import preview_video
 
         assert self.entry.video is not None
-        r = preview_video(self.entry.path, self.entry.video, self.settings, start=self.sample_start)
+        r = preview_video(self.entry.path, self.entry.video, self.settings, self.cancel, start=self.sample_start)
+        self._video_result = r
         desc = plan.reason + (f" · {r.note}" if r.note else "")
         desc += f" · estimated from a {r.length:.0f} s sample at {_clock(r.start)}"
         self.video_ready.emit(r, desc)
+
+    def discard_video(self) -> None:
+        import shutil
+
+        if self._video_result is not None and self._video_result.folder is not None:
+            shutil.rmtree(self._video_result.folder, ignore_errors=True)
+        self._video_result = None
 
 
 def _clock(seconds: float) -> str:
@@ -493,8 +544,16 @@ class PreviewDialog(QDialog):
         self.frame_label.setText(f"Frame {i + 1} of {len(r.frames)} · {_clock(t)}.{int(t * 10) % 10}")
 
     def _video_ready(self, r, desc: str) -> None:
+        if getattr(self, "_closing", False):
+            import shutil
+
+            if r.folder is not None:
+                shutil.rmtree(r.folder, ignore_errors=True)
+            return
         self._drop_frames()
         self.video = r
+        if self.worker is not None and self.worker._video_result is r:
+            self.worker._video_result = None    # the dialog now owns the frame files
         if r.frames:
             self.frame.setRange(0, len(r.frames) - 1)
             self.frame.setEnabled(True)
@@ -622,10 +681,6 @@ class PreviewDialog(QDialog):
             s.smart_quality, s.smart_target = True, key
         return s
 
-    def done(self, result: int) -> None:
-        self._drop_frames()
-        super().done(result)
-
     def _use(self) -> None:
         self.quality_chosen.emit(self._chosen_settings())
         self.accept()
@@ -665,6 +720,9 @@ class PreviewDialog(QDialog):
     def run(self) -> None:
         if self.worker is not None and self.worker.isRunning():
             return
+        if self.worker is not None:
+            self.worker.deleteLater()
+        self._closing = False
         self._apply_quality(self.settings)
         self.view.before = self.view.after = None
         self.view.message = "Encoding a sample…" if self.is_video else "Converting…"
@@ -679,10 +737,21 @@ class PreviewDialog(QDialog):
         self.worker.ready.connect(self._ready)
         self.worker.video_ready.connect(self._video_ready)
         self.worker.failed.connect(self._failed)
-        self.worker.finished.connect(lambda: self.rerun.setEnabled(True))
+        self.worker.step.connect(self._preview_step)
+        self.worker.finished.connect(self._preview_finished)
         self.worker.start()
 
+    def _preview_finished(self) -> None:
+        if not getattr(self, "_closing", False):
+            self.rerun.setEnabled(True)
+
+    def _preview_step(self, message: str) -> None:
+        if not getattr(self, "_closing", False):
+            self.info.setText(html.escape(message) + "…")
+
     def _ready(self, before: bytes, after: bytes, size: int, desc: str) -> None:
+        if getattr(self, "_closing", False):
+            return
         self.view.set_images(QPixmap.fromImage(QImage.fromData(before)), QPixmap.fromImage(QImage.fromData(after)))
         a = QImage.fromData(after)
         self._describe(size, (a.width(), a.height()), desc)
@@ -731,17 +800,49 @@ class PreviewDialog(QDialog):
         return f"{dims}{KIND_LABEL.get(entry.kind, entry.kind)} · {human(entry.size)}"
 
     def _failed(self, msg: str) -> None:
+        if getattr(self, "_closing", False):
+            return
         self.view.message = f"Preview not possible: {msg}"
         self.view.update()
-        self.info.setText("Preview not possible")
+        self.info.setText(f"Preview not possible: {html.escape(msg[:240])}. Details are in the log.")
+        self.info.setToolTip(msg)
 
     def closeEvent(self, e) -> None:
-        if self.worker is not None:
-            self.worker.wait(60000)
+        self._cancel_preview()
         super().closeEvent(e)
 
     def reject(self) -> None:
-        if self.worker is not None and self.worker.isRunning():
-            inform(self, "Wait a moment, the preview is still being made.")
-            return
+        self._cancel_preview()
         super().reject()
+
+    def _cancel_preview(self) -> None:
+        if getattr(self, "_closing", False):
+            return
+        self._closing = True
+        self._drop_frames()
+        worker = self.worker
+        if worker is None:
+            return
+        worker.cancel.set()
+        for signal, slot in ((worker.ready, self._ready), (worker.video_ready, self._video_ready),
+                             (worker.failed, self._failed), (worker.step, self._preview_step),
+                             (worker.finished, self._preview_finished)):
+            try:
+                signal.disconnect(slot)
+            except (RuntimeError, TypeError):
+                log.debug("Preview signal was already disconnected")
+        if worker.isRunning():
+            # The dialog can close immediately. The application owns the live thread until it finishes;
+            # a decoder that cannot be interrupted must never be waited on by the UI thread.
+            worker.setParent(QApplication.instance())
+            _background_previews.add(worker)
+            worker.finished.connect(lambda: _release_preview(worker), Qt.QueuedConnection)
+            if not worker.isRunning():    # finished between the check and connecting cleanup
+                _release_preview(worker)
+        else:
+            worker.discard_video()
+        self.worker = None
+
+    def done(self, result: int) -> None:
+        self._cancel_preview()
+        super().done(result)

@@ -90,13 +90,13 @@ def test_convert_makes_icons_and_optimized_svgs(tmp_path):
     Image.new("RGB", (64, 64), "teal").save(tmp_path / "pic.png")
     s = Settings(output_mode="beside", min_image_kb=0, convert_inputs=True)
     entries = {e.path.name: e for e in scan(tmp_path, s).entries}
-    opts = convert.ConvertOptions(image_target="ico", ico_sizes=(16, 32, 48, 64))
+    opts = convert.ConvertOptions(only_if_smaller=False, image_target="ico", ico_sizes=(16, 32, 48, 64))
     assert convert.describe("png", opts) == "ICO, MediaWiki sizes"
     for name in ("logo.svg", "pic.png"):
         r = process_convert(entries[name], Plan(True, "", ".ico", route="ico"), s, None, opts=opts)
         assert r.status == DONE, r.message
         assert icons.ico_sizes(r.output) == [16, 32, 48, 64]
-    opts = convert.ConvertOptions(image_target="svg")
+    opts = convert.ConvertOptions(only_if_smaller=False, image_target="svg")
     r = process_convert(entries["logo.svg"], Plan(True, "", ".svg", route="svg"), s, None, opts=opts)
     assert r.status == DONE and r.output != entries["logo.svg"].path and r.new_size < entries["logo.svg"].size
 
@@ -152,11 +152,12 @@ def test_other_pictures_and_comic_books(tmp_path):
     assert entries["game.tga"].kind == "picture" and entries["story.cbz"].kind == "comic"
     for name in ("game.tga", "pixels.qoi"):
         r = process_convert(entries[name], Plan(True, "", ".png", route="png"), s, None,
-                            opts=convert.ConvertOptions(image_target="png"))
+                            opts=convert.ConvertOptions(only_if_smaller=False, image_target="png"))
         assert r.status == DONE, r.message
     r = process_convert(entries["story.cbz"], Plan(True, "", ".pdf", route="pdf"), s, None,
-                        opts=convert.ConvertOptions(comic_target="pdf"))
+                        opts=convert.ConvertOptions(only_if_smaller=False, comic_target="pdf"))
     assert r.status == DONE, r.message
     with pikepdf.open(r.output) as pdf:
         assert [int(p.Resources.XObject.Im0.Width) for p in pdf.pages] == [45, 41, 42, 50]   # natural order
     assert not (tmp_path.parent / "evil.jpg").exists()
+

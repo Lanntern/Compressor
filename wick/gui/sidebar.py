@@ -8,11 +8,12 @@ from PySide6.QtWidgets import (
 )
 
 from .style import Size, Space, Type, icon, ui_font
-from .widgets import text
+from .widgets import ProgressBar, text
 
 
 class Sidebar(QFrame):
     page_selected = Signal(int)
+    activity_requested = Signal()
 
     def __init__(self, app_name: str, items: list[tuple[str, str, str]], parent=None):
         """items: (label, icon name, shortcut text)."""
@@ -60,6 +61,20 @@ class Sidebar(QFrame):
             self.list.addItem(it)
         self.list.currentRowChanged.connect(self.page_selected.emit)
         lay.addWidget(self.list, 1)
+        self.activity_box = QWidget()
+        activity = QVBoxLayout(self.activity_box)
+        activity.setContentsMargins(Space.S, 0, Space.S, 0)
+        self.activity_btn = QPushButton("Running tasks")
+        self.activity_btn.setAccessibleName("Show running tasks")
+        self.activity_btn.clicked.connect(self.activity_requested)
+        self.activity_bar = ProgressBar()
+        self.activity_bar.setAccessibleName("Overall task progress")
+        self.activity_bar.setToolTip("Average reported task progress, not a time estimate. "
+                                    "Moves without a percentage when any task's progress is unknown.")
+        activity.addWidget(self.activity_btn)
+        activity.addWidget(self.activity_bar)
+        lay.addWidget(self.activity_box)
+        self.activity_box.hide()
         foot = QVBoxLayout()
         foot.setContentsMargins(Space.L, 0, Space.L, 0)
         foot.setSpacing(Space.XXS)
@@ -128,6 +143,23 @@ class Sidebar(QFrame):
         self.foot_value.setAccessibleName(f"Saved so far: {value}" if value else "")
         self._update_foot()
 
+    def set_activity(self, tasks) -> None:
+        from ..activity import overall
+
+        self.activity_box.setVisible(bool(tasks))
+        if not tasks:
+            return
+        self.activity_btn.setText(str(len(tasks)) if self.compact else
+                                 f"{len(tasks)} task{'s' if len(tasks) != 1 else ''} running")
+        description = "\n".join(f"{t.name}: {t.stage}" for t in tasks)
+        self.activity_box.setToolTip(description)
+        self.activity_btn.setAccessibleDescription(description)
+        fraction, paused = overall(tasks)
+        self.activity_bar.setRange(0, 0 if fraction is None else 1000)
+        if fraction is not None:
+            self.activity_bar.setValue(int(fraction * 1000))
+        self.activity_bar.set_paused(paused)
+
     def _update_foot(self) -> None:
         show = bool(getattr(self, "_saved", None)) and not self.compact
         self.foot_label.setVisible(show)
@@ -135,3 +167,4 @@ class Sidebar(QFrame):
 
 
 # ---------------------------------------------------------------- table header
+

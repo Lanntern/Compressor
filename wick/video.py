@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import steps, tools
 from .fileops import remove_quietly, temp_name
-from .images import VerificationFailed
+from .images import NotWorthIt, VerificationFailed
 from .plan import Plan
 from .probe import VideoInfo, probe_video
 from .settings import Settings
@@ -136,6 +136,30 @@ def measures_quality(s: Settings) -> bool:
     """Whether the quality is chosen by measuring samples (Visually identical, or Smart quality's target).
     A Custom value is used as it is."""
     return s.video_quality == "identical" or (s.smart_quality and s.video_quality != "custom")
+
+
+def source_rate_limit(info: VideoInfo, s: Settings, encoder: str) -> int:
+    """Picture bitrate ceiling in kbps when savings are required. Leave room for muxing and savings.
+
+    Audio is excluded: a lossless soundtrack must not inflate the picture's budget. Missing stream rates
+    and encoders without capped constant-quality mode rely on the final file-size check instead.
+    This bounds spending on an already compressed picture; it does not denoise or restore lost detail.
+    """
+    if not s.require_savings or info.video_bit_rate <= 0:
+        return 0
+    if encoder not in ("av1_nvenc", "hevc_nvenc", "libsvtav1", "libx265"):
+        return 0
+    fraction = max(0.01, 1 - s.min_savings_pct / 100)
+    # Rate-control buffers can overshoot on short clips. Keep 10% headroom; the final byte-size check is
+    # still authoritative (a bitrate ceiling is not an exact file-size guarantee).
+    return max(1, int(info.video_bit_rate * fraction * 0.90 / 1000))
+
+
+def check_quality_budget(score, info: VideoInfo, s: Settings, encoder: str) -> None:
+    """A bitrate ceiling must not silently override a measured quality target."""
+    target = "identical" if s.video_quality == "identical" else s.smart_target
+    if score is not None and source_rate_limit(info, s, encoder) and measures_quality(s) and not score.meets(target):
+        raise NotWorthIt("Result misses the requested video quality within the bitrate budget; original kept")
 
 
 def _encoder_cache(ffmpeg: str) -> tuple[Path, str, dict]:
@@ -556,10 +580,13 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
     hdr10 = _hdr10_params(info, encoder)
     out_w, out_h = fit[2] if fit is not None else frame_size(info, s)
     pixels = out_w * out_h
+    cap = source_rate_limit(info, s, encoder) if fit is None else 0
     svt = ":".join(p for p in (svt_tuning() if encoder == "libsvtav1" else "",
                                hdr10 if encoder == "libsvtav1" else "",
                                f"film-grain={grain}:film-grain-denoise=1" if grain and encoder == "libsvtav1" else "",
                                f"lp={threads}" if threads and encoder == "libsvtav1" else "") if p)
+    if cap and encoder == "libsvtav1":
+        svt = ":".join(p for p in (svt, f"mbr={min(cap, 100000)}") if p)
     x265 = ":".join(p for p in ("log-level=error", hdr10 if encoder == "libx265" else "",
                                 f"pools={threads}" if threads and encoder == "libx265" else "") if p)
     if fit is not None:                  # a size limit: an average bitrate instead of a constant quality
@@ -587,6 +614,8 @@ def build_args(src: Path, dst: Path, info: VideoInfo, s: Settings, encoder: str,
     else:  # libx265
         args += ["-crf", str(q), "-preset", "veryfast" if probe else "medium", "-x265-params", x265]
         pix = "yuv420p10le" if ten_bit else "yuv420p"
+    if cap and encoder != "libsvtav1":
+        args += ["-maxrate", f"{cap}k", "-bufsize", f"{cap * 2}k"]
     args += [f"-pix_fmt:v:{v_out}", pix]
     # Keep the color description (essential for HDR: without it the picture looks washed out).
     for key, opt in (("primaries", "color_primaries"), ("transfer", "color_trc"), ("space", "colorspace"),
@@ -672,7 +701,8 @@ def smart_quality(src: Path, info: VideoInfo, s: Settings, encoder: str,
 
     def attempt(q: int):
         scores = []
-        for start, length in segments:
+        for number, (start, length) in enumerate(segments, 1):
+            steps.report(f"Testing {quality_label(encoder)} {q}: sample {number} of {len(segments)}")
             if cancel is not None and cancel.is_set():
                 raise tools.Cancelled()
             sample = temp_name(src.parent, ".mkv", "-sample")
@@ -699,6 +729,8 @@ def smart_quality(src: Path, info: VideoInfo, s: Settings, encoder: str,
         remove_quietly(*samples)
     name = quality_label(encoder)
     if chosen is None:
+        if source_rate_limit(info, s, encoder):
+            raise NotWorthIt("Requested video quality cannot be reached within the source bitrate budget; original kept")
         return ladder[0], f"{name} {ladder[0]} (target not reached)"
     q, score = chosen
     return q, f"{name} {q}"
@@ -719,7 +751,12 @@ def measure(src: Path, info: VideoInfo, out: Path, s: Settings, cancel: threadin
                 return None
             scores.append(quality.score_video_output(src, out, start, length, size, crop_filter(info), metric,
                                                      grain))
+    except tools.Cancelled:
+        raise
     except Exception:  # noqa: BLE001 - a score is information, never a reason to fail
+        from .log import log
+
+        log.warning("Video quality measurement unavailable for %s", src, exc_info=True)
         return None
     return quality.worst(scores) if scores else None
 
@@ -793,6 +830,7 @@ def preview_video(src: Path, info: VideoInfo, s: Settings, cancel: threading.Eve
     start = max(0.0, min(start, info.duration - length))
     sample = temp_name(src.parent, ".mkv", "-preview")
     try:
+        steps.report(f"Encoding {codec.upper()} preview sample ({encoder})")
         try:
             tools.run(build_args(src, sample, info, s, encoder, q, segment=(start, length), progress=False),
                       timeout=1800)
@@ -808,13 +846,19 @@ def preview_video(src: Path, info: VideoInfo, s: Settings, cancel: threading.Eve
         audio_bps = len(info.audio_streams()) * (s.audio_bitrate * 1000 if s.audio_bitrate else _DEFAULT_AUDIO_BPS)
         est = int((video_bps + audio_bps) * info.duration / 8)
         # Always show how close the sample is (a measured choice puts its setting in front).
+        steps.report("Measuring preview quality")
         try:
             size = frame_size(info, s)
             sc = quality.score_video_segment(src, start, length, sample, size, crop_filter(info))
             note = f"{note}, {sc} ({sc.verdict()})" if note else f"{sc} ({sc.verdict()})"
+        except tools.Cancelled:
+            raise
         except Exception:  # noqa: BLE001 - the score is a bonus
-            pass
+            from .log import log
+
+            log.warning("Preview quality measurement unavailable for %s", src, exc_info=True)
         mid = length / 2
+        steps.report("Extracting comparison frames")
         show = display_filter(info)
         tone = show.replace("bwdif=mode=send_frame,", "").replace("bwdif=mode=send_frame", "")  # sample: progressive
         before = _frame_png(src, start + mid, f"0:{info.main_video_index}", show)
@@ -826,8 +870,15 @@ def preview_video(src: Path, info: VideoInfo, s: Settings, cancel: threading.Eve
             b = _frame_sequence(sample, "0:v:0", folder, "b", frame_count, length, vf=tone)
             frames = list(zip(a, b, strict=False))     # (the shorter sequence decides)
             times = [start + i * length / frame_count for i in range(len(frames))]
+        except tools.Cancelled:
+            import shutil
+
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
         except Exception:  # noqa: BLE001 - the single middle frame still works
-            pass
+            from .log import log
+
+            log.warning("Preview frame sequence unavailable for %s; using a single frame", src, exc_info=True)
         return VideoPreview(before, after, est, start, length, encoder, note, frames, times, folder)
     finally:
         remove_quietly(sample)
@@ -887,6 +938,7 @@ def convert_video(
         steps.report("Measuring how close it looks to the original")
         score = measure(src, info, out, s, cancel, grain if used == "libsvtav1" else 0)
         if score is not None:
+            check_quality_budget(score, info, s, used)
             notes.append(f"{score} ({score.verdict()})")
         if dropped:
             notes.append(f"{len(dropped)} track{'s' if len(dropped) != 1 else ''} in other languages left out")
@@ -902,7 +954,7 @@ def convert_video(
             result = finish(encoder)
             chunked.finished(src, s, encoder, grain)
             return result
-        except tools.Cancelled:
+        except (tools.Cancelled, NotWorthIt):
             remove_quietly(out)            # (the finished parts stay: the next run carries on from them)
             raise
         except Exception as e:  # noqa: BLE001 - encode it as a whole instead
@@ -941,7 +993,7 @@ def convert_video(
             remove_quietly(out)
             encoder, notes = CPU_ENCODERS[codec], []   # the measured choice was for the GPU encoder
             q, grain = None, 0
-            if s.video_quality == "identical":
+            if measures_quality(s):
                 q, choice = smart_quality(src, info, s, encoder, cancel)
                 notes.append(choice)
             steps.report(f"The graphics card couldn't encode this video: encoding {codec.upper()} on the processor "
@@ -1021,4 +1073,3 @@ def verify_video(src: VideoInfo, out: Path, codec: str, dst_is_mp4: bool,
                           *post, "-map", "0:v:0", "-f", "null", "-"], timeout=300, check=False)
         if proc.returncode != 0 or proc.stderr.strip():
             raise VerificationFailed("Output video has decoding errors")
-

@@ -22,13 +22,16 @@ def format_name(ext: str) -> str:
 
 
 def report(message: str) -> None:
+    from .log import log
+
+    log.info("Stage: %s", message)
     _local.last = message
     cb = getattr(_local, "cb", None)
     if cb is not None:
         try:
             cb(message)
         except Exception:  # noqa: BLE001 - progress is never worth failing a file over
-            pass
+            log.exception("Could not report progress for stage: %s", message)
 
 
 def last() -> str:

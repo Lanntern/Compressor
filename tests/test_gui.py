@@ -702,7 +702,7 @@ def test_after_column_says_size_and_change():
     assert _pct(231, 149) == "−35%" and _pct(100, 110) == "+10%"
 
 
-def test_keyboard_basics(win, tmp_path):
+def test_keyboard_basics(win, tmp_path, monkeypatch):
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
@@ -740,12 +740,23 @@ def test_keyboard_basics(win, tmp_path):
     # The context menu opens for the current row from the keyboard.
     opened = []
 
-    def close_menu():
-        m = QApplication.activePopupWidget()
-        if m is not None:
-            opened.append([a.text() for a in m.actions()])
-            m.close()
-    QTimer.singleShot(300, close_menu)
+    from wick.gui import filejob_page
+
+    original_menu = filejob_page.file_menu
+
+    def closing_menu(*args, **kwargs):
+        menu = original_menu(*args, **kwargs)
+
+        def shown():
+            opened.append([a.text() for a in menu.actions()])
+            # Close this exact menu after its nested event loop starts. The active popup can be a
+            # different widget (or None) on headless runners, so a global single-shot can miss it.
+            QTimer.singleShot(0, menu.close)
+
+        menu.aboutToShow.connect(shown)
+        return menu
+
+    monkeypatch.setattr(filejob_page, "file_menu", closing_menu)
     conv.tree._keyboard.menu_for_current()
     assert opened and "Copy Path" in opened[0]
 
@@ -1518,6 +1529,8 @@ def test_convert_from_the_context_menu(win, tmp_path):
         Image.new("RGB", (64, 48), "teal").save(tmp_path / name)
     conv = win.converter
     conv.clear()
+    smaller = conv.smaller.isChecked()
+    conv.smaller.setChecked(False)         # this test deliberately exports tiny PNGs as larger JPEGs
     conv.output.setCurrentIndex(conv.output.findData("suffix"))       # (the page's choice doesn't apply here)
     conv.add_paths([str(tmp_path / "keep.png")])
     assert _wait(lambda: not conv.busy() and conv.tree.topLevelItemCount() == 1, 30)
@@ -1530,6 +1543,7 @@ def test_convert_from_the_context_menu(win, tmp_path):
     labels = [label for label, _ in integration._convert_items("video")]
     assert labels[-1] == "Other Format…" and "GIF" in labels
     conv.output.setCurrentIndex(conv.output.findData("beside"))
+    conv.smaller.setChecked(smaller)
     conv.clear()
 
 
@@ -1763,3 +1777,174 @@ def test_every_control_has_a_name_for_screen_readers(win):
                 problems.append(f"symbol only {label!r}: " + what)
     about.deleteLater()
     assert not problems, "\n".join(sorted(set(problems)))
+
+
+def test_shift_click_ticks_a_range(win, monkeypatch):
+    """Click one row, Shift-click another: both and every row between get the first row's state."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QTreeWidget, QTreeWidgetItem
+
+    from wick.gui.filelist import click_to_check
+
+    tree = QTreeWidget()
+    items = [QTreeWidgetItem(tree, [f"f{i}"]) for i in range(6)]
+    for it in items:
+        it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+        it.setCheckState(0, Qt.Unchecked)
+    click_to_check(tree)
+    tree.show()
+    c = tree._click_to_check
+    monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.NoModifier))
+    c._tree_pressed(items[1], 0)
+    c._tree_clicked(items[1], 0)                              # a plain click ticks row 1
+    monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.ShiftModifier))
+    c._tree_clicked(items[4], 0)                              # Shift-click row 4: rows 1-4 ticked
+    assert [it.checkState(0) == Qt.Checked for it in items] == [False, True, True, True, True, False]
+
+
+def test_pausing_freezes_loading_bar_and_resuming_restarts_it(win):
+    from PySide6.QtWidgets import QApplication
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from wick.gui.jobstatus import JobStatus
+
+    status = JobStatus()
+    status.start(1, 100)
+    status.file_started(SimpleNamespace(path=Path("pending.mp4"), size=100))
+    status.show()
+    QApplication.processEvents()
+    assert status.bar._tick.isActive()
+    status.set_paused("Paused by you")
+    assert not status.bar._tick.isActive() and status.bar._paused_at is not None
+    status.set_paused("")
+    assert status.bar._tick.isActive() and status.bar._paused_at is None
+    status._tick.stop()
+    status.close()
+    status.deleteLater()
+
+
+def test_progress_keeps_stage_percentage_and_estimates(win, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from wick.gui import jobstatus
+
+    clock = [100.0]
+    monkeypatch.setattr(jobstatus.time, "monotonic", lambda: clock[0])
+    status = jobstatus.JobStatus(parent=win)
+    entry = SimpleNamespace(path=tmp_path / "clip.mp4", size=100)
+    status.start(1, 100)
+    status.file_started(entry)
+    status.file_step(entry, "Encoding AV1")
+    clock[0] = 108
+    status.file_progress(entry, 0.5)
+    assert "Encoding AV1" in status.detail.text() and "50%" in status.detail.text()
+    assert "left in this stage" in status.detail.text()
+    status.file_step(entry, "Checking the result")
+    assert "50%" not in status.detail.text() and status.bar.maximum() == 0
+    clock[0] = 125
+    status._render()
+    assert "no progress update" in status.detail.text()
+    status._tick.stop()
+    status.close()
+    status.deleteLater()
+
+
+@pytest.mark.parametrize("extension", ["gif", "mp4"])
+@pytest.mark.parametrize("action", ["close", "reject"])
+def test_close_busy_preview_never_waits_on_ui_thread(win, tmp_path, monkeypatch, extension, action):
+    import threading
+
+    from wick.formats import ImageInfo, VIDEO
+    from wick.gui.preview import PreviewDialog, PreviewThread
+    from wick.probe import VideoInfo
+    from wick.scanner import FileEntry
+    from wick.settings import Settings
+
+    path = tmp_path / f"preview.{extension}"
+    if extension == "gif":
+        Image.new("RGB", (32, 24), "red").save(path)
+    else:
+        path.write_bytes(b"test video header")
+    entry = FileEntry(path, path.stat().st_size, VIDEO if extension == "mp4" else "gif", 0,
+                      image=ImageInfo(32, 24),
+                      video=VideoInfo("h264", 32, 24, "yuv420p", 24, 2, 1000, 0), picked=True)
+    release, finished = threading.Event(), threading.Event()
+    monkeypatch.setattr(PreviewThread, "run", lambda self: release.wait(2))
+    dialog = PreviewDialog(entry, Settings(video_encoder="cpu"), win)
+    dialog.show()
+    worker = dialog.worker
+    worker.finished.connect(finished.set)
+    try:
+        assert _wait(worker.isRunning, 1)
+        started = time.monotonic()
+        getattr(dialog, action)()
+        assert time.monotonic() - started < 0.3
+        assert not dialog.isVisible() and worker.cancel.is_set()
+    finally:
+        release.set()
+        assert _wait(finished.is_set, 3)
+        dialog.deleteLater()
+
+
+def test_cleanup_results_are_visible_before_scan_finishes(win, tmp_path):
+    import threading
+
+    from wick.cleanup import actions
+    from wick.cleanup.common import Candidate, ScanResult
+    from wick.gui.cleanup_section import Tool, ToolSection
+
+    release = threading.Event()
+
+    def scan(_section, _progress, cancel):
+        result = ScanResult("stream-test")
+        result.items.append(Candidate(tmp_path / "found.txt", 1))
+        while not release.wait(0.05) and not cancel.is_set():
+            pass
+        return result
+
+    tool = Tool("stream-test", "Streaming test", "Test", lambda: [tmp_path], scan,
+                [(actions.TRASH, "Remove", "primary")])
+    section = ToolSection(tool, win.cleanup)
+    section.scan()
+    try:
+        assert _wait(lambda: section.tree.topLevelItemCount() == 1, 2)
+        assert section.busy()
+        assert "so far" in section.summary.text()
+        assert not section.action_buttons[actions.TRASH].isEnabled()
+    finally:
+        release.set()
+        assert _wait(lambda: not section.busy(), 3)
+        section.deleteLater()
+
+
+def test_sidebar_activity_dashboard_handles_unknown_and_paused_progress(win):
+    from wick.activity import Activity
+
+    task = Activity("test", "Test conversion", "Encoding sample")
+    win.sidebar.set_activity([task])
+    assert not win.sidebar.activity_box.isHidden()
+    assert win.sidebar.activity_bar.maximum() == 0
+    assert "Encoding sample" in win.sidebar.activity_btn.accessibleDescription()
+    task.fraction, task.paused = 0.5, True
+    win.sidebar.set_activity([task])
+    assert win.sidebar.activity_bar.value() == 500
+    assert win.sidebar.activity_bar._paused_at is not None
+    win._activity_monitor.show()
+    assert win._activity_monitor.dialog.isVisible()
+    assert win._activity_monitor.table.columnCount() == 5
+    win._activity_monitor.dialog.close()
+    win.sidebar.set_activity([])
+
+
+def test_app_compression_algorithms_and_explorer_folder_route(win, tmp_path):
+    from wick.cleanup import appcompress
+
+    win.receive_paths([str(tmp_path)], open_target="apps")
+    page = win.cleanup
+    section = page.section(page.tabs.currentIndex())
+    assert section.tool.key == "appcompress"
+    assert tmp_path in section.folders
+    assert not section.busy()                # Explorer adds for review; it never compresses automatically
+    assert {section.app_algorithm.itemData(i) for i in range(section.app_algorithm.count())} == set(appcompress.ALGORITHMS)
+

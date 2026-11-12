@@ -4,12 +4,13 @@ clutter, Windows, app compression and Google Takeout, one tab each (see cleanup_
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QSizePolicy, QStackedWidget, QTabBar, QWidget
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QSizePolicy, QStackedWidget, QTabBar, QWidget
 
-from .cleanup_section import ToolSection
+from .cleanup_section import ToolSection, _Scan
 from .cleanup_tools import tools
 from .style import Space
-from .widgets import Page
+from .widgets import Page, button, hbox, text
+from .style import Type
 
 # ---------------------------------------------------------------- page
 
@@ -43,6 +44,10 @@ class CleanupTab(Page):
         self.picker.hide()
         self.body.addWidget(self.tabs)
         self.body.addWidget(self.picker, 0, Qt.AlignLeft)
+        common = button("Scan common checks…", "", "broom", "Run several checks with one shared folder listing")
+        common.clicked.connect(self.scan_common)
+        self.body.addLayout(hbox(common, text("Choose folders or drives, then review results in each tool.",
+                                             Type.FOOTNOTE, secondary=True, wrap=True), None))
         self.body.addWidget(self.stack, 1)
 
     def section(self, index: int) -> ToolSection:
@@ -121,4 +126,85 @@ class CleanupTab(Page):
             s.stop()
             if s.worker is not None:
                 s.worker.wait(30000)
+
+    def scan_common(self) -> None:
+        from ..cleanup.common import ScanResult, shared_inventory
+        from .dialogs import inform
+        from PySide6.QtWidgets import QVBoxLayout
+
+        if self.busy():
+            inform(self, "Wait for the current cleanup operation to finish, or stop it first.")
+            return
+        current = self.section(self.tabs.currentIndex())
+        if not current.folders:
+            inform(self, "Add folders or drives in a file tool first.")
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Scan common checks")
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(text("Uses the current tool's folders for every selected check. Results stream into each "
+                              "tool; nothing is changed. Compatible checks reuse the same folder listing.",
+                              Type.BODY, wrap=True))
+        choices = []
+        keys = {"extensions", "large", "empty", "installers", "broken", "duplicates", "archives"}
+        for i, tool in enumerate(self._tools):
+            if tool.key in keys:
+                box = QCheckBox(tool.tab)
+                box.setChecked(tool.key in ("extensions", "large", "empty"))
+                layout.addWidget(box)
+                choices.append((i, box))
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        sections = [self.section(i) for i, box in choices if box.isChecked()]
+        if not sections:
+            return
+        roots = list(current.folders)
+
+        def scan(progress, cancel):
+            results = {}
+            with shared_inventory():
+                for sec in sections:
+                    if cancel.is_set():
+                        break
+                    worker.active_key = sec.tool.key
+                    progress(f"{sec.tool.tab}: starting", 0, 0)
+                    results[sec.tool.key] = sec.tool.scan(
+                        sec, lambda msg, done, total, sec=sec: progress(f"{sec.tool.tab}: {msg}", done, total), cancel)
+            return results
+
+        worker = _Scan(scan, self)
+        worker.active_key = ""
+        worker.combined = True
+        self._batch_worker = worker
+        for sec in sections:
+            sec.folders = list(roots)
+            sec.qs.setValue(f"cleanup/{sec.tool.key}/folders", [str(p) for p in roots])
+            sec._show_folders()
+            sec.result = None
+            sec._scan_complete = False
+            sec.tree.clear()
+            sec.worker = worker
+            sec._set_busy(True, "Waiting for shared scan…")
+            worker.partial.connect(sec._partial)
+            worker.finished.connect(sec._finished)
+
+        def progressed(message, done, total):
+            for sec in sections:
+                if message.startswith(sec.tool.tab + ":"):
+                    sec._progress(message, done, total)
+
+        def finished(results):
+            for sec in sections:
+                sec._scanned(results.get(sec.tool.key, ScanResult(sec.tool.key, cancelled=True,
+                                                               notes=["Stopped before this check finished."])))
+
+        worker.progress.connect(progressed)
+        worker.done.connect(finished)
+        worker.failed.connect(lambda message: inform(self, "Shared scan stopped", message))
+        worker.start()
+
 

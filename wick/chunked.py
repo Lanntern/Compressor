@@ -32,7 +32,7 @@ from .probe import VideoInfo, probe_video
 from .scanner import PARTS_PREFIX
 from .settings import Settings
 
-PARTS_VERSION = 1
+PARTS_VERSION = 2
 PARTS_KEEP_DAYS = 14
 MIN_VIDEO_SECONDS = 90        # shorter videos are encoded as a whole
 MIN_PART_SECONDS = 10.0       # parts at least this long (more parts cost more start-ups and seeks)...
@@ -173,6 +173,7 @@ def parts_folder(src: Path, s: Settings, encoder: str, grain: int) -> Path:
     everything that shapes the parts, so changed settings or a changed file start afresh."""
     st = src.stat()
     shaping = {k: v for k, v in s.to_dict().items() if k.startswith(("video_", "smart_")) and k != "video_jobs"}
+    shaping.update(require_savings=s.require_savings, min_savings_pct=s.min_savings_pct)
     key = json.dumps([PARTS_VERSION, str(src.resolve()), st.st_size, st.st_mtime_ns, encoder, grain, shaping],
                      sort_keys=True, default=str)
     return src.parent / (PARTS_PREFIX + hashlib.sha256(key.encode()).hexdigest()[:16])
@@ -266,6 +267,12 @@ def encode(src: Path, out: Path, info: VideoInfo, s: Settings, encoder: str, gra
         if chosen is None and level:
             level = 0
             chosen = search(0)
+        if chosen is None:
+            from .images import NotWorthIt
+            from .video import source_rate_limit
+
+            if source_rate_limit(info, s, encoder):
+                raise NotWorthIt("Requested video quality cannot be reached within the source bitrate budget; original kept")
         q = chosen[0] if chosen else ladder[0]
         with lock:
             state["q"][str(i)] = q

@@ -408,13 +408,15 @@ def created_time(path) -> float | None:
 
 
 class _ClickToCheck(QObject):
-    """A plain click anywhere on a row ticks or unticks it, not only a click on the small box. Ctrl/Shift-clicks
-    still just select. A click on the box itself is left to Qt (it already toggled: compared before/after)."""
+    """A plain click anywhere on a row ticks or unticks it, not only a click on the small box. Shift-click gives
+    the last clicked row's state to every row from there to the clicked one (as in Explorer). Ctrl-clicks just
+    select. A click on the box itself is left to Qt (it already toggled: compared before/after)."""
 
     def __init__(self, view, column: int):
         super().__init__(view)
         self.view, self.column = view, column
         self._before: tuple | None = None
+        self._anchor = None          # the last row clicked without Shift (item, or row number)
         if isinstance(view, QTreeWidget):
             view.itemPressed.connect(self._tree_pressed)
             view.itemClicked.connect(self._tree_clicked)
@@ -427,13 +429,35 @@ class _ClickToCheck(QObject):
 
     def _tree_clicked(self, item, _col) -> None:
         before, self._before = self._before, None
-        if before is None or before[0] is not item or QApplication.keyboardModifiers() & (Qt.ControlModifier |
-                                                                                         Qt.ShiftModifier):
+        mods = QApplication.keyboardModifiers()
+        if mods & Qt.ShiftModifier:
+            self._tree_range(item)
             return
+        if before is None or before[0] is not item or mods & Qt.ControlModifier:
+            return
+        self._anchor = item
         flags = item.flags()
         if not (flags & Qt.ItemIsUserCheckable and flags & Qt.ItemIsEnabled) or item.checkState(self.column) != before[1]:
             return
         item.setCheckState(self.column, Qt.Unchecked if before[1] == Qt.Checked else Qt.Checked)
+
+    def _tree_range(self, item) -> None:
+        anchor = self._anchor
+        try:
+            state = anchor.checkState(self.column) if anchor is not None else None
+            if state is None or anchor.treeWidget() is not self.view:
+                return
+        except RuntimeError:          # (the list was rebuilt since)
+            return
+        tree = self.view
+        down = tree.visualItemRect(anchor).top() <= tree.visualItemRect(item).top()
+        it = anchor
+        while it is not None:
+            if it.flags() & Qt.ItemIsUserCheckable and it.flags() & Qt.ItemIsEnabled and not it.isHidden():
+                it.setCheckState(self.column, state)
+            if it is item:
+                break
+            it = tree.itemBelow(it) if down else tree.itemAbove(it)
 
     def _pressed(self, index) -> None:
         cell = index.siblingAtColumn(self.column)
@@ -441,9 +465,20 @@ class _ClickToCheck(QObject):
 
     def _clicked(self, index) -> None:
         before, self._before = self._before, None
-        if before is None or before[0] != index.row() or QApplication.keyboardModifiers() & (Qt.ControlModifier |
-                                                                                            Qt.ShiftModifier):
+        mods = QApplication.keyboardModifiers()
+        model = self.view.model()
+        if mods & Qt.ShiftModifier:
+            if self._anchor is not None and self._anchor < model.rowCount():
+                state = model.index(self._anchor, self.column).data(Qt.CheckStateRole)
+                lo, hi = sorted((self._anchor, index.row()))
+                for r in range(lo, hi + 1):
+                    cell = model.index(r, self.column)
+                    if state is not None and cell.flags() & Qt.ItemIsUserCheckable:
+                        model.setData(cell, state, Qt.CheckStateRole)
             return
+        if before is None or before[0] != index.row() or mods & Qt.ControlModifier:
+            return
+        self._anchor = index.row()
         cell = index.siblingAtColumn(self.column)
         state = cell.data(Qt.CheckStateRole)
         if state is None or not (cell.flags() & Qt.ItemIsUserCheckable) or state != before[1]:
