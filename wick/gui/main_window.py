@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QShortcut

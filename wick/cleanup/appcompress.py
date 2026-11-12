@@ -522,7 +522,7 @@ def recompress_updated(min_bytes: int = 200 * 1024 * 1024, progress: Callable[[s
         return done, notes
     todo = []
     tracked = compression_records()
-    for folder, since in compressed_folders():
+    for folder, _since in compressed_folders():
         if cancelled(cancel):
             break
         key = os.path.normcase(os.path.abspath(folder))
