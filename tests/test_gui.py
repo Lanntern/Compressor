@@ -2036,3 +2036,41 @@ def test_app_table_separates_sizes_savings_and_settings(win, tmp_path, monkeypat
         section._applied([SimpleNamespace(item=candidate, ok=True, freed=20, message="Compressed")], None)
     assert candidate.extra["state"] == "Compressed"
 
+
+def test_settings_scrollbar_reaches_edge_and_top_transition_is_passive(win, monkeypatch):
+    from pathlib import Path
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtGui import QColor
+    from wick.gui import scroll_effects
+    from wick.gui.style import Space, tokens
+
+    previous, size = win.pages.currentWidget(), win.size()
+    page = win.app_settings
+    scroll = page.settings_scroll
+    position = scroll.verticalScrollBar().value()
+    try:
+        win.resize(1100, 760)
+        win.go_to(page)
+        assert _wait(lambda: scroll.verticalScrollBar().maximum() > Space.XXL, 3)
+        assert scroll.mapTo(page, QPoint(scroll.width(), 0)).x() == page.width()
+        assert page.title.mapTo(page, QPoint(0, 0)).x() == Space.XXL
+        scroll.verticalScrollBar().setValue(0)
+        assert _wait(scroll.transition.isHidden, 1)
+        scroll.verticalScrollBar().setValue(Space.XXL * 2)
+        assert _wait(lambda: scroll.transition.isVisible() and bool(scroll.transition.levels), 3)
+        edge = scroll.transition
+        assert edge.testAttribute(Qt.WA_TransparentForMouseEvents) and edge.focusPolicy() == Qt.NoFocus
+        image = edge.grab().toImage()
+        assert image.pixelColor(image.width() // 2, 0).rgb() == QColor(tokens().window).rgb()
+        if folder := os.environ.get("WICK_SHOTS_DIR"):
+            Path(folder).mkdir(parents=True, exist_ok=True)
+            page.grab().save(str(Path(folder) / "settings-scroll-transition.png"))
+        with monkeypatch.context() as patch:
+            patch.setattr(scroll_effects.style, "high_contrast_active", lambda: True)
+            scroll.refresh_transition()
+            assert edge.isHidden()
+    finally:
+        scroll.verticalScrollBar().setValue(position)
+        win.resize(size)
+        win.go_to(previous)
+

@@ -8,7 +8,7 @@ import os
 
 from PySide6.QtCore import QSettings, Qt, Signal
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QVBoxLayout, QWidget
 
 from .. import APP_NAME, __version__, index, tools
 from ..fileops import BIN_NAME
@@ -69,7 +69,7 @@ class AppSettingsTab(Page):
     index_counted = Signal(int, int)      # (files, bytes), from a background thread
 
     def __init__(self, window):
-        super().__init__("Settings", scrolls=True)
+        super().__init__("Settings", scrolls=True, edge_to_edge=True)
         self.win = window
         self.qs: QSettings = window.qsettings
 
@@ -337,16 +337,14 @@ class AppSettingsTab(Page):
 
         holder = QWidget()
         hl = QHBoxLayout(holder)
-        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setContentsMargins(Space.XXL, 0, Space.XXL, 0)
         hl.addWidget(content, 1)
         hl.addStretch(0)
-        scroll = QScrollArea()
-        scroll.setWidget(holder)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setObjectName("inspectorScroll")
+        from .scroll_effects import EdgeScrollArea
+
         holder.setObjectName("inspectorBody")
-        self.body.addWidget(scroll, 1)
+        self.settings_scroll = EdgeScrollArea(holder)
+        self.body.addWidget(self.settings_scroll, 1)
 
     def _everything_toggled(self, on: bool) -> None:
         from .. import everything
@@ -517,3 +515,4 @@ class AppSettingsTab(Page):
             integration.set_autostart(on)
         except OSError as e:
             warn(self, "Couldn't change the start-up setting", str(e))
+
