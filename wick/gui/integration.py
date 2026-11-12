@@ -132,7 +132,10 @@ def install_context_menu() -> None:
                 winreg.SetValueEx(k, "MUIVerb", 0, winreg.REG_SZ, "Compress with Wick")
                 winreg.SetValueEx(k, "Icon", 0, winreg.REG_SZ, icon)
                 winreg.SetValueEx(k, "SubCommands", 0, winreg.REG_SZ, "")
-            for i, (label, extra) in enumerate(_menu_entries()):
+            entries = _menu_entries()
+            if key == r"Software\Classes\Directory\shell\Wick":
+                entries = [*entries, ("App/game folder compression…", ["--open=apps"])]
+            for i, (label, extra) in enumerate(entries):
                 item = key + rf"\shell\{i:02d}"
                 with winreg.CreateKey(winreg.HKEY_CURRENT_USER, item) as k:
                     winreg.SetValueEx(k, "MUIVerb", 0, winreg.REG_SZ, label)
@@ -382,7 +385,8 @@ def _desktop_entry(extra: str = "%F") -> str:
         "Comment=Compress images, videos and audio safely\n"
         f"Exec={exec_line}\nTerminal=false\nCategories=Graphics;Utility;\n"
         "MimeType=image/jpeg;image/png;image/gif;image/webp;image/tiff;image/bmp;image/heic;"
-        "image/avif;video/mp4;video/quicktime;video/x-matroska;video/x-msvideo;audio/mpeg;audio/flac;audio/x-wav;audio/mp4;audio/ogg;inode/directory;\n"
+        "image/avif;video/mp4;video/quicktime;video/x-matroska;video/x-msvideo;"
+        "audio/mpeg;audio/flac;audio/x-wav;audio/mp4;audio/ogg;inode/directory;\n"
     )
 
 
@@ -488,3 +492,4 @@ class InstanceServer(QObject):
 
         sock.readyRead.connect(read)
         sock.disconnected.connect(done)
+

@@ -522,6 +522,8 @@ def preview_file(entry: FileEntry, plan: Plan, s: Settings) -> Path:
 def undo_record(run_id: str, rec: journal.FileRecord) -> tuple[bool, str]:
     if rec.undone:
         return True, "Already undone"
+    if rec.mode == "decompact":
+        return False, "Use Compress Apps to choose an algorithm and compress this folder again"
     orig, out = Path(rec.original), Path(rec.output)
 
     if rec.mode in ("hardlink", "compact"):
@@ -663,6 +665,8 @@ def _remove_made_folder(folder: Path) -> str:
 
 def cannot_undo(rec: journal.FileRecord, bin_index: dict) -> str:
     """Why ``rec`` can no longer be undone ("" if it can), given ``trash_restore.index(...)`` of its bin."""
+    if rec.mode == "decompact":
+        return "Use Compress Apps to compress this folder again"
     if rec.undone or rec.mode not in ("replace", "removed", "deleted"):
         return ""
     if rec.mode != "deleted" and trash_restore.in_index(bin_index, rec.original, rec.trashed_at):
@@ -714,3 +718,4 @@ def undo_run(run_id: str, progress: Callable[[journal.FileRecord, bool, str], No
 
 __all__ = ["run_job", "process_file", "undo_run", "undo_record", "preview_file", "output_path",
            "FileResult", "JobEvents", "DONE", "SKIPPED", "FAILED", "CANCELLED", "JPEG"]
+

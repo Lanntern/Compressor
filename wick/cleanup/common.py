@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
+from contextlib import contextmanager
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,6 +12,54 @@ from pathlib import Path
 from ..scanner import EXCLUDED_DIR_NAMES, PROGRAM_MARKER_EXTS, _CLOUD_ONLY_ATTRS
 
 ProgressFn = Callable[[str, int, int], None]  # message, done, total
+_scan_context = threading.local()
+
+
+@contextmanager
+def stream_results(callback):
+    previous = getattr(_scan_context, "publish", None)
+    _scan_context.publish = callback
+    try:
+        yield
+    finally:
+        _scan_context.publish = previous
+
+
+def publish(tool: str, items: list) -> None:
+    callback = getattr(_scan_context, "publish", None)
+    if callback is not None and items:
+        callback(tool, list(items))
+
+
+def publisher():
+    """Capture the current sink for a detector's worker pool (thread locals do not cross threads)."""
+    return getattr(_scan_context, "publish", None) or (lambda tool, items: None)
+
+
+class _LiveItems(list):
+    def __init__(self, values=(), *, tool=""):
+        super().__init__(values)
+        self.tool = tool
+
+    def append(self, item) -> None:
+        super().append(item)
+        publish(self.tool, [item])
+
+    def extend(self, items) -> None:
+        batch = list(items)
+        super().extend(batch)
+        publish(self.tool, batch)
+
+
+@contextmanager
+def shared_inventory():
+    """Reuse folder listings for compatible scans in one batch. Never retain snapshots across scans."""
+    previous = getattr(_scan_context, "inventory", None)
+    _scan_context.inventory = {}
+    try:
+        yield
+    finally:
+        _scan_context.inventory = previous
 
 
 @dataclass
@@ -42,6 +91,10 @@ class ScanResult:
     cancelled: bool = False
     rebuild: Callable[[], list[Candidate]] | None = None   # folder sizes: the rows again, after removing some
 
+    def __post_init__(self) -> None:
+        self.items = _LiveItems(self.items, tool=self.tool)
+        publish(self.tool, self.items)
+
     @property
     def total(self) -> int:
         return sum(c.size for c in self.items)
@@ -68,6 +121,39 @@ def is_hidden(entry: os.DirEntry) -> bool:
 
 
 def walk_files(roots: list[Path], *, skip_program_folders: bool = True, include_hidden: bool = False,
+               cancel: threading.Event | None = None, dirs_out: list[Path] | None = None
+               ) -> Iterator[tuple[Path, os.stat_result]]:
+    cache = getattr(_scan_context, "inventory", None)
+    if cache is None:
+        yield from _walk_files(roots, skip_program_folders=skip_program_folders, include_hidden=include_hidden,
+                               cancel=cancel, dirs_out=dirs_out)
+        return
+    key = (tuple(os.path.normcase(os.path.abspath(p)) for p in roots), skip_program_folders, include_hidden)
+    if cache is not None and key in cache:
+        files, directories = cache[key]
+        if dirs_out is not None:
+            dirs_out.extend(directories)
+        for item in files:
+            if cancelled(cancel):
+                return
+            yield item
+        return
+    files = []
+    directories: list[Path] = []
+    for item in _walk_files(roots, skip_program_folders=skip_program_folders, include_hidden=include_hidden,
+                            cancel=cancel, dirs_out=directories):
+        # A bounded cache avoids consuming arbitrary memory on a whole drive. Oversized scans fall back
+        # to separate walks; normal streaming remains active and no incomplete inventory is reused.
+        if cache is not None and len(files) <= 250_000:
+            files.append(item)
+        yield item
+    if dirs_out is not None:
+        dirs_out.extend(directories)
+    if cache is not None and len(files) <= 250_000 and not cancelled(cancel):
+        cache[key] = (files, directories)
+
+
+def _walk_files(roots: list[Path], *, skip_program_folders: bool = True, include_hidden: bool = False,
                cancel: threading.Event | None = None, dirs_out: list[Path] | None = None
                ) -> Iterator[tuple[Path, os.stat_result]]:
     """All regular files under ``roots`` (no symlinks, no system/program folders, no cloud-only files)."""
@@ -100,10 +186,14 @@ def walk_files(roots: list[Path], *, skip_program_folders: bool = True, include_
             if dirs_out is not None:
                 dirs_out.append(d)
             for c in children:
+                if cancelled(cancel):
+                    return
                 try:
                     if c.is_symlink():
                         continue
                     if c.is_dir(follow_symlinks=False):
+                        if getattr(c.stat(follow_symlinks=False), "st_file_attributes", 0) & 0x400:
+                            continue    # directory junction/reparse point: avoid cycles and crossing into other trees
                         if c.name.lower() in EXCLUDED_DIR_NAMES or (not include_hidden and is_hidden(c)):
                             continue
                         stack.append(Path(c.path))
@@ -171,6 +261,17 @@ def home() -> Path:
     return Path.home()
 
 
+def available_drives() -> list[Path]:
+    """Connected fixed/removable Windows volumes. Network shares can be added explicitly as folders."""
+    if os.name != "nt":
+        return []
+    import ctypes
+
+    mask = ctypes.windll.kernel32.GetLogicalDrives()
+    return [Path(f"{chr(65 + i)}:/") for i in range(26) if mask & (1 << i) and
+            ctypes.windll.kernel32.GetDriveTypeW(f"{chr(65 + i)}:\\") in (2, 3)]
+
+
 def known_folder(name: str) -> Path | None:
     """User folders such as Downloads, Pictures, Videos, Documents (Windows or XDG)."""
     if os.name == "nt":
@@ -199,3 +300,4 @@ def known_folder(name: str) -> Path | None:
                 pass
     p = home() / name
     return p if p.is_dir() else None
+

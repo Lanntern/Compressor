@@ -239,6 +239,9 @@ def find_broken(roots: list[Path], thorough: bool = False, progress: Callable | 
     items: list[Candidate] = []
     done = 0
     lock = threading.Lock()
+    from .common import publisher
+
+    emit = publisher()
 
     def one(entry):
         nonlocal done
@@ -255,6 +258,7 @@ def find_broken(roots: list[Path], thorough: bool = False, progress: Callable | 
                 how, why = found
                 items.append(Candidate(path, size, detail=why, selected=how == UNREADABLE,
                                        extra={"how": how}))
+                emit("broken", [items[-1]])
             if progress and done % 20 == 0:
                 progress(f"Checking {path.name}", done, len(files))
 
@@ -267,3 +271,4 @@ def find_broken(roots: list[Path], thorough: bool = False, progress: Callable | 
 
 
 __all__ = ["find_broken", "check_file", "CHECKED", "UNREADABLE", "DAMAGED"]
+

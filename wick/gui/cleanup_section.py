@@ -68,6 +68,7 @@ def _existing(*names: str) -> list[Path]:
 
 class _Scan(QThread):
     progress = Signal(str, int, int)
+    partial = Signal(str, object)
     done = Signal(object)
     failed = Signal(str)
 
@@ -75,14 +76,45 @@ class _Scan(QThread):
         super().__init__(parent)
         self.fn = fn
         self.cancel = threading.Event()
+        self._pending: dict[str, list] = {}
+        self._seen: set[tuple] = set()
+        self._sent = 0.0
+        self._lock = threading.RLock()
+
+    def collect(self, key, items) -> None:
+        import time
+
+        with self._lock:
+            for item in items:
+                identity = (key, str(item.path), item.group, item.title)
+                if identity not in self._seen:
+                    self._seen.add(identity)
+                    self._pending.setdefault(key, []).append(item)
+            if time.monotonic() - self._sent >= 0.2 or sum(map(len, self._pending.values())) >= 200:
+                self.flush()
+
+    def flush(self) -> None:
+        import time
+
+        with self._lock:
+            for key, items in self._pending.items():
+                if items:
+                    self.partial.emit(key, list(items))
+            self._pending.clear()
+            self._sent = time.monotonic()
 
     def run(self) -> None:
         from .. import power
+        from ..cleanup.common import stream_results
 
         try:
-            with power.awake():
-                self.done.emit(self.fn(self.progress.emit, self.cancel))
+            with power.awake(), stream_results(self.collect):
+                result = self.fn(self.progress.emit, self.cancel)
+                self.flush()
+                self.done.emit(result)
         except Exception as e:  # noqa: BLE001
+            self.flush()
+            log.exception("Cleanup scan failed")
             self.failed.emit(str(e))
 
 
@@ -149,6 +181,7 @@ class ToolSection(QWidget):
 
         # ------------------------------------------------ setup card
         setup = Card()
+        self.setup = setup
         setup.lay.addWidget(text(tool.description, Type.BODY, wrap=True))
         reason = tool.available()
         if tool.default_folders is not None:
@@ -159,7 +192,10 @@ class ToolSection(QWidget):
             add.clicked.connect(self._add_folder)
             reset = button("Reset", "", None, "Go back to the suggested folders")
             reset.clicked.connect(self._reset_folders)
-            folder_row = hbox(text(tool.folder_label, Type.BODY, bold=True), self.folder_label, add, reset,
+            drives = button("Add Drives…", "", None, "Choose multiple connected drives to scan")
+            drives.clicked.connect(self._add_drives)
+            drives.setVisible(os.name == "nt")
+            folder_row = hbox(text(tool.folder_label, Type.BODY, bold=True), self.folder_label, add, drives, reset,
                                      spacing=Space.M)
             folder_row.setStretchFactor(self.folder_label, 1)   # the list takes the room
             setup.lay.addLayout(folder_row)
@@ -339,6 +375,29 @@ class ToolSection(QWidget):
         self.qs.remove(f"cleanup/{self.tool.key}/folders")
         self._show_folders()
 
+    def _add_drives(self) -> None:
+        from ..cleanup.common import available_drives
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Drives to scan")
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(text("Select drives to add. System folders, links and cloud-only files are skipped.",
+                              Type.BODY, wrap=True))
+        choices = []
+        for drive in available_drives():
+            box = QCheckBox(str(drive))
+            layout.addWidget(box)
+            choices.append((drive, box))
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() == QDialog.Accepted:
+            self.folders += [p for p, box in choices if box.isChecked() and p not in self.folders]
+            self.qs.setValue(f"cleanup/{self.tool.key}/folders", [str(p) for p in self.folders])
+            self._show_folders()
+
     # ---- scanning
     def busy(self) -> bool:
         return self.worker is not None and self.worker.isRunning()
@@ -346,12 +405,17 @@ class ToolSection(QWidget):
     def scan(self) -> None:
         if self.busy():
             return
+        if self.tool.key == "appcompress":
+            self._app_scan_options = self.app_snapshot()
         if self.tool.default_folders is not None and not self.folders and self.tool.key != "caches":
             inform(self, "Add a folder to look in first.")
             return
         self.tree.clear()
+        self.result = None
+        self._scan_complete = False
         self.worker = _Scan(lambda progress, cancel: self.tool.scan(self, progress, cancel), self)
         self.worker.progress.connect(self._progress)
+        self.worker.partial.connect(self._partial)
         self.worker.done.connect(self._scanned)
         self.worker.failed.connect(lambda m: inform(self, "The scan stopped", m))
         self.worker.finished.connect(self._finished)
@@ -371,12 +435,29 @@ class ToolSection(QWidget):
             self.bar.setRange(0, 0)
 
     def _scanned(self, result: ScanResult) -> None:
+        self._scan_complete = True
         self.result = result
         self._fill(result)
         if result.items:
             self.placeholder.clear()
         else:
             self.placeholder.show_message("Nothing found. " + " ".join(result.notes))
+
+    def _partial(self, key: str, items) -> None:
+        if key != self.tool.key or not items or getattr(self, "_scan_complete", False):
+            return
+        if self.result is None:
+            self.result = ScanResult(key)
+        self.result.items.extend(items)
+        with filling(self.tree):
+            for candidate in items:
+                row = self._row(candidate)
+                row.setFlags(row.flags() & ~Qt.ItemIsUserCheckable)
+                self.tree.addTopLevelItem(row)
+            self._apply_hidden()
+        self.placeholder.clear()
+        self.summary.setText(f"{len(self.result.items):,} results so far · still scanning. You can browse now.")
+        self._update_buttons()
 
     def _hide_toggled(self, on: bool) -> None:
         self.qs.setValue("cleanup/hide_not_suggested", on)
@@ -671,7 +752,7 @@ class ToolSection(QWidget):
             if action_id == actions.TRASH and any(c.extra.get("docker") or c.extra.get("system") or c.extra.get("vdisk")
                                                   for c in chosen):
                 label = "Clean Up"   # Docker's and Windows' own items don't go to the Recycle Bin: don't say so
-            b.setText(f"{label} ({human(size)})" if chosen and size else label)
+            b.setText(f"{label} ({human(size)})" if chosen and size and action_id != actions.DECOMPACT else label)
         rows = bool(self._items()) if self.result is not None else False    # (nothing found: nothing to select)
         self.select_all.setEnabled(rows and not self.busy())
         self.select_all.setVisible(self.result is None or self.result.rebuild is None)   # (folder sizes: none are)
@@ -731,11 +812,17 @@ class ToolSection(QWidget):
                  "Every file stays where it is, but identical contents are stored only once. Note: editing any "
                  "one of the linked files changes all of them. You can undo this later.", "Replace")
         elif action_id == actions.COMPACT:
+            for candidate in items:
+                candidate.extra.update(self.app_options(candidate.path))
             admin = any(c.extra.get("admin") for c in items)
             q = (f"Compress {n} folder{'s' if n != 1 else ''}?",
                  "Programs and games keep working; Windows decompresses files on the fly. This can take a while "
                  "for large games. " + ("Windows will ask for administrator permission. " if admin else "")
                  + "You can undo this later.", "Compress")
+        elif action_id == actions.DECOMPACT:
+            q = (f"Decompress {n} folder{'s' if n != 1 else ''}?",
+                 "Files keep the same contents but may take more disk space. Close running games first. "
+                 "To compress again afterward, choose an algorithm in Compress Apps.", "Decompress")
         elif any(c.extra.get("vdisk") for c in items):
             from ..cleanup import vdisk
 
@@ -819,7 +906,17 @@ class ToolSection(QWidget):
             return
         done_ids = {id(o.item) for o in ok}
         self._remember_checks()
-        if self.result is not None and self.result.rebuild is not None:
+        if self.tool.key == "appcompress" and self.result is not None:
+            for outcome in outcomes:
+                item = outcome.item
+                if "disk_after" in item.extra:
+                    item.detail = (f"Before this run: {human(item.extra['before_this_run'])} · "
+                                   f"On disk now: {human(item.extra['disk_after'])} · "
+                                   f"{item.extra.get('algorithm', '').upper()} · {outcome.message}")
+                    item.extra.update(disk=item.extra["disk_after"], checked=False)
+                    item.selected, item.size = False, 0
+            self._fill(self.result)
+        elif self.result is not None and self.result.rebuild is not None:
             for o in ok:
                 if o.item.extra.get("forget"):
                     o.item.extra["forget"]()                     # (sizes above it shrink)
@@ -828,6 +925,10 @@ class ToolSection(QWidget):
             self.result.items = [c for c in self.result.items if id(c) not in done_ids]
             self._fill(self.result)
         self.page.win.history.refresh()
+        if self.tool.key == "appcompress":
+            self.page.win._refresh_game_watcher()
+            inform(self, "App/game compression finished", "\n".join(f"{o.item.title}: {o.message}" for o in outcomes))
+            return
         freed = sum(o.freed for o in ok)
         info = []
         blocked = [o for o in failed if o.blocked]
@@ -928,6 +1029,7 @@ class ToolSection(QWidget):
             self.placeholder.show_message("Press Scan to see what can be cleaned up.")
 
     def _set_busy(self, busy: bool, msg: str = "") -> None:
+        self.setup.setEnabled(not busy)
         self.progress_card.setVisible(busy)
         if busy:
             self.status.setText(msg)
@@ -952,3 +1054,4 @@ class ToolSection(QWidget):
             from .file_model import open_in_file_manager
 
             open_in_file_manager(str(c.path))
+

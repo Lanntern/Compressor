@@ -73,7 +73,7 @@ def test_convert_pdfs_and_undo(tmp_path):
     s = Settings(output_mode="beside", convert_inputs=True)
     entry = next(e for e in scan(tmp_path, s).entries if e.path.name == "report.pdf")
     assert entry.kind == "pdf"
-    opts = convert.ConvertOptions(pdf_target="png", pdf_dpi=72)
+    opts = convert.ConvertOptions(only_if_smaller=False, pdf_target="png", pdf_dpi=72)
     results, run_id = run_job([(entry, Plan(True, convert.describe("pdf", opts), "", route="png"))], s, tmp_path,
                               processor=lambda *a: process_convert(*a, opts=opts), tool="convert")
     r = results[0]
@@ -83,13 +83,13 @@ def test_convert_pdfs_and_undo(tmp_path):
     undo_run(run_id)
     assert sorted(p.name for p in (tmp_path / "report pages").iterdir()) == ["my notes.txt"]   # yours stays
     for target in ("rotate90", "protect"):
-        opts = convert.ConvertOptions(pdf_target=target, pdf_password="pw")
+        opts = convert.ConvertOptions(only_if_smaller=False, pdf_target=target, pdf_password="pw")
         r = process_convert(entry, Plan(True, "", ".pdf", route=target), s, None, opts=opts)
         assert r.status == DONE and r.output.suffix == ".pdf" and r.output != entry.path, r.message
     Image.new("RGB", (64, 48), "teal").save(tmp_path / "pic.png")
     pic = next(e for e in scan(tmp_path, s).entries if e.path.name == "pic.png")
     r = process_convert(pic, Plan(True, "", ".pdf", route="pdf"), s, None,
-                        opts=convert.ConvertOptions(image_target="pdf"))
+                        opts=convert.ConvertOptions(only_if_smaller=False, image_target="pdf"))
     assert r.status == DONE and pdftools.page_count(r.output) == 1
 
 
@@ -116,3 +116,4 @@ def test_undo_of_pages_made_in_replace_mode_removes_the_folder(tmp_path):
     ok, msg = undo_record(writer.run.run_id, rec)
     assert ok, msg
     assert pdf.exists() and not pages.exists()
+

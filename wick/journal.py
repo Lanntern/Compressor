@@ -70,6 +70,7 @@ class FileRecord:
     mode: str = "replace"         # replace (original in bin) | copy (original untouched) | deleted
     #                               | moved (original moved to ``moved_to``, the result at ``output``)
     moved_to: str = ""
+    compression: dict = field(default_factory=dict)   # app/game algorithm and exclusions, for later updates
 
 
 @dataclass
@@ -82,7 +83,7 @@ class Run:
 
     @property
     def saved_bytes(self) -> int:
-        return sum(f.original_size - f.output_size for f in self.files if not f.undone)
+        return sum(f.original_size - f.output_size for f in self.files if not f.undone and f.mode != "decompact")
 
     @property
     def active_files(self) -> int:
@@ -293,3 +294,4 @@ def prune(max_age_days: float) -> int:
 
 def get_run(run_id: str) -> Run | None:
     return load_run(runs_dir() / f"{run_id}.jsonl")
+

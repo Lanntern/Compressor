@@ -1783,6 +1783,7 @@ def test_shift_click_ticks_a_range(win, monkeypatch):
     click_to_check(tree)
     tree.show()
     c = tree._click_to_check
+    monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.NoModifier))
     c._tree_pressed(items[1], 0)
     c._tree_clicked(items[1], 0)                              # a plain click ticks row 1
     monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.ShiftModifier))
@@ -1792,11 +1793,15 @@ def test_shift_click_ticks_a_range(win, monkeypatch):
 
 def test_pausing_freezes_loading_bar_and_resuming_restarts_it(win):
     from PySide6.QtWidgets import QApplication
+    from pathlib import Path
+    from types import SimpleNamespace
 
     from wick.gui.jobstatus import JobStatus
 
-    status = JobStatus(parent=win)
+    status = JobStatus()
     status.start(1, 100)
+    status.file_started(SimpleNamespace(path=Path("pending.mp4"), size=100))
+    status.show()
     QApplication.processEvents()
     assert status.bar._tick.isActive()
     status.set_paused("Paused by you")
@@ -1869,3 +1874,66 @@ def test_close_busy_preview_never_waits_on_ui_thread(win, tmp_path, monkeypatch,
         release.set()
         assert _wait(finished.is_set, 3)
         dialog.deleteLater()
+
+
+def test_cleanup_results_are_visible_before_scan_finishes(win, tmp_path):
+    import threading
+
+    from wick.cleanup import actions
+    from wick.cleanup.common import Candidate, ScanResult
+    from wick.gui.cleanup_section import Tool, ToolSection
+
+    release = threading.Event()
+
+    def scan(_section, _progress, cancel):
+        result = ScanResult("stream-test")
+        result.items.append(Candidate(tmp_path / "found.txt", 1))
+        while not release.wait(0.05) and not cancel.is_set():
+            pass
+        return result
+
+    tool = Tool("stream-test", "Streaming test", "Test", lambda: [tmp_path], scan,
+                [(actions.TRASH, "Remove", "primary")])
+    section = ToolSection(tool, win.cleanup)
+    section.scan()
+    try:
+        assert _wait(lambda: section.tree.topLevelItemCount() == 1, 2)
+        assert section.busy()
+        assert "so far" in section.summary.text()
+        assert not section.action_buttons[actions.TRASH].isEnabled()
+    finally:
+        release.set()
+        assert _wait(lambda: not section.busy(), 3)
+        section.deleteLater()
+
+
+def test_sidebar_activity_dashboard_handles_unknown_and_paused_progress(win):
+    from wick.activity import Activity
+
+    task = Activity("test", "Test conversion", "Encoding sample")
+    win.sidebar.set_activity([task])
+    assert not win.sidebar.activity_box.isHidden()
+    assert win.sidebar.activity_bar.maximum() == 0
+    assert "Encoding sample" in win.sidebar.activity_btn.accessibleDescription()
+    task.fraction, task.paused = 0.5, True
+    win.sidebar.set_activity([task])
+    assert win.sidebar.activity_bar.value() == 500
+    assert win.sidebar.activity_bar._paused_at is not None
+    win._activity_monitor.show()
+    assert win._activity_monitor.dialog.isVisible()
+    assert win._activity_monitor.table.columnCount() == 5
+    win._activity_monitor.dialog.close()
+    win.sidebar.set_activity([])
+
+
+def test_app_compression_algorithms_and_explorer_folder_route(win, tmp_path):
+    from wick.cleanup import appcompress
+
+    win.receive_paths([str(tmp_path)], open_target="apps")
+    page = win.cleanup
+    section = page.section(page.tabs.currentIndex())
+    assert section.tool.key == "appcompress"
+    assert tmp_path in section.folders
+    assert not section.busy()                # Explorer adds for review; it never compresses automatically
+    assert {section.app_algorithm.itemData(i) for i in range(section.app_algorithm.count())} == set(appcompress.ALGORITHMS)
+

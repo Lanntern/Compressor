@@ -123,7 +123,7 @@ def test_convert_page_audio_targets(media_dir):
 
     ffmpeg("-f", "lavfi", "-i", "sine=f=440:d=3", "-c:a", "libmp3lame", "-b:a", "192k", "tune.mp3", cwd=media_dir)
     entry = scan([media_dir], _settings()).entries[0]
-    opts = convert.ConvertOptions(audio_target="wav")
+    opts = convert.ConvertOptions(only_if_smaller=False, audio_target="wav")
     t = opts.target_for(entry.kind)
     assert t == ("wav", ".wav")
     from wick.plan import Plan
@@ -188,3 +188,4 @@ def test_music_copy_stays_in_sync(tmp_path):
     assert _json.loads((phone / mirror.MANIFEST).read_text())["format"] == "aac"
     with pytest.raises(ValueError):
         mirror.sync(lib, lib / "inside")
+

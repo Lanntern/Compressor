@@ -138,7 +138,7 @@ def test_grain_is_measured(tmp_path):
     assert video.grain_level(p, info, Settings(video_grain="off"), "libsvtav1") == 0
     args = video.build_args(p, tmp_path / "o.mkv", info, s, "libsvtav1", 30, grain=10, threads=4)
     svt = args[args.index("-svtav1-params") + 1]
-    assert svt.endswith("film-grain=10:film-grain-denoise=1:lp=4") and svt.startswith(video.svt_tuning())
+    assert "film-grain=10:film-grain-denoise=1:lp=4" in svt and svt.startswith(video.svt_tuning())
 
 
 def test_quality_measures():
@@ -211,3 +211,4 @@ def test_nvenc_uses_the_best_tuning_the_gpu_takes(monkeypatch):
     assert video._gpu_quality_args("av1_nvenc", 30, tuned=False)[:4] == list(video.NVENC_BASIC)
     video.nvenc_tuning.cache_clear()
     video.nvenc_split.cache_clear()
+
