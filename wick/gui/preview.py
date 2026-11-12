@@ -680,10 +680,6 @@ class PreviewDialog(QDialog):
             s.smart_quality, s.smart_target = True, key
         return s
 
-    def done(self, result: int) -> None:
-        self._drop_frames()
-        super().done(result)
-
     def _use(self) -> None:
         self.quality_chosen.emit(self._chosen_settings())
         self.accept()
