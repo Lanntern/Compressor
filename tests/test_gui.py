@@ -702,7 +702,7 @@ def test_after_column_says_size_and_change():
     assert _pct(231, 149) == "−35%" and _pct(100, 110) == "+10%"
 
 
-def test_keyboard_basics(win, tmp_path):
+def test_keyboard_basics(win, tmp_path, monkeypatch):
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
@@ -740,12 +740,23 @@ def test_keyboard_basics(win, tmp_path):
     # The context menu opens for the current row from the keyboard.
     opened = []
 
-    def close_menu():
-        m = QApplication.activePopupWidget()
-        if m is not None:
-            opened.append([a.text() for a in m.actions()])
-            m.close()
-    QTimer.singleShot(300, close_menu)
+    from wick.gui import filejob_page
+
+    original_menu = filejob_page.file_menu
+
+    def closing_menu(*args, **kwargs):
+        menu = original_menu(*args, **kwargs)
+
+        def shown():
+            opened.append([a.text() for a in menu.actions()])
+            # Close this exact menu after its nested event loop starts. The active popup can be a
+            # different widget (or None) on headless runners, so a global single-shot can miss it.
+            QTimer.singleShot(0, menu.close)
+
+        menu.aboutToShow.connect(shown)
+        return menu
+
+    monkeypatch.setattr(filejob_page, "file_menu", closing_menu)
     conv.tree._keyboard.menu_for_current()
     assert opened and "Copy Path" in opened[0]
 
