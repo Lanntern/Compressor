@@ -194,7 +194,8 @@ class ToolSection(QWidget):
             reset.clicked.connect(self._reset_folders)
             drives = button("Add Drives…", "", None, "Choose multiple connected drives to scan")
             drives.clicked.connect(self._add_drives)
-            drives.setVisible(os.name == "nt")
+            if os.name != "nt":
+                drives.hide()
             folder_row = hbox(text(tool.folder_label, Type.BODY, bold=True), self.folder_label, add, drives, reset,
                                      spacing=Space.M)
             folder_row.setStretchFactor(self.folder_label, 1)   # the list takes the room
