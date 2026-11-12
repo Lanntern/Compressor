@@ -1,0 +1,3 @@
+# Keep lint tools separate so test jobs do not install them.
+ruff==0.16.9
+mypy==2.3.1
