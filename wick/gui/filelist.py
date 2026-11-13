@@ -117,6 +117,8 @@ class ColumnFitter(QObject):
         if not self._fitting and by_hand and shown and index != shown[-1]:
             self.user_sized = True
             self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            if hasattr(header, "save_widths"):
+                header.save_widths()
 
     @safe_filter
     def eventFilter(self, obj, ev):  # noqa: N802
@@ -369,8 +371,28 @@ class _KeyboardList(QObject):
         rect = self.view.visualRect(idx)
         self.open_menu(QPoint(min(rect.center().x(), self.view.viewport().width() // 2), rect.center().y()))
 
+    def _untick_selected(self) -> bool:
+        """Delete: leave the selected rows out (untick them). False when this list has no checkboxes."""
+        checks = getattr(self.view, "_click_to_check", None)
+        if checks is None:
+            return False
+        col = checks.column
+        if isinstance(self.view, QTreeWidget):
+            for it in self.view.selectedItems():
+                if it.flags() & Qt.ItemIsUserCheckable and it.flags() & Qt.ItemIsEnabled:
+                    it.setCheckState(col, Qt.Unchecked)
+            return True
+        model, sel = self.view.model(), self.view.selectionModel()
+        for idx in (sel.selectedRows(col) if sel is not None else []):
+            if idx.flags() & Qt.ItemIsUserCheckable:
+                model.setData(idx, Qt.Unchecked, Qt.CheckStateRole)
+        return True
+
     @safe_filter
     def eventFilter(self, obj, ev):  # noqa: N802
+        if obj is self.view and ev.type() == QEvent.KeyPress and ev.key() == Qt.Key_Delete \
+                and not ev.modifiers() and self._untick_selected():
+            return True
         if ev.type() == QEvent.ContextMenu and ev.reason() == ev.Reason.Keyboard:
             self.menu_for_current()
             return True

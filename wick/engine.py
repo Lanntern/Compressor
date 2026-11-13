@@ -160,7 +160,7 @@ def place_output(entry: FileEntry, st: os.stat_result, tmp: Path, dest: Path, s:
     src = entry.path
     new_size = _size(tmp)
     zone_mark = read_zone_mark(src)         # (before the original goes to the bin)
-    steps.report("Moving the original to the Trash" if s.output_mode == "replace" else "Saving the result")
+    steps.report(f"Moving the original to the {BIN_NAME}" if s.output_mode == "replace" else "Saving the result")
     if s.preserve_dates:
         copy_times(st, tmp)
     trashed_at = time.time()

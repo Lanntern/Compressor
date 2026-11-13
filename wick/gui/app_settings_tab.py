@@ -433,7 +433,7 @@ class AppSettingsTab(Page):
         self._update_index_stats()
 
     def _index_clear(self) -> None:
-        if ask(self, "Forget remembered file details?", "The next scan reads every file again.", "Clear"):
+        if ask(self, "Forget remembered file details?", "The next scan reads every file again.", "Forget Details"):
             index.clear()
             self._update_index_stats()
 

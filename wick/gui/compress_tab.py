@@ -142,6 +142,7 @@ class CompressTab(QWidget):
         self.table.setHorizontalHeader(Header(self.table))
         self.table.setSortingEnabled(True)  # after the header swap, so the new header shows the indicator
         self.table.sortByColumn(C_SIZE, Qt.DescendingOrder)
+        self.table.horizontalHeader().remember("compress")
         h = self.table.horizontalHeader()
 
         def toggle_all():
@@ -782,7 +783,7 @@ class CompressTab(QWidget):
                     self.model.setData(src, Qt.Checked if on else Qt.Unchecked, Qt.CheckStateRole)
                 self.update_summary()
             n = "" if len(pickable) == 1 else f" {len(pickable)}"
-            extra += [None, (f"Include{n}", lambda: check(True)), (f"Exclude{n}\tDelete", lambda: check(False))]
+            extra += [None, (f"Select{n}", lambda: check(True)), (f"Deselect{n}\tDelete", lambda: check(False))]
         if not self.busy():
             label = type_label(r.entry.path, r.entry.kind)
             same = [x for x in self.model.rows if x.plan.convert and not (x.result and x.result.status == DONE)

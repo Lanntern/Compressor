@@ -6,14 +6,14 @@ import os
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMenu,
+    QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMenu,
     QPushButton, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from ..settings import Settings
 from ..fileops import BIN_NAME  # noqa: F401  (others import it from here too)
 from .style import Size, Space, Type, text_scale
-from .widgets import Section, button, text
+from .widgets import Section, SizeInput, button, text
 
 METADATA_CHOICES = [("Keep all", "keep"), ("Remove location", "strip_gps"),
                     ("Remove location & personal info", "strip_private"),
@@ -220,12 +220,8 @@ class SettingsPanel(QWidget):
                                "quality that fits, and smaller dimensions only if they must; videos get the "
                                "bitrate that fits, at a lower resolution if needed. Files already under the "
                                "limit are compressed as usual.")
-        self.fit_mb = QDoubleSpinBox()
-        self.fit_mb.setRange(0.05, 100000)
-        self.fit_mb.setDecimals(2)
-        self.fit_mb.setValue(10)
-        self.fit_mb.setSuffix(" MB")
-        self.fit_mb.setAccessibleName("Size limit in megabytes")
+        self.fit_mb = SizeInput(10 * 1024 ** 2, presets=(1, 5, 8, 10, 25, 50, 100, 500))
+        self.fit_mb.setAccessibleName("Size limit")
         self.fit_on.toggled.connect(self.fit_mb.setEnabled)
         self.fit_mb.setEnabled(False)
         v.addWidget(self.fit_on)
@@ -523,7 +519,7 @@ class SettingsPanel(QWidget):
                   self.video_chunked)
         return ([c.currentIndexChanged for c in combos] + [s.valueChanged for s in spins]
                 + [c.toggled for c in checks] + [self.suffix.textChanged, self.output_dir.textChanged,
-                                                 self.fit_mb.valueChanged])
+                                                 self.fit_mb.changed])
 
     def set_file_kinds(self, kinds: set[str] | None) -> None:
         """Show only the options for the kinds of files in the list ("image"/"video"/"audio"; None = all)."""
@@ -597,7 +593,7 @@ class SettingsPanel(QWidget):
         self.resize_pct.setValue(s.resize_percent)
         self.fit_on.setChecked(s.fit_under_kb > 0)
         if s.fit_under_kb > 0:
-            self.fit_mb.setValue(s.fit_under_kb / 1024)
+            self.fit_mb.set_bytes(s.fit_under_kb * 1024)
         _set_combo(self.metadata, s.metadata)
         _set_combo(self.video_codec, s.video_codec)
         _set_combo(self.video_encoder, s.video_encoder)
@@ -670,7 +666,7 @@ class SettingsPanel(QWidget):
             min_video_mb=self.min_video_mb.value(), skip_program_folders=self.skip_programs.isChecked(),
             include_hidden=self.include_hidden.isChecked(), workers=self.workers.value(),
             low_priority=self.low_priority.isChecked(),
-            fit_under_kb=int(round(self.fit_mb.value() * 1024)) if self.fit_on.isChecked() else 0,
+            fit_under_kb=max(1, self.fit_mb.bytes() // 1024) if self.fit_on.isChecked() else 0,
             audio_lossless=self.audio_lossless.currentData(), audio_lossy=self.audio_lossy.currentData(),
             audio_format=self.audio_format.currentData(), audio_quality=self.audio_quality.currentData(),
             audio_mono=self.audio_mono.isChecked(), audio_cd_quality=self.audio_cd.isChecked(),
@@ -743,7 +739,7 @@ class SettingsPanel(QWidget):
         from .dialogs import ask
 
         name = self.preset.currentData()
-        if name and not presets.is_builtin(name) and ask(self, f"Delete the preset “{name}”?", "", "Delete",
+        if name and not presets.is_builtin(name) and ask(self, f"Delete the preset “{name}”?", "", "Delete Preset",
                                                           destructive=True):
             presets.delete(name)
             self.refresh_presets()

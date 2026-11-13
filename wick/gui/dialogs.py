@@ -29,6 +29,7 @@ def _box(parent: QWidget | None, text: str, info: str = "") -> QMessageBox:
     for lab in box.findChildren(QLabel):
         if lab.objectName() in ("qt_msgbox_label", "qt_msgbox_informativelabel"):
             lab.setMinimumWidth(DIALOG_TEXT_WIDTH)
+            lab.setMaximumWidth(int(DIALOG_TEXT_WIDTH * 1.4))
             lab.setWordWrap(True)
     return box
 

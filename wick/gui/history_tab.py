@@ -124,6 +124,7 @@ class HistoryTab(Page):
         self.tree.setColumnWidth(3, 96)
         self.tree.setStyleSheet(f"QTreeView::item {{ height: {Size.ROW}px; }}")
         make_sortable(self.tree, 0, Qt.DescendingOrder)  # newest first
+        self.tree.header().remember("history")
         self.placeholder = ListPlaceholder(self.tree)
         self.tree.itemExpanded.connect(self._expanded)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -408,7 +409,7 @@ class HistoryTab(Page):
                  f"{'their originals are' if blocked != 1 else 'its original is'} no longer in the {BIN_NAME}."
                  if blocked else "")
         if not ask(self, f"Restore {count} original file{'s' if count != 1 else ''}?",
-                   "The compressed versions will be deleted." + extra, "Restore"):
+                   "The compressed versions will be deleted." + extra, "Restore Originals"):
             return
         self._run_undo_jobs(jobs, [0, 0], [])
 
