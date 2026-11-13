@@ -65,8 +65,8 @@ class Header(QHeaderView):
         column = qs.value(f"lists/{key}/sort_column", None)
         if column is not None and hasattr(view, "sortByColumn"):
             try:
-                c = int(column)
-                order = Qt.DescendingOrder if int(qs.value(f"lists/{key}/sort_desc", 0)) else Qt.AscendingOrder
+                c = int(str(column))
+                order = Qt.DescendingOrder if int(str(qs.value(f"lists/{key}/sort_desc", 0))) else Qt.AscendingOrder
                 if -1 <= c < self.count():
                     view.sortByColumn(c, order)
             except (TypeError, ValueError):
@@ -76,8 +76,8 @@ class Header(QHeaderView):
         if isinstance(widths, (list, tuple)) and len(widths) == self.count() and fitter is not None:
             try:
                 for i, w in enumerate(widths[:-1]):
-                    if int(w) > 0:
-                        self.resizeSection(i, int(w))
+                    if int(str(w)) > 0:
+                        self.resizeSection(i, int(str(w)))
                 fitter.user_sized = True
             except (TypeError, ValueError):
                 pass
