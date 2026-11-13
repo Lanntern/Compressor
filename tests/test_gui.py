@@ -2325,3 +2325,34 @@ def test_metadata_stop_cancels_an_active_probe(win, monkeypatch, tmp_path):
         worker.cancel.set()
         assert worker.wait(3000)
     assert not worker.error
+
+
+def test_undo_from_the_result_bar_and_turn_on_banner(win, tmp_path, no_dialogs):
+    """After a job the result bar offers Undo (asks, then removes the results); files skipped because their
+    kind is off are named above the list with a button that turns it on."""
+    from wick.settings import Settings
+
+    folder = tmp_path / "pics"
+    folder.mkdir()
+    Image.effect_noise((480, 360), 40).convert("RGB").save(folder / "photo.jpg", quality=95)
+    page = win.compress
+    page.panel.load(Settings(image_format="none", min_image_kb=0))
+    page.clear()
+    page.add_paths([str(folder)])
+    assert _wait(lambda: not page.busy() and len(page.model.rows) == 1, 60)
+    assert not page.off_banner.isHidden() and "1 picture is skipped" in page.off_text.text()
+    page.off_buttons.itemAt(0).widget().click()                       # Turn On Pictures
+    assert _wait(lambda: not page.busy() and page.model.rows and page.model.rows[0].plan.convert, 60)
+    assert page.off_banner.isHidden()
+
+    page.panel.load(Settings(image_format="keep", jpeg_mode="lossless", output_mode="suffix", min_image_kb=0,
+                             require_savings=False))
+    assert _wait(lambda: not page.busy() and page.model.rows and page.model.rows[0].plan.convert, 60)
+    page.start_job(confirm=False)
+    assert _wait(lambda: not page.busy() and all(r.result for r in page.model.rows), 120)
+    _wait(lambda: page.job_status.title.text().startswith("Done"), 10)
+    made = [p for p in folder.iterdir() if "_compressed" in p.name]
+    assert made and not page.job_status.undo_btn.isHidden()
+    page.job_status.undo_btn.click()                                  # (the confirmation is answered Yes)
+    assert _wait(lambda: not any(p.exists() for p in made), 60)
+    assert (folder / "photo.jpg").exists() and page.job_status.isHidden()

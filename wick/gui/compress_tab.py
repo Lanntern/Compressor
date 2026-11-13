@@ -185,6 +185,18 @@ class CompressTab(QWidget):
         self.resume_banner.resume.connect(self._resume_pending)
         self.resume_banner.discard.connect(self._discard_pending)
         self.page.body.addWidget(self.resume_banner)
+        self.off_banner = Card(padding=Space.M, spacing=Space.S)      # "12 videos skipped: ... [Turn On]"
+        self.off_banner.setAccessibleName("Skipped files")
+        self.off_text = text("", Type.BODY, wrap=True)
+        self.off_buttons = QHBoxLayout()
+        self.off_buttons.setSpacing(Space.S)
+        off_row = QHBoxLayout()
+        off_row.setSpacing(Space.L)
+        off_row.addWidget(self.off_text, 1)
+        off_row.addLayout(self.off_buttons)
+        self.off_banner.lay.addLayout(off_row)
+        self.off_banner.hide()
+        self.page.body.addWidget(self.off_banner)
         self._resuming = False
         QTimer.singleShot(0, self._check_pending)
         self.page.body.addWidget(self.stack, 1)
@@ -442,7 +454,44 @@ class CompressTab(QWidget):
         self.update_summary()
 
     # ------------------------------------------------------------------ summary
+    def _undo_job(self, run_id: str) -> bool:
+        started = self.win.history.undo_run(run_id)
+        if started:
+            self.clear()                   # (the list described results that are being removed)
+        return started
+
+    def _update_off_banner(self) -> None:
+        """Files skipped because their kind's compression is off: say so, with a button that turns it on."""
+        counts: dict[str, int] = {}
+        for r in self.model.rows:
+            if not r.plan.convert and r.plan.reason.endswith("conversion is off"):
+                kind = r.plan.reason.split()[0]
+                counts[kind] = counts.get(kind, 0) + 1
+        key = tuple(sorted(counts.items()))
+        if key == getattr(self, "_off_shown", None):
+            return
+        self._off_shown = key
+        while self.off_buttons.count():
+            w = self.off_buttons.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        if not counts or self.busy():
+            self.off_banner.hide()
+            return
+        words = {"Image": "picture", "Video": "video", "Audio": "audio file"}
+        parts = [f"{n:,} {words[k]}{'s' if n != 1 else ''}" for k, n in sorted(counts.items())]
+        many = sum(counts.values()) != 1
+        self.off_text.setText(f"{' and '.join(parts)} {'are' if many else 'is'} skipped because "
+                              f"{'their' if many else 'its'} compression is turned off.")
+        for kind in sorted(counts):
+            label = {"Image": "Pictures", "Video": "Videos", "Audio": "Audio"}[kind]
+            b = button(f"Turn On {label}", "", None, f"Compress {label.lower()} too")
+            b.clicked.connect(lambda _=False, k=kind: self._turn_on(k))
+            self.off_buttons.addWidget(b)
+        self.off_banner.show()
+
     def update_summary(self) -> None:
+        self._update_off_banner()
         has_rows = bool(self.model.rows)
         self.stack.setCurrentIndex(1 if (has_rows or self.busy()) else 0)
         n, size, est = self.model.totals()
@@ -685,7 +734,8 @@ class CompressTab(QWidget):
             note = (f"The original{'s are' if many else ' is'} in the {BIN_NAME}: empty it to free the space, or "
                     "undo it later." if self._job_settings.output_mode == "replace"
                     else f"The original{'s were' if many else ' was'} kept.")
-        self.job_status.finish(results, note, replaced=self._job_settings.output_mode == "replace")
+        self.job_status.finish(results, note, replaced=self._job_settings.output_mode == "replace",
+                               on_undo=(lambda: self._undo_job(run_id)) if run_id else None)
         if not self.window().isActiveWindow():      # finished in the background: say so
             self.win.tray_message(self.job_status.title.text(), actions=[("Show in History", "history")],
                                   launch="compress")

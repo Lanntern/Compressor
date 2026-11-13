@@ -61,6 +61,9 @@ class JobStatus(Card):
                                                          "as a spreadsheet (CSV)")
         self.report_btn.clicked.connect(self._save_report)
         self._results: list = []
+        self.undo_btn = button("Undo", "", "undo", "Put the originals back and remove the results (asks first)")
+        self.undo_btn.clicked.connect(self._undo)
+        self._on_undo = None
         self.close_btn = button("Dismiss", "", None, "Hide this message")
         self.close_btn.clicked.connect(self.hide)
         # The title has the whole width (file names can be long); details and buttons share the line below.
@@ -75,8 +78,8 @@ class JobStatus(Card):
         row.setSpacing(Space.L)
         row.addStretch(1)
         buttons = FlowLayout(spacing=Space.S)      # wraps on narrow windows instead of squeezing
-        for b in (self.show_btn, self.report_btn, self.copy_btn, self.log_btn, self.pause_btn, self.stop_btn,
-                  self.close_btn):
+        for b in (self.show_btn, self.undo_btn, self.report_btn, self.copy_btn, self.log_btn, self.pause_btn,
+                  self.stop_btn, self.close_btn):
             buttons.add_group(b)
         row.addLayout(buttons)
         self.lay.addSpacing(Space.XS)
@@ -221,8 +224,10 @@ class JobStatus(Card):
         self._taskbar("paused" if self._paused_reason else "indeterminate" if moving else "normal",
                       known / self._bytes)
 
-    def finish(self, results, original_note: str = "", replaced: bool = False) -> None:
-        """Show the outcome; stays until dismissed. ``original_note``: e.g. "The original is in the Trash"."""
+    def finish(self, results, original_note: str = "", replaced: bool = False, on_undo=None) -> None:
+        """Show the outcome; stays until dismissed. ``original_note``: e.g. "The original is in the Trash".
+        ``on_undo``: called by the Undo button (shown when something was done and it can be undone)."""
+        self._on_undo = on_undo
         self._tick.stop()
         took = _elapsed(time.monotonic() - self._t0) if hasattr(self, "_t0") else ""
         done = [r for r in results if r.status == DONE]
@@ -290,7 +295,7 @@ class JobStatus(Card):
             self._color("danger" if failed and not done else "warning" if failed else "success" if done else None)
         self.detail.setText("\n".join(lines))
         self._set_buttons(show=bool(self._outputs), copy=bool(failed or skipped), log=bool(failed), close=True,
-                          report=len(results) > 1)
+                          report=len(results) > 1, undo=bool(done) and on_undo is not None)
         self.setVisible(True)
 
     def failed(self, message: str) -> None:
@@ -343,7 +348,8 @@ class JobStatus(Card):
         self.pause_toggled.emit(on)
 
     def _set_buttons(self, stop=False, show=False, copy=False, log=False, close=False, pause=False,
-                     report=False) -> None:
+                     report=False, undo=False) -> None:
+        self.undo_btn.setVisible(undo)
         self.pause_btn.setVisible(pause)
         self.report_btn.setVisible(report)
         self.stop_btn.setVisible(stop)
@@ -357,6 +363,10 @@ class JobStatus(Card):
         tk = tokens()
         color = {"success": tk.success, "danger": tk.danger, "warning": tk.text}.get(role or "", tk.text)
         self.title.setStyleSheet(f"color: {color};")
+
+    def _undo(self) -> None:
+        if self._on_undo is not None and self._on_undo():
+            self.hide()                    # (undone: this outcome no longer describes the files)
 
     def _show_result(self) -> None:
         from .file_model import open_in_file_manager

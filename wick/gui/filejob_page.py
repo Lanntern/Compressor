@@ -425,7 +425,8 @@ class FileJobPage(Page):
                     "undo it later.")
         else:
             note = f"The original{'s were' if many else ' was'} kept."
-        self.job_status.finish(results, note)
+        self.job_status.finish(results, note,
+                               on_undo=(lambda: self.win.history.undo_run(run_id)) if run_id else None)
         if not self.window().isActiveWindow():
             self.win.tray_message(self.job_status.title.text())
             QApplication.alert(self.window())

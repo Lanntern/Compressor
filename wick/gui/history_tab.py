@@ -413,6 +413,23 @@ class HistoryTab(Page):
             return
         self._run_undo_jobs(jobs, [0, 0], [])
 
+    def undo_run(self, run_id: str | None) -> bool:
+        """Undo one whole run (the Undo button after a job). Asks first; False if nothing was started."""
+        from .. import journal
+
+        if not run_id or (self.undo_thread is not None and self.undo_thread.isRunning()):
+            return False
+        run = journal.get_run(run_id)
+        recs = [rec for rec in run.files if not rec.undone] if run is not None else []
+        if not recs:
+            inform(self, "Nothing here can be undone.")
+            return False
+        if not ask(self.window(), f"Restore {len(recs)} original file{'s' if len(recs) != 1 else ''}?",
+                   "The compressed versions will be deleted.", "Restore Originals"):
+            return False
+        self._run_undo_jobs([(run_id, recs)], [0, 0], [])
+        return True
+
     def _run_undo_jobs(self, jobs, totals, failures) -> None:
         if not jobs:
             self.refresh()
