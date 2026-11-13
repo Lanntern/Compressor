@@ -668,14 +668,14 @@ class HelpTip(QAbstractButton):
         self._hover_timer.timeout.connect(lambda: self.open(sticky=False))
 
     def open(self, sticky: bool = True) -> None:
-        from PySide6.QtWidgets import QToolTip
+        from .style import hide_tip
 
         self._hover_timer.stop()
         if self.is_open():
             if not sticky or self._popover.sticky:
                 return
             self._popover.close()           # a click on a hovered "?" keeps the card: reopen it as sticky
-        QToolTip.hideText()
+        hide_tip()
         pop = InfoPopover(self.help_text, self.title, self.window(), sticky=sticky)
         pop.destroyed.connect(lambda *_: self.update())
         self._popover = pop

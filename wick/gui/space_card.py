@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPixmap
-from PySide6.QtWidgets import QLabel, QSizePolicy, QToolTip, QWidget
+from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
 from .. import space
 from ..formats import human
-from .style import Space, Type, tokens
+from .style import Space, Type, hide_tip, show_tip, tokens
 from .widgets import Card, FlowLayout, button, text
 
 # The reference categorical palette's first six slots, in fixed order (validated for color-vision
@@ -77,10 +77,10 @@ class StackedBar(QWidget):
         for _key, label, size, rect in self._rects():
             if rect.left() <= x < rect.right():
                 pct = 100 * size / self.total if self.total else 0
-                QToolTip.showText(e.globalPosition().toPoint(), f"{label}: {human(size)} ({pct:.0f}% of the drive)",
-                                  self)
+                part = rect.toRect() if hasattr(rect, "toRect") else rect
+                show_tip(f"{label}: {human(size)} ({pct:.0f}% of the drive)", self, part)
                 return
-        QToolTip.hideText()
+        hide_tip()
 
 
 def _swatch(color: QColor) -> QLabel:

@@ -909,28 +909,143 @@ def _tint_title_bar(w: QWidget) -> None:
         pass
 
 
-class _WrapLongTooltips(QObject):
-    """Qt shows a plain-text tooltip on one line however long it is (across the whole screen). Long ones are
-    shown wrapped at a reading width instead; short ones are left alone."""
+class _TipCard(QWidget):
+    """The app's tooltip: a small card that fades in under the thing it describes. (Qt's own tooltip opens at
+    the pointer, over what you're looking at, and Windows' tooltip animation flashes it as an empty outline.)"""
 
-    LONG = 70     # characters
+    FADE_MS = 110
+    GAP = 6
+
+    def __init__(self):
+        from PySide6.QtCore import QPropertyAnimation, QTimer
+        from PySide6.QtWidgets import QLabel, QVBoxLayout
+
+        super().__init__(None, Qt.ToolTip | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.label = QLabel(self)
+        self.label.setTextFormat(Qt.AutoText)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(Space.M, Space.S, Space.M, Space.S)
+        lay.addWidget(self.label)
+        self.anchor = None                       # QRect (global): the tip goes away when the pointer leaves it
+        self._fade = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade.setDuration(self.FADE_MS)
+        self._watch = QTimer(self, interval=120)
+        self._watch.timeout.connect(self._check_pointer)
+
+    def paintEvent(self, _e) -> None:  # noqa: N802
+        t = tokens()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QColor(t.card))
+        p.setPen(QColor(t.border))
+        p.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), Radius.SMALL, Radius.SMALL)
+
+    def show_for(self, tip: str, anchor, x: int | None = None) -> None:
+        """Show ``tip`` under ``anchor`` (a global QRect), centered on it, or on ``x`` for wide things such as
+        list rows; above it when there's no room below; always kept on the screen."""
+        from PySide6.QtCore import QPoint
+
+        t = tokens()
+        self.label.setFont(ui_font(Type.FOOTNOTE))
+        self.label.setStyleSheet(f"color: {t.text}; background: transparent;")
+        max_w = int(Space.XXL * 11 * text_scale())
+        self.label.setWordWrap(False)
+        self.label.setText(tip)
+        if self.label.sizeHint().width() > max_w:      # long: wrapped at a reading width
+            self.label.setWordWrap(True)
+            self.label.setFixedWidth(max_w)
+        else:
+            self.label.setMinimumWidth(0)
+            self.label.setMaximumWidth(16777215)
+        self.adjustSize()
+        screen = QGuiApplication.screenAt(anchor.center()) or QGuiApplication.primaryScreen()
+        area = screen.availableGeometry()
+        cx = anchor.center().x() if x is None else x
+        left = max(area.left() + 4, min(cx - self.width() // 2, area.right() - self.width() - 4))
+        top = anchor.bottom() + self.GAP
+        if top + self.height() > area.bottom():
+            top = anchor.top() - self.GAP - self.height()
+        self.anchor = anchor
+        was_shown = self.isVisible()
+        self.move(QPoint(left, top))
+        if not was_shown:                      # (moving to another row: no second fade)
+            self.setWindowOpacity(0.0)
+            self.show()
+            self._fade.stop()
+            self._fade.setStartValue(0.0)
+            self._fade.setEndValue(1.0)
+            self._fade.start()
+        self._watch.start()
+
+    def dismiss(self) -> None:
+        self._watch.stop()
+        self._fade.stop()
+        self.anchor = None
+        self.hide()
+
+    def _check_pointer(self) -> None:
+        from PySide6.QtGui import QCursor
+
+        if self.anchor is None or not self.anchor.adjusted(-2, -2, 2, 2).contains(QCursor.pos()):
+            self.dismiss()
+
+
+_tip_card: _TipCard | None = None
+
+
+def show_tip(tip: str, widget: QWidget, rect=None, x: int | None = None) -> None:
+    """Show the app's tooltip for ``widget`` (or for ``rect``, a part of it in its own coordinates)."""
+    from PySide6.QtCore import QRect
+
+    global _tip_card
+    if not tip:
+        hide_tip()
+        return
+    if _tip_card is None:
+        _tip_card = _TipCard()
+    r = rect if rect is not None else widget.rect()
+    _tip_card.show_for(tip, QRect(widget.mapToGlobal(r.topLeft()), r.size()), x)
+
+
+def hide_tip() -> None:
+    if _tip_card is not None and _tip_card.isVisible():
+        _tip_card.dismiss()
+
+
+class _Tooltips(QObject):
+    """Shows every tooltip as the app's card (see _TipCard): under the control, or under the row for lists."""
+
+    WIDE = 420      # wider than this (rows, long fields): centered on the pointer instead of the whole thing
 
     def eventFilter(self, obj, ev):  # noqa: N802
-        if ev.type() == QEvent.ToolTip and isinstance(obj, QWidget):
-            tip = obj.toolTip()
-            if len(tip) > self.LONG and not _rich(tip):
-                import html
+        kind = ev.type()
+        if kind == QEvent.ToolTip and isinstance(obj, QWidget):
+            from PySide6.QtWidgets import QAbstractItemView
 
-                from PySide6.QtWidgets import QToolTip
-
-                width = int(Space.XXL * 11 * text_scale())
-                body = "<br>".join(html.escape(line) for line in tip.split("\n"))
-                QToolTip.showText(ev.globalPos(), f"<table width={width}><tr><td>{body}</td></tr></table>", obj)
+            view = obj.parentWidget()
+            if isinstance(view, QAbstractItemView) and view.viewport() is obj:
+                index = view.indexAt(ev.pos())
+                tip = index.data(Qt.ToolTipRole) if index.isValid() else ""
+                if tip:
+                    show_tip(str(tip), obj, view.visualRect(index), ev.globalPos().x())
+                else:
+                    hide_tip()
                 return True
+            tip = obj.toolTip()
+            if not tip:
+                hide_tip()
+                return False
+            show_tip(tip, obj, x=ev.globalPos().x() if obj.width() > self.WIDE else None)
+            return True
+        if kind in (QEvent.MouseButtonPress, QEvent.KeyPress, QEvent.Wheel, QEvent.WindowDeactivate):
+            hide_tip()
         return False
 
 
-_tooltip_wrap: _WrapLongTooltips | None = None
+_tooltip_wrap: _Tooltips | None = None
 _system_palette: QPalette | None = None
 
 
@@ -943,7 +1058,7 @@ def apply_style(mode: str) -> Tokens:
     scale_to_text()
     global _tooltip_wrap
     if _tooltip_wrap is None:
-        _tooltip_wrap = _WrapLongTooltips(app)
+        _tooltip_wrap = _Tooltips(app)
         app.installEventFilter(_tooltip_wrap)
     global _focus_visible
     if _focus_visible is None:
