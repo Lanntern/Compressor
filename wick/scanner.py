@@ -100,9 +100,11 @@ def scan(
     cancel: threading.Event | None = None,
     probe: bool = True,
     picked: bool = False,
+    found: Callable[[FileEntry], None] | None = None,
 ) -> ScanResult:
     """Scan folders and/or individual files. Files given directly are always included; with ``picked`` (someone
-    chose them, rather than Watch Folders finding them) the size minimums don't apply to them either."""
+    chose them, rather than Watch Folders finding them) the size minimums don't apply to them either.
+    ``found`` runs on the scanning thread for each new entry, before optional compression probing."""
     if isinstance(paths, (str, os.PathLike)):
         paths = [Path(paths)]
     roots = [Path(os.path.abspath(p)) for p in paths]
@@ -111,15 +113,15 @@ def scan(
 
     for root in roots:
         if root.is_file():
-            _add_file(result, root, None, seen, settings)
+            _add_file(result, root, None, seen, settings, found)
             if picked and result.entries and result.entries[-1].path == root:
                 result.entries[-1].picked = True
         elif root.is_dir():
             listing = _fast_listing(root, progress, cancel)
             if listing is not None:
-                walk_listing(result, root, listing, 0, settings, seen)
+                walk_listing(result, root, listing, 0, settings, seen, found, cancel)
             else:
-                _walk(result, root, settings, progress, cancel, seen)
+                _walk(result, root, settings, progress, cancel, seen, found)
         if cancel is not None and cancel.is_set():
             result.cancelled = True
             return result
@@ -165,7 +167,8 @@ def _kind(p: Path, settings: Settings | None) -> str | None:
     return kind
 
 
-def _add_file(result: ScanResult, p: Path, root: Path | None, seen: set[str], settings: Settings | None = None) -> None:
+def _add_file(result: ScanResult, p: Path, root: Path | None, seen: set[str], settings: Settings | None = None,
+              found: Callable[[FileEntry], None] | None = None) -> None:
     key = os.path.normcase(str(p))
     if key in seen or p.name.startswith(TEMP_PREFIX):
         return
@@ -180,7 +183,10 @@ def _add_file(result: ScanResult, p: Path, root: Path | None, seen: set[str], se
         result.cloud_only_files += 1
         return
     seen.add(key)
-    result.entries.append(FileEntry(p, st.st_size, kind, st.st_mtime, root))
+    entry = FileEntry(p, st.st_size, kind, st.st_mtime, root)
+    result.entries.append(entry)
+    if found:
+        found(entry)
 
 
 # Every extension the scanner lists (and JPEG XL, counted as already efficient): what to ask Everything for.
@@ -230,7 +236,8 @@ def _fast_listing(root: Path, progress: ProgressFn | None, cancel: threading.Eve
 
 
 def walk_listing(result: ScanResult, root: Path, listing, root_index: int, settings: Settings,
-                 seen: set[str]) -> None:
+                 seen: set[str], found: Callable[[FileEntry], None] | None = None,
+                 cancel: threading.Event | None = None) -> None:
     """The same rules as _walk, over a drive's file table (ntfs.Listing) instead of the disk."""
     from .ntfs import CLOUD_ONLY, HIDDEN, REPARSE, SYSTEM
 
@@ -239,6 +246,8 @@ def walk_listing(result: ScanResult, root: Path, listing, root_index: int, setti
         return
     stack = [(top, root)]
     while stack:
+        if cancel is not None and cancel.is_set():
+            return
         d, path = stack.pop()
         result.dirs_scanned += 1
         _parent, _attrs, marker, _name = listing.dirs[d]
@@ -254,6 +263,8 @@ def walk_listing(result: ScanResult, root: Path, listing, root_index: int, setti
                 continue
             subdirs.append((sname, sub))
         for size, mtime, fattrs, fname in listing.files.get(d, []):
+            if cancel is not None and cancel.is_set():
+                return
             if fname.startswith(TEMP_PREFIX) or fattrs & REPARSE:
                 continue
             if not settings.include_hidden and (fname.startswith(".") or fattrs & (HIDDEN | SYSTEM)):
@@ -272,12 +283,16 @@ def walk_listing(result: ScanResult, root: Path, listing, root_index: int, setti
             if key in seen:
                 continue
             seen.add(key)
-            result.entries.append(FileEntry(p, size, kind, mtime, root))
+            entry = FileEntry(p, size, kind, mtime, root)
+            result.entries.append(entry)
+            if found:
+                found(entry)
         stack.extend((sub, path / name) for name, sub in sorted(subdirs, reverse=True))
 
 
 def _walk(result: ScanResult, root: Path, settings: Settings, progress: ProgressFn | None,
-          cancel: threading.Event | None, seen: set[str]) -> None:
+          cancel: threading.Event | None, seen: set[str],
+          found: Callable[[FileEntry], None] | None = None) -> None:
     stack = [root]
     while stack:
         if cancel is not None and cancel.is_set():
@@ -301,6 +316,8 @@ def _walk(result: ScanResult, root: Path, settings: Settings, progress: Progress
 
         subdirs = []
         for c in children:
+            if cancel is not None and cancel.is_set():
+                return
             try:
                 if c.is_symlink():
                     continue
@@ -330,7 +347,10 @@ def _walk(result: ScanResult, root: Path, settings: Settings, progress: Progress
                 if key in seen:
                     continue
                 seen.add(key)
-                result.entries.append(FileEntry(p, st.st_size, kind, st.st_mtime, root))
+                entry = FileEntry(p, st.st_size, kind, st.st_mtime, root)
+                result.entries.append(entry)
+                if found:
+                    found(entry)
             except OSError:
                 continue
         stack.extend(sorted(subdirs, reverse=True))

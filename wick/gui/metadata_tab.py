@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QCheckBox, QComboBox
 
@@ -13,7 +13,8 @@ from ..engine import process_metadata
 from ..plan import Plan
 from ..scanner import FileEntry
 from ..settings import Settings
-from .filejob_page import ROLE_ROW, FileJobPage, option_row
+from .filejob_page import FileJobPage, option_row
+from .metadata_scan import MetadataScan
 from .settings_panel import BIN_NAME
 from .style import tokens
 from .widgets import Card
@@ -23,21 +24,6 @@ SHOW_CHOICES = [("All files", "all"), ("With location", "gps"), ("With personal 
 POLICIES = [("Location", "strip_gps"), ("Location and personal info", "strip_private"),
             ("Everything except the date taken", "strip_all_keep_date"), ("Everything", "strip_all")]
 OUTPUTS = [(f"Replace originals ({BIN_NAME}, can be undone)", "replace"), ("Save with a new name", "suffix")]
-
-
-class _Summaries(QThread):
-    one = Signal(object, object)   # entry, MetaSummary
-
-    def __init__(self, entries, parent=None):
-        super().__init__(parent)
-        self.entries = entries
-
-    def run(self) -> None:
-        for e in self.entries:
-            try:
-                self.one.emit(e, metaclean.summarize(e.path))
-            except Exception:  # noqa: BLE001 - an unreadable file just shows no summary
-                continue
 
 
 class MetadataTab(FileJobPage):
@@ -51,11 +37,17 @@ class MetadataTab(FileJobPage):
     def __init__(self, window):
         self.qs = window.qsettings
         self.summaries: dict[int, metaclean.MetaSummary] = {}
-        self.reader: _Summaries | None = None
+        self._loading = False
+        self._count = self._eligible = 0
+        self._count_dirty = True
+        self._located = self._cameras = self._unreadable = self._shown_count = 0
         super().__init__(window, "Metadata", "",
                          "Drop photos or videos to check their metadata",
                          "Location, camera, owner and dates are shown before anything is removed. The image and "
                          "video data are never re-encoded.")
+        self.tree.header().set_check(0, self._header_state, self.tree.header()._check[2])
+        self._drain_timer = QTimer(self, interval=16)
+        self._drain_timer.timeout.connect(self._drain)
         self.confirm_info = ("Only metadata is removed; the image and video data stay byte-for-byte identical "
                              "(this is verified). You can undo this later.")
 
@@ -103,15 +95,18 @@ class MetadataTab(FileJobPage):
         return s.anything
 
     def apply_filter(self) -> None:
+        self._shown_count = 0
         for e in self.entries:
+            self._shown_count += self._shown(e)
             it = self.rows.get(id(e))
             if it is not None:
                 it.setHidden(not self._shown(e))
+        self._count_dirty = True
         self.tree.header().viewport().update()
         self._update()
-        self.update_summary()
 
     def refresh_rows(self) -> None:
+        self._count_dirty = True
         super().refresh_rows()
         self.apply_filter()
 
@@ -132,13 +127,20 @@ class MetadataTab(FileJobPage):
         kind = metaclean.kind_of(path)   # about photos and videos; music tags aren't private data
         return kind not in (AUDIO, DOCUMENT)
 
-    @staticmethod
-    def _why_not(e: FileEntry) -> str:
+    def _why_not(self, e: FileEntry) -> str:
+        summary = self.summaries.get(id(e))
+        if summary is not None and summary.error:
+            return f"Could not read metadata: {summary.error}"
+        if summary is not None and not summary.anything:
+            return "No metadata to remove"
         if e.image is not None and e.image.motion:
             return "Motion Photo: editing its metadata would detach the video inside"
         return "Can't edit without re-encoding"
 
     def plan(self, e: FileEntry) -> Plan | None:
+        summary = self.summaries.get(id(e))
+        if summary is not None and (summary.error or not summary.anything):
+            return None
         if metaclean.kind_of(e.path) not in metaclean.EDITABLE or (e.image is not None and e.image.motion):
             return None
         return Plan(True, "metadata", e.path.suffix.lower(), route="metadata")
@@ -151,51 +153,155 @@ class MetadataTab(FileJobPage):
                 ", ".join(s.people + ([s.software] if s.software else [])) or "–",
                 "Ready" if p else self._why_not(e)]
 
-    def after_scan(self) -> None:
-        self.summaries = {}
-        self.reader = _Summaries(list(self.entries), self)
-        self.reader.one.connect(self._got)
-        self.reader.finished.connect(self.update_summary)
-        self.reader.start()
+    def selection_count(self) -> int:
+        if self._count_dirty:
+            self._count = len(self.selected())
+            self._eligible = sum(bool(row.flags() & Qt.ItemIsUserCheckable) and not row.isHidden()
+                                 for row in self.rows.values())
+            self._count_dirty = False
+        return self._count
 
-    def _got(self, e, summary) -> None:
-        self.summaries[id(e)] = summary
-        it = self.rows.get(id(e))
-        if it is None:
-            return
-        data = it.data(0, ROLE_ROW)
-        vals = self.row_values(e, data[1] if data else None)
-        self.tree.blockSignals(True)
-        for c, v in enumerate(vals[:-1]):
-            it.setText(c, v)
-            it.setToolTip(c, v)
-        if summary.gps:
-            it.setForeground(1, QColor(tokens().warning))
-        if data and data[1] is not None:
-            if summary.anything:
-                it.setText(self.STATUS_COL, "Ready")
-            else:
-                it.setCheckState(0, Qt.Unchecked)
-                it.setText(self.STATUS_COL, "No metadata to remove")
-        elif data:
-            it.setText(self.STATUS_COL, "Can't edit without re-encoding")
-        it.setHidden(not self._shown(e))
-        self.tree.blockSignals(False)
+    def _header_state(self):
+        count = self.selection_count()
+        return Qt.Unchecked if not count else Qt.Checked if count == self._eligible else Qt.PartiallyChecked
+
+    def _item_changed(self, *_):
+        self._count_dirty = True
         self._update()
 
+    def busy(self) -> bool:
+        return self._loading or super().busy()
+
+    def clear(self) -> None:
+        if self.busy():
+            return
+        self.summaries.clear()
+        self.rows.clear()
+        self._count = self._eligible = 0
+        self._count_dirty = False
+        self._located = self._cameras = self._unreadable = self._shown_count = 0
+        super().clear()
+
+    def scan(self) -> None:
+        if self.busy():
+            self._rescan = True
+            return
+        if not self.paths:
+            return
+        paths = list(self.paths)
+        self.clear()
+        self.paths = paths
+        self._next_progress = 0.0
+        settings = self.settings()
+        settings.scan_jxl = True
+        self.scan_thread = MetadataScan(self.paths, settings, self)
+        self._loading = True
+        self._sorting = self.tree.isSortingEnabled()
+        self.tree.setSortingEnabled(False)
+        self.tree.header().setSectionsClickable(False)
+        self._busy(True, "Looking for photos and videos…")
+        self.placeholder.show_loading("Looking for photos and videos…")
+        self.scan_thread.start()
+        self._drain_timer.start()
+
+    def _append_rows(self, entries, unticked=()) -> None:
+        super()._append_rows(entries, unticked)
+        for entry in entries:
+            row = self.rows[id(entry)]
+            row.setHidden(not self._shown(entry))
+            summary = self.summaries.get(id(entry))
+            if summary and summary.gps:
+                row.setForeground(1, QColor(tokens().warning))
+            if summary and summary.error:
+                row.setToolTip(self.STATUS_COL, summary.error)
+
+    def _drain(self) -> None:
+        import queue
+        import time
+
+        worker = self.scan_thread
+        self.selection_count()  # incorporate any user checkbox changes before appending
+        try:
+            batch = worker.batches.get_nowait()
+        except queue.Empty:
+            batch = []
+        if batch:
+            entries = [entry for entry, _ in batch]
+            self.tree.blockSignals(True)
+            self.tree.setUpdatesEnabled(False)
+            try:
+                for entry, summary in batch:
+                    self.summaries[id(entry)] = summary
+                    self._located += bool(summary.gps)
+                    self._cameras += bool(summary.camera)
+                    self._unreadable += bool(summary.error)
+                    self._shown_count += self._shown(entry)
+                self.entries.extend(entries)
+                self._append_rows(entries)
+                added = sum(self.plan(entry) is not None and self._shown(entry) for entry in entries)
+                self._count += added
+                self._eligible += added
+            finally:
+                self.tree.setUpdatesEnabled(True)
+                self.tree.blockSignals(False)
+            self.placeholder.clear()
+            self._update()
+        if time.monotonic() >= self._next_progress:
+            self._next_progress = time.monotonic() + 0.2
+            self.job_status.busy(worker.stage)
+            self.job_status.detail.setText(f"{worker.checked:,} files checked · {len(self.entries):,} listed")
+            self.job_status.detail.setVisible(True)
+            self.job_status.detail.setToolTip(worker.stage)
+            if worker.cancel.is_set():
+                self.job_status.stopping()
+        if worker.isRunning() or not worker.batches.empty():
+            return
+        self._drain_timer.stop()
+        self._loading = False
+        self.tree.setSortingEnabled(self._sorting)
+        self.tree.header().setSectionsClickable(True)
+        self.tree.header().viewport().update()
+        self.tree._fitter.fit_soon()
+        self._finished()
+        if worker.error:
+            self.job_status.failed(worker.error)
+        else:
+            stopped = worker.cancel.is_set()
+            self.job_status.busy("Metadata scan stopped" if stopped else "Metadata scan complete", 1, 1)
+            details = [f"{len(self.entries):,} files checked"]
+            if stopped:
+                details.append("Partial results are kept; add the folder again to retry")
+            if self._unreadable:
+                details.append(f"{self._unreadable:,} unreadable files (see row status and log)")
+            result = worker.result
+            if result is not None:
+                if result.unreadable_dirs:
+                    details.append(f"{len(result.unreadable_dirs):,} folders could not be read")
+                if result.cloud_only_files:
+                    details.append(f"{result.cloud_only_files:,} cloud-only files skipped")
+            self.job_status.detail.setText(" · ".join(details))
+            self.job_status.detail.setVisible(True)
+            self.job_status._set_buttons(close=True, log=bool(self._unreadable))
+            self.job_status._taskbar("none")
+
+    def stop(self) -> None:
+        super().stop()
+        if self._loading:
+            self.job_status.stopping()
+
     def update_summary(self) -> None:
-        located = sum(1 for s in self.summaries.values() if s.gps)
-        cams = sum(1 for s in self.summaries.values() if s.camera)
-        n = len(self.selected())
+        located = self._located
+        cams = self._cameras
+        n = self.selection_count()
         parts = [f"{len(self.entries)} file{'s' if len(self.entries) != 1 else ''}"]
         if self.summaries:
             parts.append(f"{located} with location" if located else "none with location")
             parts.append(f"{cams} with camera details")
         mode = self.show_filter.currentData() if hasattr(self, "show_filter") else "all"
         if mode != "all" and self.entries:
-            shown = sum(1 for e in self.entries if self._shown(e))
+            shown = self._shown_count
             parts.append(f"showing {shown}")
-            reading = getattr(self, "reader", None) is not None and self.reader.isRunning()
+            reading = self._loading
             if shown:
                 self.placeholder.clear()
             elif reading:
