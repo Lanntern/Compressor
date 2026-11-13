@@ -699,7 +699,8 @@ class SettingsPanel(QWidget):
         deletable = bool(current) and not presets.is_builtin(current or "")
         self.preset_delete.setEnabled(deletable)
         self.preset_delete.setText(f"Delete “{current}”" if deletable else "Delete Preset")
-        self.preset_note.setText(presets.description(current) if current else "Your own combination of options.")
+        self.preset_note.setText(presets.description(current) if current else "")
+        self.preset_note.setVisible(bool(current))
 
     def _preset_chosen(self, _index: int) -> None:
         name = self.preset.currentData()

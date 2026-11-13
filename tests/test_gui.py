@@ -1780,8 +1780,39 @@ def test_shift_click_ticks_a_range(win, monkeypatch):
     click_to_check(tree)
     tree.show()
     c = tree._click_to_check
+    monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.NoModifier))
     c._tree_pressed(items[1], 0)
     c._tree_clicked(items[1], 0)                              # a plain click ticks row 1
     monkeypatch.setattr(QApplication, "keyboardModifiers", staticmethod(lambda: Qt.ShiftModifier))
     c._tree_clicked(items[4], 0)                              # Shift-click row 4: rows 1-4 ticked
     assert [it.checkState(0) == Qt.Checked for it in items] == [False, True, True, True, True, False]
+
+
+def test_compress_list_remove_and_turn_on(win, tmp_path, no_dialogs):
+    """Files can be taken off the Compress list (and stay off when the folder is scanned again); a kind whose
+    compression is off can be switched on from the list."""
+    from wick.settings import Settings
+
+    folder = tmp_path / "pics"
+    folder.mkdir()
+    for i in range(3):
+        Image.effect_noise((200, 150), 30 + i).convert("RGB").save(folder / f"p{i}.png")
+    page = win.compress
+    page.panel.load(Settings(image_format="none", min_image_kb=0))
+    page.clear()
+    page.add_paths([str(folder)])
+    assert _wait(lambda: not page.busy() and len(page.model.rows) == 3, 60)
+    assert all(r.plan.reason == "Image conversion is off" for r in page.model.rows)
+    page._turn_on("Image")
+    assert _wait(lambda: not page.busy() and all(r.plan.convert for r in page.model.rows), 60)
+
+    by_name = {r.entry.path.name: r for r in page.model.rows}
+    by_name["p1.png"].checked = False
+    page.remove_rows([by_name["p0.png"]])
+    assert sorted(r.entry.path.name for r in page.model.rows) == ["p1.png", "p2.png"]
+    assert by_name["p1.png"] in page.model.rows and by_name["p1.png"].checked is False   # ticks are kept
+    page.start_scan()                                        # scanned again: the removed file stays off
+    assert _wait(lambda: not page.busy() and page.model.rows, 60)
+    assert sorted(r.entry.path.name for r in page.model.rows) == ["p1.png", "p2.png"]
+    page.clear()
+    assert not page.removed

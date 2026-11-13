@@ -174,14 +174,25 @@ class FileJobPage(Page):
                 self.paths.append(Path(p))
         self.scan()
 
+    def _last_dir(self) -> str:
+        """Where Add Folder / Add Files last were (else the home folder)."""
+        last = str(self.win.qsettings.value("browse/last_dir", "", str)) if hasattr(self, "win") else ""
+        return last if last and os.path.isdir(last) else str(Path.home())
+
+    def _remember_dir(self, picked: str) -> None:
+        if hasattr(self, "win"):
+            self.win.qsettings.setValue("browse/last_dir", picked if os.path.isdir(picked) else os.path.dirname(picked))
+
     def browse_files(self) -> None:
-        files, _ = QFileDialog.getOpenFileNames(self, "Add files", str(Path.home()))
+        files, _ = QFileDialog.getOpenFileNames(self, "Add files", self._last_dir())
         if files:
+            self._remember_dir(files[0])
             self.add_paths(files)
 
     def browse_folder(self) -> None:
-        d = QFileDialog.getExistingDirectory(self, "Add a folder", str(Path.home()))
+        d = QFileDialog.getExistingDirectory(self, "Add a folder", self._last_dir())
         if d:
+            self._remember_dir(d)
             self.add_paths([d])
 
     def clear(self) -> None:

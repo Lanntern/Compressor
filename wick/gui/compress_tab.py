@@ -55,6 +55,7 @@ class CompressTab(QWidget):
         self.scan_thread: ScanThread | None = None
         self.job_thread: JobThread | None = None
         self.paths: list[Path] = []
+        self.removed: set[str] = set()    # files taken off the list by hand (normalized paths)
         self.scan_roots: list[Path] = []
         self.skipped_dirs: list[Path] = []
         self.cloud_only = 0
@@ -342,17 +343,27 @@ class CompressTab(QWidget):
                 self.start_scan()
 
     def browse_folder(self) -> None:
-        start = str(self.paths[0]) if self.paths else str(Path.home())
-        d = QFileDialog.getExistingDirectory(self, "Add a folder", start)
+        d = QFileDialog.getExistingDirectory(self, "Add a folder", self._last_dir())
         if d:
+            self._remember_dir(d)
             self.add_paths([d])
+
+    def _last_dir(self) -> str:
+        """Where Add Folder / Add Files last were (else the home folder)."""
+        last = str(self.win.qsettings.value("browse/last_dir", "", str)) if hasattr(self, "win") else ""
+        return last if last and os.path.isdir(last) else str(Path.home())
+
+    def _remember_dir(self, picked: str) -> None:
+        if hasattr(self, "win"):
+            self.win.qsettings.setValue("browse/last_dir", picked if os.path.isdir(picked) else os.path.dirname(picked))
 
     def browse_files(self) -> None:
         exts = "*.jpg *.jpeg *.jfif *.png *.apng *.gif *.webp *.tif *.tiff *.bmp *.heic *.heif *.avif " \
                "*.mp4 *.m4v *.mov *.mkv *.webm *.avi *.wmv *.flv *.mpg *.mpeg *.ts *.m2ts *.mts *.3gp"
-        files, _ = QFileDialog.getOpenFileNames(self, "Add files", str(Path.home()),
+        files, _ = QFileDialog.getOpenFileNames(self, "Add files", self._last_dir(),
                                                 f"Images and videos ({exts});;All files (*)")
         if files:
+            self._remember_dir(files[0])
             self.add_paths(files)
 
     def type_path(self) -> None:
@@ -364,6 +375,7 @@ class CompressTab(QWidget):
         if self.busy():
             return
         self.paths = []
+        self.removed = set()
         self.scan_roots = []
         self.model.set_entries([], self.panel.settings())
         self.panel.set_file_kinds(None)
@@ -416,7 +428,8 @@ class CompressTab(QWidget):
         self.panel.set_file_kinds(kinds or None)  # only the options that matter for these files
         self.skipped_dirs = result.skipped_program_dirs
         self.cloud_only = result.cloud_only_files
-        self.model.set_entries(result.entries, self.panel.settings())
+        entries = [e for e in result.entries if os.path.normcase(str(e.path)) not in self.removed]
+        self.model.set_entries(entries, self.panel.settings())
         self.update_summary()
 
     def _replan(self) -> None:
@@ -774,7 +787,7 @@ class CompressTab(QWidget):
             label = type_label(r.entry.path, r.entry.kind)
             same = [x for x in self.model.rows if x.plan.convert and not (x.result and x.result.status == DONE)
                     and type_label(x.entry.path, x.entry.kind) == label]
-            if same:
+            if len(same) > 1:
                 def by_type(on: bool):
                     for x in same:
                         self.model.setData(self.model.index(self.model.rows.index(x), C_CHECK),
@@ -782,5 +795,33 @@ class CompressTab(QWidget):
                     self.update_summary()
                 extra += [None, (f"Select All {label} Files", lambda: by_type(True)),
                           (f"Deselect All {label} Files", lambda: by_type(False))]
+        off = {x.plan.reason for x in rows if not x.plan.convert and x.plan.reason.endswith("conversion is off")}
+        if off and not self.busy():
+            extra.append(None)
+            for reason in sorted(off):
+                kind = reason.split()[0]
+                extra.append((f"Turn On {kind} Compression", lambda k=kind: self._turn_on(k)))
+        if not self.busy():
+            n = "" if len(rows) == 1 else f" {len(rows)}"
+            extra += [None, (f"Remove{n} from List", lambda: self.remove_rows(rows))]
         file_menu(self, [x.entry.path for x in rows], extra).exec(self.table.viewport().mapToGlobal(pos))
+
+    def _turn_on(self, kind: str) -> None:
+        """A kind of file was skipped because its compression is off: switch it on (the list is planned again)."""
+        p = self.panel
+        combo, value = {"Image": (p.image_format, "jxl"), "Video": (p.video_codec, "auto"),
+                        "Audio": (p.audio_lossless, "flac")}[kind]
+        i = combo.findData(value)
+        if i >= 0:
+            combo.setCurrentIndex(i)
+
+    def remove_rows(self, rows) -> None:
+        """Take files off the list (nothing happens to them). Files added one by one are forgotten too."""
+        if self.busy():
+            return
+        names = {os.path.normcase(str(x.entry.path)) for x in rows}
+        self.paths = [p for p in self.paths if os.path.normcase(str(p)) not in names]
+        self.removed |= names             # (a file inside a listed folder: left out of later scans too)
+        self.model.remove_rows(rows)
+        self.update_summary()
 

@@ -82,6 +82,14 @@ class FileTableModel(QAbstractTableModel):
         self._index = {id(r.entry): i for i, r in enumerate(self.rows)}
         self.endResetModel()
 
+    def remove_rows(self, rows: list[Row]) -> None:
+        """Take rows off the list; the others keep their ticks and results."""
+        gone = {id(r) for r in rows}
+        self.beginResetModel()
+        self.rows = [r for r in self.rows if id(r) not in gone]
+        self._index = {id(r.entry): i for i, r in enumerate(self.rows)}
+        self.endResetModel()
+
     def add_entries(self, entries: list[FileEntry], settings: Settings) -> None:
         known = set(self._index)
         new = [e for e in entries if id(e) not in known]

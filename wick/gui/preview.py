@@ -413,10 +413,11 @@ class PreviewDialog(QDialog):
         self.use = button("Use for All Files", "", None, "Use this quality for every file in the list (nothing is "
                                                        "compressed yet)")
         self.use.clicked.connect(self._use)
-        self.save_as = button("Save As…", "", None, "Save the result as a new file where you choose; the original "
-                                                  "stays as it is", "Ctrl+S")
+        self.save_as = button("Save a Copy…", "", None, "Save the result as a new file where you choose; the "
+                                                      "original stays as it is", "Ctrl+S")
         self.save_as.clicked.connect(self._save_as)
-        self.compress = button("Compress This File", "primary", None, self._compress_tip(), "Ctrl+Enter")
+        self.compress = button({"replace": "Compress and Replace", "folder": "Compress to Folder"}.get(
+            self.settings.output_mode, "Compress Beside Original"), "primary", None, self._compress_tip(), "Ctrl+Enter")
         self.compress.clicked.connect(self._compress)
         actions.addWidget(self.use)
         actions.addStretch(1)
