@@ -474,7 +474,7 @@ class ConvertTab(FileJobPage):
             return
         presets = convert_presets.load(self.qs)
         if name in presets and not ask(self, f"Replace the preset “{name}”?", "It gets the choices on this page now.",
-                                       "Replace"):
+                                       "Replace Preset"):
             return
         presets[name] = convert_presets.make(self.opts(), self._page_output())
         convert_presets.save(self.qs, presets)

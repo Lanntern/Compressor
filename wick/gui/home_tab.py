@@ -156,6 +156,7 @@ class HomeTab(Page):
             self.tree.setColumnWidth(col, w)
         self.tree.itemChanged.connect(lambda *_: self._update_send())
         make_sortable(self.tree)
+        self.tree.header().remember("home")
         self.tree._fitter.optional = [C_MODIFIED, C_CREATED, C_INFO, C_TYPE]   # a narrow card leaves these out
         # Right-click a heading to choose columns (dates are off until wanted).
         self.tree.header().enable_column_menu("home", [C_TYPE, C_INFO, C_SAVE, C_CONF, C_CREATED, C_MODIFIED],
@@ -169,7 +170,7 @@ class HomeTab(Page):
         self.tree.customContextMenuRequested.connect(self._menu)
         keyboard_list(self.tree, self._menu)
         self.placeholder = ListPlaceholder(self.tree)
-        self.placeholder.show_message("Scan to find the files that would save the most.")
+        self.placeholder.show_message("Nothing listed yet. Press Scan to find the files that would save the most.")
         card.lay.addWidget(self.tree, 1)
         row.addWidget(card, 3)
 
@@ -380,7 +381,7 @@ class HomeTab(Page):
         if ov.opportunities:
             self.placeholder.clear()
         else:
-            self.placeholder.show_message("Nothing worth compressing here with the current options.")
+            self.placeholder.show_message("Nothing found that's worth compressing with the current options.")
         groups = sorted(ov.efficient.values(), key=lambda g: g.size, reverse=True)
         self.eff_box.setText("<br><br>".join(
             f"<b>{g.label}</b><br>{g.count:,} file{'s' if g.count != 1 else ''} · {human(g.size)}<br>{g.explanation}"

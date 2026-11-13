@@ -941,7 +941,7 @@ class _TipCard(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         p.setBrush(QColor(t.card))
         p.setPen(QColor(t.border))
-        p.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), Radius.SMALL, Radius.SMALL)
+        p.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), Radius.CONTROL, Radius.CONTROL)
 
     def show_for(self, tip: str, anchor, x: int | None = None) -> None:
         """Show ``tip`` under ``anchor`` (a global QRect), centered on it, or on ``x`` for wide things such as

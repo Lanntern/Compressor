@@ -53,6 +53,67 @@ class Header(QHeaderView):
         self._menu_key: str | None = None
         self._optional: list[int] = []
 
+    # ---- remembered sorting and widths
+    def remember(self, key: str) -> None:
+        """Keep this list's sort column and order, and column widths dragged by hand, between sessions (under
+        ``key``). Double-clicking the headings goes back to fitted widths."""
+        from .main_window import open_qsettings
+
+        self._remember_key = key
+        qs = open_qsettings()
+        view = self.parentWidget()
+        column = qs.value(f"lists/{key}/sort_column", None)
+        if column is not None and hasattr(view, "sortByColumn"):
+            try:
+                c = int(str(column))
+                order = Qt.DescendingOrder if int(str(qs.value(f"lists/{key}/sort_desc", 0))) else Qt.AscendingOrder
+                if -1 <= c < self.count():
+                    view.sortByColumn(c, order)
+            except (TypeError, ValueError):
+                pass
+        widths = qs.value(f"lists/{key}/widths", None)
+        fitter = getattr(view, "_fitter", None)
+        if isinstance(widths, (list, tuple)) and len(widths) == self.count() and fitter is not None:
+            try:
+                for i, w in enumerate(widths[:-1]):
+                    if int(str(w)) > 0:
+                        self.resizeSection(i, int(str(w)))
+                fitter.user_sized = True
+            except (TypeError, ValueError):
+                pass
+        self.sortIndicatorChanged.connect(self._save_sort)
+
+    def _save_sort(self, column: int, order) -> None:
+        from .main_window import open_qsettings
+
+        qs = open_qsettings()
+        qs.setValue(f"lists/{self._remember_key}/sort_column", int(column))
+        qs.setValue(f"lists/{self._remember_key}/sort_desc", 1 if order == Qt.DescendingOrder else 0)
+
+    def save_widths(self) -> None:
+        """Called when the person has dragged a column edge."""
+        key = getattr(self, "_remember_key", None)
+        if key:
+            from .main_window import open_qsettings
+
+            open_qsettings().setValue(f"lists/{key}/widths", [self.sectionSize(i) for i in range(self.count())])
+
+    def mouseDoubleClickEvent(self, e) -> None:  # noqa: N802
+        """Back to widths fitted to the content (forgetting dragged ones)."""
+        view = self.parentWidget()
+        fitter = getattr(view, "_fitter", None)
+        if fitter is not None and fitter.user_sized:
+            fitter.user_sized = False
+            key = getattr(self, "_remember_key", None)
+            if key:
+                from .main_window import open_qsettings
+
+                open_qsettings().remove(f"lists/{key}/widths")
+            fitter.fit_soon()
+            e.accept()
+            return
+        super().mouseDoubleClickEvent(e)
+
     # ---- choosing columns
     def enable_column_menu(self, key: str, optional: list[int],
                            hidden_by_default: set[int] | frozenset[int] = frozenset()) -> None:

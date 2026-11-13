@@ -61,6 +61,7 @@ class FileJobPage(Page):
         self.STATUS_COL = len(self.COLUMNS) - 1
         self.C_CREATED, self.C_MODIFIED = self.STATUS_COL - 2, self.STATUS_COL - 1
         self.win = window
+        self.removed: set[str] = set()      # files taken off the list by hand (normalized paths)
         self.paths: list[Path] = []
         self.entries: list[FileEntry] = []
         self.rows: dict[int, QTreeWidgetItem] = {}
@@ -123,6 +124,7 @@ class FileJobPage(Page):
         self.tree.itemChanged.connect(self._item_changed)
         make_sortable(self.tree)
         self.tree.sortByColumn(-1, Qt.AscendingOrder)
+        self.tree.header().remember(type(self).__name__)
         add_header_checkbox(self.tree, 0, self._item_changed)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._menu)
@@ -205,6 +207,7 @@ class FileJobPage(Page):
         if self.busy():
             return
         self.paths, self.entries = [], []
+        self.removed = set()
         self.tree.clear()
         self.job_status.hide()          # the last job's outcome goes with its list
         self._update()
@@ -230,7 +233,8 @@ class FileJobPage(Page):
         self.scan_thread.start()
 
     def _scanned(self, result) -> None:
-        self.entries = [e for e in result.entries if self.accepts(e.path)]
+        self.entries = [e for e in result.entries if self.accepts(e.path)
+                        and os.path.normcase(str(e.path)) not in self.removed]
         self.refresh_rows()
         self.after_scan()
 
@@ -296,12 +300,28 @@ class FileJobPage(Page):
                 for it in checkable:
                     it.setCheckState(0, state)
             n = "" if len(checkable) == 1 else f" {len(checkable)}"
-            extra += [None, (f"Include{n}", lambda: check(Qt.Checked)), (f"Exclude{n}", lambda: check(Qt.Unchecked))]
+            extra += [None, (f"Select{n}", lambda: check(Qt.Checked)), (f"Deselect{n}\tDelete", lambda: check(Qt.Unchecked))]
         if not self.busy():
             own = self.menu_entries([it.data(0, ROLE_ROW)[0] for it in items])
             if own:
                 extra += [None, *own]
+            n = "" if len(items) == 1 else f" {len(items)}"
+            extra += [None, (f"Remove{n} from List", lambda: self.remove_items(items))]
         file_menu(self, paths, extra).exec(self.tree.viewport().mapToGlobal(pos))
+
+    def remove_items(self, items) -> None:
+        """Take files off the list (nothing happens to them); they stay off until the list is cleared."""
+        if self.busy():
+            return
+        gone = {id(it.data(0, ROLE_ROW)[0]) for it in items}
+        names = {os.path.normcase(str(it.data(0, ROLE_ROW)[0].path)) for it in items}
+        self.removed |= names
+        self.paths = [p for p in self.paths if os.path.normcase(str(p)) not in names]
+        self.entries = [e for e in self.entries if id(e) not in gone]
+        for it in items:
+            self.rows.pop(id(it.data(0, ROLE_ROW)[0]), None)
+            self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(it))
+        self._update()
 
     def menu_entries(self, entries: list[FileEntry]) -> list:
         """The page's own context menu entries for these rows."""
@@ -405,7 +425,8 @@ class FileJobPage(Page):
                     "undo it later.")
         else:
             note = f"The original{'s were' if many else ' was'} kept."
-        self.job_status.finish(results, note)
+        self.job_status.finish(results, note,
+                               on_undo=(lambda: self.win.history.undo_run(run_id)) if run_id else None)
         if not self.window().isActiveWindow():
             self.win.tray_message(self.job_status.title.text())
             QApplication.alert(self.window())
@@ -422,7 +443,7 @@ class FileJobPage(Page):
         if self.entries:
             self.placeholder.clear()
         elif self.paths:
-            self.placeholder.show_message("No files this page can work on were found here.")
+            self.placeholder.show_message("Nothing found here that this page can work on. Add other files or folders.")
         if self._rescan:
             self._rescan = False
             QTimer.singleShot(0, self.scan)

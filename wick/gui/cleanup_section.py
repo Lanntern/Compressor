@@ -285,6 +285,7 @@ class ToolSection(QWidget):
         self.tree.itemExpanded.connect(self._expand)
         make_sortable(self.tree)
         self.tree.sortByColumn(-1, Qt.AscendingOrder)
+        self.tree.header().remember(f"cleanup-{tool.key}")
         add_header_checkbox(self.tree, C_NAME, self._update_summary)
         self.tree.header().set_expander(C_NAME, self._all_open, lambda: self.open_all(not self._all_open()))
         self.tree.itemExpanded.connect(lambda *_: self.tree.header().viewport().update())
@@ -294,7 +295,7 @@ class ToolSection(QWidget):
         keyboard_list(self.tree, self._menu)
         click_to_check(self.tree, C_NAME)
         self.placeholder = ListPlaceholder(self.tree)
-        self.placeholder.show_message("Press Scan to see what can be cleaned up.")
+        self.placeholder.show_message("Nothing listed yet. Press Scan to look for things to clean up.")
         results.lay.addWidget(self.tree, 1)
         self.hover = HoverPreviewer(self.tree, self._hover_info, self)
         self.hover.enabled = self.qs.value("hover_preview", True, bool)
@@ -1115,7 +1116,7 @@ class ToolSection(QWidget):
             self._fill(self.result)
         self._set_busy(False)
         if self.placeholder.loading:   # stopped or failed before results
-            self.placeholder.show_message("Press Scan to see what can be cleaned up.")
+            self.placeholder.show_message("Nothing listed yet. Press Scan to look for things to clean up.")
 
     def _set_busy(self, busy: bool, msg: str = "") -> None:
         self.setup.setEnabled(not busy)

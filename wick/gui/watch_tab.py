@@ -160,7 +160,7 @@ class WatchTab(Page):
         self.logw.setSelectionMode(QAbstractItemView.NoSelection)
         activity.lay.addWidget(self.logw, 1)
         self.log_empty = ListPlaceholder(self.logw)
-        self.log_empty.show_message("Files compressed while watching are listed here.")
+        self.log_empty.show_message("Nothing listed yet. Files compressed while watching appear here.")
         self.body.addWidget(activity, 3)
 
         try:

@@ -34,6 +34,12 @@ class CleanupTab(Page):
             self.stack.addWidget(QWidget())               # (a placeholder until the tool is first shown)
         self.tabs.currentChanged.connect(self._show_tool)
         self._show_tool(0)
+        last = str(self.win.qsettings.value("cleanup/last_tool", "", str))        # open where it was left
+        index = next((i for i, tool in enumerate(self._tools) if tool.key == last), 0)
+        if index:
+            self.tabs.setCurrentIndex(index)
+        self.tabs.currentChanged.connect(
+            lambda i: self.win.qsettings.setValue("cleanup/last_tool", self._tools[i].key) if 0 <= i < len(self._tools) else None)
         # Too narrow for every tab: the same choice as a drop-down (no scroll arrows, nothing cut off).
         self.picker = QComboBox()
         self.picker.setAccessibleName("Clean-up tool")

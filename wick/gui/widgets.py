@@ -586,6 +586,18 @@ class InfoPopover(QWidget):
         bottom = sh + pad + (0 if self.below else self.BEAK)
         self.layout().setContentsMargins(sh + pad, top, sh + pad, bottom)
 
+    def _fade_in(self) -> None:
+        """Appear with the same short fade as tooltips."""
+        from PySide6.QtCore import QPropertyAnimation
+
+        self.setWindowOpacity(0.0)
+        self.show()
+        self._fade = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade.setDuration(110)
+        self._fade.setStartValue(0.0)
+        self._fade.setEndValue(1.0)
+        self._fade.start()
+
     def show_at(self, anchor: QWidget) -> None:
         """Open next to ``anchor``: below it if there's room on screen, else above; kept on screen sideways."""
         from PySide6.QtCore import QPoint
@@ -608,7 +620,7 @@ class InfoPopover(QWidget):
         x = max(screen.left() - self.SHADOW, min(x, screen.right() - self._width + self.SHADOW))
         self._beak_x = centre_x - x
         self.move(x, int(y))
-        self.show()
+        self._fade_in()
         if self.sticky:
             self.setFocus(Qt.PopupFocusReason)
 
