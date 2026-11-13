@@ -2,14 +2,19 @@
 
 import os
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QDialog, QHeaderView, QLineEdit, QTableWidget, QTableWidgetItem, QVBoxLayout
+from PySide6.QtWidgets import QAbstractItemView, QDialog, QHeaderView, QLineEdit, QTableWidget, QTableWidgetItem, QVBoxLayout
 
 from ..cleanup import game_results
 from .style import Type
 from .widgets import button, hbox, text
+
+
+class _ResultItem(QTableWidgetItem):
+    def __lt__(self, other):
+        return self.data(Qt.UserRole) < other.data(Qt.UserRole)
 
 
 class GameResultsDialog(QDialog):
@@ -33,7 +38,18 @@ class GameResultsDialog(QDialog):
         self.table = QTableWidget(0, 6)
         self.table.setAccessibleName("Community game compression estimates")
         self.table.setHorizontalHeaderLabels(["Game", "Steam ID", "XPRESS4K", "XPRESS8K", "XPRESS16K", "LZX"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        for column in range(1, 6):
+            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+        for column in range(2, 6):
+            self.table.horizontalHeaderItem(column).setToolTip("Space saved; hover over a result for sample counts")
+        self.table.verticalHeader().hide()
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSortingEnabled(True)
+        self.table.sortItems(0, Qt.AscendingOrder)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         layout.addWidget(self.table)
         self.download_button = button("Download / Refresh Public Results")
@@ -49,14 +65,27 @@ class GameResultsDialog(QDialog):
         query = self.search.text().casefold()
         rows = [(key, game) for key, game in self.data.items() if query in game["name"].casefold() or query in str(key)]
         rows = sorted(rows, key=lambda pair: pair[1]["name"])[:500]
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(rows))
         for i, (key, game) in enumerate(rows):
-            values = [game["name"], str(key)]
-            for mode in game_results.MODES:
+            for column, (value, order) in enumerate(((game["name"], game["name"].casefold()), (str(key), int(key)))):
+                item = _ResultItem(value)
+                item.setData(Qt.UserRole, order)
+                item.setToolTip(value)
+                self.table.setItem(i, column, item)
+            for column, mode in enumerate(game_results.MODES, 2):
                 result = game["modes"].get(mode)
-                values.append(f"{1 - result['ratio']:.0%} saved ({result['samples']} samples)" if result else "No data")
-            for j, value in enumerate(values):
-                self.table.setItem(i, j, QTableWidgetItem(value))
+                saving = 1 - result["ratio"] if result else -1.0
+                item = _ResultItem(f"{saving:.0%}" if result else "No data")
+                item.setData(Qt.UserRole, saving)
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                if result:
+                    count = result["samples"]
+                    item.setToolTip(f"{saving:.0%} saved ({count:,} sample{'s' if count != 1 else ''})")
+                else:
+                    item.setToolTip("No community results for this algorithm")
+                self.table.setItem(i, column, item)
+        self.table.setSortingEnabled(True)
 
     def fetch(self):
         if self.reply is not None:

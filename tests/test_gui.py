@@ -2074,3 +2074,77 @@ def test_settings_scrollbar_reaches_edge_and_top_transition_is_passive(win, monk
         win.resize(size)
         win.go_to(previous)
 
+
+
+def test_app_algorithm_changes_keep_controls_in_place(win):
+    from PySide6.QtWidgets import QCheckBox, QLabel
+    from PySide6.QtTest import QTest
+
+    page = win.cleanup
+    index = next(i for i, tool in enumerate(page._tools) if tool.key == "appcompress")
+    section = page.section(index)
+    old_page, old_size, old_tab = win.pages.currentWidget(), win.size(), page.tabs.currentIndex()
+    old_algorithm = section.app_algorithm.currentIndex()
+    try:
+        win.go_to(page)
+        page.tabs.setCurrentIndex(index)
+        assert not section.tool.note
+        assert not any(box.text() == "Start Wick with Windows" for box in section.findChildren(QCheckBox))
+        for width in (1000, 1500):
+            win.resize(width, 1000)
+            QTest.qWait(150)
+            group = section.app_algorithm.parentWidget()
+            baseline = (group.geometry(), section.app_skip.geometry(), section.scan_btn.geometry(),
+                        section.tree.mapTo(section, section.tree.rect().topLeft()))
+            for choice in range(section.app_algorithm.count()):
+                section.app_algorithm.setCurrentIndex(choice)
+                QTest.qWait(100)
+                assert (group.geometry(), section.app_skip.geometry(), section.scan_btn.geometry(),
+                        section.tree.mapTo(section, section.tree.rect().topLeft())) == baseline
+                reason = group.findChildren(QLabel)[0]
+                assert reason.text() == section.app_algorithm.toolTip()
+    finally:
+        section.app_algorithm.setCurrentIndex(old_algorithm)
+        page.tabs.setCurrentIndex(old_tab)
+        win.resize(old_size)
+        win.go_to(old_page)
+
+
+def test_community_results_fit_columns_and_sort_numerically(win, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from wick.cleanup import game_results
+    from wick.gui.game_results import GameResultsDialog
+
+    data = {
+        20: {"name": "Game with a long name", "modes": {
+            mode: {"ratio": 0.92, "samples": 131} for mode in game_results.MODES}},
+        3: {"name": "Another game", "modes": {"xpress4k": {"ratio": 0.45, "samples": 1}}},
+        100: {"name": "No samples yet", "modes": {}},
+    }
+    monkeypatch.setattr(game_results, "load", lambda: data)
+    dialog = GameResultsDialog(win)
+    try:
+        dialog.show()
+        dialog.resize(820, 440)
+        QTest.qWait(100)
+        assert dialog.table.verticalHeader().isHidden()
+        dialog.table.sortItems(1, Qt.AscendingOrder)
+        assert [dialog.table.item(i, 1).text() for i in range(3)] == ["3", "20", "100"]
+        assert dialog.table.item(0, 2).text() == "55%"
+        assert dialog.table.item(0, 2).toolTip() == "55% saved (1 sample)"
+        assert dialog.table.item(1, 2).toolTip() == "8% saved (131 samples)"
+        for column in range(2, 6):
+            item = dialog.table.item(1, column)
+            assert dialog.table.fontMetrics().horizontalAdvance(item.text()) < dialog.table.columnWidth(column) - 8
+        assert dialog.table.horizontalHeader().length() <= dialog.table.viewport().width()
+        dialog.table.sortItems(2, Qt.DescendingOrder)
+        assert dialog.table.item(0, 1).text() == "3"
+        dialog.search.setText("Game with")
+        assert dialog.table.rowCount() == 1
+        assert dialog.table.item(0, 1).text() == "20"
+        assert all(dialog.table.item(0, column).text() == "8%" for column in range(2, 6))
+    finally:
+        dialog.close()
+        dialog.deleteLater()

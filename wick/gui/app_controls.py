@@ -2,19 +2,18 @@
 
 import re
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRect, Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox, QLineEdit, QListWidget, QListWidgetItem, QMenu, QPushButton, QVBoxLayout, QWidget, QWidgetAction,
 )
 
 from ..cleanup import appcompress
-from .style import Type
+from .style import Type, text_scale
 from .widgets import button, hbox, text
 
 
 def algorithm_picker(current):
     group = QWidget()
-    group.setMaximumWidth(320)
     layout = QVBoxLayout(group)
     layout.setContentsMargins(0, 0, 0, 0)
     combo = QComboBox()
@@ -24,6 +23,15 @@ def algorithm_picker(current):
         combo.setItemData(combo.count() - 1, reason, Qt.ToolTipRole)
     combo.setCurrentIndex(max(0, combo.findData(current)))
     reason = text("", Type.FOOTNOTE, secondary=True, wrap=True)
+    # FlowLayout uses size hints: reserve the widest/tallest explanation up front
+    # so changing the algorithm never moves the other controls or the results.
+    width = max(combo.sizeHint().width(), round(280 * text_scale()))
+    group.setFixedWidth(width)
+    reason.setFixedWidth(width)
+    metrics = reason.fontMetrics()
+    height = max(metrics.boundingRect(QRect(0, 0, width, 10000), Qt.TextWordWrap, explanation).height()
+                 for _name, explanation, _ratio in appcompress.ALGORITHMS.values())
+    reason.setFixedHeight(height + metrics.leading() + 2)
 
     def explain():
         reason.setText(appcompress.ALGORITHMS[combo.currentData()][1])

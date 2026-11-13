@@ -190,19 +190,6 @@ def _appcompress_options(sec: ToolSection):
     tray.setChecked(cast(bool, sec.qs.value('appcompress/tray', False, bool)))
     tray.setToolTip('Wick stays running in the notification area. Use Quit in the tray menu to stop watching.')
     tray.toggled.connect(lambda on: sec.qs.setValue('appcompress/tray', on))
-    from . import integration
-
-    startup = QCheckBox('Start Wick with Windows')
-    startup.setChecked(integration.autostart_enabled())
-    startup.setToolTip('Starts Wick in the background. This is the same startup setting used by Watch Folders.')
-
-    def set_startup(on):
-        try:
-            integration.set_autostart(on)
-        except OSError as error:
-            inform(sec, 'Could not change Windows startup', str(error))
-
-    startup.toggled.connect(set_startup)
     sec.app_algorithm, sec.app_skip = algorithm, skip
     samples = QCheckBox('Test temporary samples for estimates (slower)')
     samples.setChecked(cast(bool, sec.qs.value('appcompress/sample', False, bool)))
@@ -284,7 +271,7 @@ def _appcompress_options(sec: ToolSection):
 
     community.clicked.connect(show_results)
     return [('Algorithm', group), ('Skip file types', skip), ('', own_button), ('', community), ('', samples),
-            ('', watch), ('', idle), ('', tray), ('', startup)]
+            ('', watch), ('', idle), ('', tray)]
 
 
 def _takeout_options(sec: ToolSection):
@@ -565,9 +552,6 @@ def tools() -> list[Tool]:
              appcompress.default_sources,
              lambda s, p, c: appcompress.find_compressible(appcompress.expand_sources(s.folders), p, c, **s._app_scan_options),
              [(actions.COMPACT, "Compress Folders", "primary"), (actions.DECOMPACT, "Decompress Folders", "secondary")],
-             note="DirectStorage DLL detection is a warning heuristic, not proof of a performance impact. "
-                  "CPU-limited or streaming games may load slower. Benchmark before/after. "
-                  "Undo is available in History.",
              options=_appcompress_options,
              available=lambda: "" if appcompress.supported() else "Available on Windows (NTFS drives) only."),
         Tool("takeout", "Google Takeout",
