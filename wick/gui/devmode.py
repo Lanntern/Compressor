@@ -20,7 +20,7 @@ def toggle(qs) -> bool:
 
 
 def apply(qs) -> None:
-    """Apply the developer settings at start-up (each is off whenever developer settings are hidden)."""
+    """Apply the developer settings at start-up."""
     from . import style
 
     # Windows' own icons (Segoe Fluent / MDL2) by default on Windows; the app's drawn icons elsewhere, or when

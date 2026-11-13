@@ -329,7 +329,7 @@ def icon_svg(name: str, color: str, stroke: float = 1.8) -> bytes:
             f'stroke-width="{stroke}" stroke-linecap="round" stroke-linejoin="round">{body}</svg>').encode()
 
 
-# Windows' own icon font (Windows 11; Windows 10 has the older Segoe MDL2 Assets): a developer option for now.
+# Windows' own icon font (Windows 11; Windows 10 has the older Segoe MDL2 Assets): the default on Windows.
 FLUENT_FONTS = ("Segoe Fluent Icons", "Segoe MDL2 Assets")
 FLUENT_GLYPHS = {
     "compress": 0xE73F, "watch": 0xE7B3, "history": 0xE81C, "settings": 0xE713, "folder": 0xE8B7,
