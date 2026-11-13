@@ -111,3 +111,39 @@ def test_focus_rings_only_for_keyboard_focus():
         assert (b.property("kbfocus") is True) == ring, reason
         focus.eventFilter(b, QFocusEvent(QEvent.FocusOut, Qt.OtherFocusReason))
         assert b.property("kbfocus") is not True
+
+
+def test_tooltips_are_cards_under_the_control():
+    """A tooltip is the app's own card, centered under the control it describes (not at the pointer), wrapped
+    when long, and gone when asked."""
+    from PySide6.QtCore import QEvent, QPoint
+    from PySide6.QtGui import QGuiApplication, QHelpEvent
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from wick.gui import style
+
+    if QGuiApplication.instance() is None:
+        QApplication([])
+    if not isinstance(QGuiApplication.instance(), QApplication):
+        import pytest
+
+        pytest.skip("an earlier test made a QGuiApplication (no widgets possible)")
+    b = QPushButton("1 task running")
+    b.setToolTip("Home analysis: Working...")
+    b.resize(300, 40)
+    b.move(400, 300)
+    b.show()
+    tips = style._Tooltips()
+    pointer = b.mapToGlobal(QPoint(290, 5))                    # near the button's right edge
+    assert tips.eventFilter(b, QHelpEvent(QEvent.ToolTip, QPoint(290, 5), pointer)) is True
+    card = style._tip_card
+    assert card.isVisible() and card.label.text() == "Home analysis: Working..."
+    below = b.mapToGlobal(QPoint(0, b.height()))
+    assert card.y() >= below.y()                               # under the button, not over it
+    assert abs(card.geometry().center().x() - b.mapToGlobal(b.rect().center()).x()) <= 2   # centered on it
+    style.show_tip("word " * 80, b)
+    assert card.label.wordWrap() and card.width() < 700        # long text wraps at a reading width
+    style.hide_tip()
+    assert not card.isVisible()
+    b.setToolTip("")
+    assert tips.eventFilter(b, QHelpEvent(QEvent.ToolTip, QPoint(5, 5), pointer)) is False

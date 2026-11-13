@@ -55,9 +55,8 @@ class AboutDialog(QDialog):
         return super().eventFilter(obj, e)
 
     def _toggle_dev(self) -> None:
-        from PySide6.QtWidgets import QToolTip
-
         from . import devmode
+        from .style import show_tip
         from .main_window import open_qsettings
 
         qs = open_qsettings()
@@ -69,9 +68,8 @@ class AboutDialog(QDialog):
             page.update_dev_section()
         if hasattr(win, "refresh_colors"):
             win.refresh_colors()
-        QToolTip.showText(self._version.mapToGlobal(self._version.rect().bottomLeft()),
-                          "Developer settings are on (Settings, at the bottom)." if on else
-                          "Developer settings are hidden.", self._version)
+        show_tip("Developer settings are on (Settings, at the bottom)." if on else
+                 "Developer settings are hidden.", self._version)
 
     def __init__(self, parent=None):
         super().__init__(parent)
