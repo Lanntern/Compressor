@@ -40,7 +40,7 @@ def find_wrong_extensions(roots: list[Path], progress: Callable | None = None,
         p, size = item
         try:
             real = wrong_extension(p)
-        except OSError:
+        except Exception:  # noqa: BLE001 - unreadable, or contents the sniffer trips on: not this tool's finding
             return None
         if real is None:
             return None

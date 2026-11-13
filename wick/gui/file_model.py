@@ -82,6 +82,14 @@ class FileTableModel(QAbstractTableModel):
         self._index = {id(r.entry): i for i, r in enumerate(self.rows)}
         self.endResetModel()
 
+    def remove_rows(self, rows: list[Row]) -> None:
+        """Take rows off the list; the others keep their ticks and results."""
+        gone = {id(r) for r in rows}
+        self.beginResetModel()
+        self.rows = [r for r in self.rows if id(r) not in gone]
+        self._index = {id(r.entry): i for i, r in enumerate(self.rows)}
+        self.endResetModel()
+
     def add_entries(self, entries: list[FileEntry], settings: Settings) -> None:
         known = set(self._index)
         new = [e for e in entries if id(e) not in known]
@@ -368,10 +376,19 @@ def _explorer_select(paths: list[str]) -> bool:
         shell32.ILFindLastID.argtypes = [ctypes.c_void_p]
         ole32.CoInitializeEx(None, 2)
 
-        def pidl(path: str) -> ctypes.c_void_p | None:
+        def parse(path: str) -> ctypes.c_void_p | None:
             out = ctypes.c_void_p()
             hr = shell32.SHParseDisplayName(ctypes.c_wchar_p(path), None, ctypes.byref(out), 0, None)
             return out if hr == 0 and out.value else None
+
+        def pidl(path: str) -> ctypes.c_void_p | None:
+            found = parse(path)
+            if found is None and len(path) >= 248:     # past the shell's limit: its short (8.3) name may fit
+                buf = ctypes.create_unicode_buffer(1024)
+                n = ctypes.windll.kernel32.GetShortPathNameW("\\\\?\\" + path, buf, 1024)  # type: ignore[attr-defined]
+                if 0 < n < 1024:
+                    found = parse(buf.value.removeprefix("\\\\?\\"))
+            return found
 
         groups: dict[str, list[str]] = {}
         for p in paths:
@@ -387,7 +404,8 @@ def _explorer_select(paths: list[str]) -> bool:
                     arr = (ctypes.c_void_p * len(children))(*[shell32.ILFindLastID(c) for c in children])
                     opened |= shell32.SHOpenFolderAndSelectItems(fp, wintypes.UINT(len(children)), arr, 0) == 0
                 else:   # Windows can't name the file itself (a path past 260 characters): its folder at least
-                    opened |= shell32.SHOpenFolderAndSelectItems(fp, wintypes.UINT(0), None, 0) == 0
+                    _open_folder(folder)
+                    opened = True
             finally:
                 for c in children:
                     ole32.CoTaskMemFree(c)
