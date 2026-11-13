@@ -918,7 +918,7 @@ class MainWindow(QMainWindow):
             return
         sec.folders += [p for p in pending if p not in sec.folders]
         self._app_folder_queue = []
-        sec.qs.setValue("cleanup/appcompress/folders", [str(p) for p in sec.folders])
+        sec.save_folders()
         sec._show_folders()
         sec.summary.setText("Folders added from Explorer. Choose an algorithm, then Scan to review before compressing.")
 

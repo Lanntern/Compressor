@@ -3,6 +3,16 @@
 Wick uses Windows WOF compression through the system's `compact.exe`. Files keep the same contents and
 paths. Windows expands their data when read. This requires NTFS; it is separate from video/image conversion.
 
+Manage Folders shows full scan-source paths. Steam/Epic/GOG libraries expand into individual games during
+scanning, rather than listing every game in the scope label. Explicitly selected app/game folders stay
+individual selections. Removing all sources is saved; Reset returns to detected libraries.
+
+The algorithm menu shows names, with the selected algorithm's explanation below it. Skip file types opens
+a checkbox list and accepts custom extensions. Changing either setting marks old savings estimates for
+a rescan. The table separates current disk size, historical before size, estimated saving, estimate source,
+algorithm, status and notes. The historical column appears once a baseline exists. File length stays in
+the current-size tooltip; it often equals disk usage before compression and need not occupy another column.
+
 | Algorithm | Starting point |
 |---|---|
 | XPRESS4K | Fast reads, usually less space saved; loading-sensitive games. |

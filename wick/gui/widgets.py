@@ -350,17 +350,21 @@ def page_top() -> int:
 class Page(QWidget):
     """A page with a large title, an optional status line, a right-aligned action area and a body."""
 
-    def __init__(self, title: str, subtitle: str = "", parent=None, scrolls: bool = False):
+    def __init__(self, title: str, subtitle: str = "", parent=None, scrolls: bool = False, edge_to_edge: bool = False):
         """``scrolls``: the body is a scroll area that runs to the window's bottom edge (content scrolls out
-        of view there instead of being cut off in mid-air above it)."""
+        of view there instead of being cut off in mid-air above it). ``edge_to_edge`` keeps the header inset
+        while the body reaches the page edges; put the content padding inside that body."""
         super().__init__(parent)
         self.setObjectName("page")
         self.setAttribute(Qt.WA_StyledBackground, True)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(Space.XXL, page_top(), Space.XXL, 0 if scrolls else Space.XL)
+        side = 0 if edge_to_edge else Space.XXL
+        outer.setContentsMargins(side, page_top(), side, 0 if scrolls else Space.XL)
         outer.setSpacing(Space.L)
         head = QHBoxLayout()
         head.setSpacing(Space.S)
+        if edge_to_edge:
+            head.setContentsMargins(Space.XXL, 0, Space.XXL, 0)
         self.title = text(title, Type.TITLE1, bold=True, name="pageTitle")
         self.title.setAccessibleName(title)
         head.addWidget(self.title, 1, Qt.AlignVCenter)
@@ -373,6 +377,8 @@ class Page(QWidget):
         self.subtitle.setFont(ui_font(Type.BODY))
         self.subtitle.setTextFormat(Qt.RichText)
         self.subtitle.setWordWrap(True)
+        if edge_to_edge:
+            self.subtitle.setContentsMargins(Space.XXL, 0, Space.XXL, 0)
         self.subtitle.setText(subtitle)
         outer.addWidget(self.subtitle)
         self.body = QVBoxLayout()
@@ -975,3 +981,4 @@ class SizeInput(QWidget):
         super().setToolTip(tip)
         self.number.setToolTip(tip)
         self.unit.setToolTip(tip)
+

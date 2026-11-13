@@ -154,28 +154,19 @@ def _days_option(key: str, default: int, label: str, tip: str):
 
 
 def _appcompress_options(sec: ToolSection):
-    from PySide6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QLineEdit, QVBoxLayout, QWidget
+    from PySide6.QtWidgets import QCheckBox, QDialog, QDialogButtonBox, QVBoxLayout, QWidget
     from .dialogs import inform
     from .style import Type
     from .widgets import hbox, text
     import json
 
-    algorithm = QComboBox()
+    from .app_controls import FileTypePicker, algorithm_picker
+
+    group, algorithm = algorithm_picker(sec.qs.value('appcompress/algorithm', appcompress.DEFAULT_ALGORITHM, str))
     algorithm.setAccessibleName('App and game compression algorithm')
-    algorithm.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
-    algorithm.setMinimumContentsLength(18)
-    algorithm.setMaximumWidth(340)
-    for key, (name, reason, _ratio) in appcompress.ALGORITHMS.items():
-        algorithm.addItem(f'{name} — {reason}', key)
-    saved = sec.qs.value('appcompress/algorithm', appcompress.DEFAULT_ALGORITHM, str)
-    algorithm.setCurrentIndex(max(0, algorithm.findData(saved)))
     algorithm.currentIndexChanged.connect(lambda: sec.qs.setValue('appcompress/algorithm', algorithm.currentData()))
-    skip = QLineEdit(str(sec.qs.value('appcompress/skip', appcompress.DEFAULT_SKIP, str)))
-    skip.setAccessibleName('File extensions to skip during app compression')
-    skip.setMaximumWidth(340)
-    skip.setToolTip('Comma-separated extensions. Already-compressed media and archives often save little. '
-                    'Exclusions apply to compression; Undo can decompress every file.')
-    skip.editingFinished.connect(lambda: sec.qs.setValue('appcompress/skip', skip.text()))
+    skip = FileTypePicker(str(sec.qs.value('appcompress/skip', appcompress.DEFAULT_SKIP, str)))
+    skip.changed.connect(lambda: sec.qs.setValue('appcompress/skip', ','.join(skip.values())))
     explanation = ('Updates replace some compressed files with new, uncompressed copies. While Wick is open, '
                    'it watches for file changes and also checks every 15 minutes, compressing only new, uncompressed files, '
                    'using the saved algorithm and exclusions. Running games, DirectStorage warnings and '
@@ -229,13 +220,27 @@ def _appcompress_options(sec: ToolSection):
     def options(path):
         own = preferences().get(os.path.normcase(os.path.abspath(path)), {})
         return {'algorithm': own.get('algorithm', algorithm.currentData()),
-                'skip_extensions': sorted(appcompress.exclusions(own.get('skip_extensions', skip.text())))}
+                'skip_extensions': sorted(appcompress.exclusions(own.get('skip_extensions', skip.values())))}
 
     def snapshot():
-        return {'algorithm_name': algorithm.currentData(), 'skip_extensions': skip.text(), 'per_folder': preferences(),
+        return {'algorithm_name': algorithm.currentData(), 'skip_extensions': skip.values(), 'per_folder': preferences(),
                 'sample': samples.isChecked()}
 
     sec.app_options, sec.app_snapshot = options, snapshot
+
+    def refresh_options():
+        if sec.result is None:
+            return
+        sec._remember_checks()
+        for item in sec.result.items:
+            selected = options(item.path)
+            if any(item.extra.get(key) != value for key, value in selected.items()):
+                item.extra.update(selected, estimate_pending=True)
+                item.size = 0
+        sec._fill(sec.result)
+
+    algorithm.currentIndexChanged.connect(refresh_options)
+    skip.changed.connect(refresh_options)
     own_button = button('Folder Settings…', '', None, 'Choose algorithm and exclusions for one checked folder')
 
     def edit():
@@ -248,15 +253,12 @@ def _appcompress_options(sec: ToolSection):
         dialog = QDialog(sec)
         dialog.setWindowTitle(f'Settings for {candidate.title}')
         layout = QVBoxLayout(dialog)
-        combo = QComboBox()
+        own_group, combo = algorithm_picker(current['algorithm'])
         combo.setAccessibleName('Folder compression algorithm')
-        for key, (name, reason, _ratio) in appcompress.ALGORITHMS.items():
-            combo.addItem(f'{name} — {reason}', key)
-        combo.setCurrentIndex(max(0, combo.findData(current['algorithm'])))
-        fields = QLineEdit(','.join(current['skip_extensions']))
+        fields = FileTypePicker(current['skip_extensions'])
         fields.setAccessibleName('Folder file types to skip')
         layout.addWidget(text('Saved for this folder, including compression after updates.', Type.BODY, wrap=True))
-        layout.addWidget(combo)
+        layout.addWidget(own_group)
         layout.addWidget(fields)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept)
@@ -265,9 +267,9 @@ def _appcompress_options(sec: ToolSection):
         if dialog.exec() == QDialog.Accepted:
             stored = preferences()
             stored[os.path.normcase(os.path.abspath(candidate.path))] = {
-                'algorithm': combo.currentData(), 'skip_extensions': sorted(appcompress.exclusions(fields.text()))}
+                'algorithm': combo.currentData(), 'skip_extensions': fields.values()}
             sec.qs.setValue('appcompress/folder_options', json.dumps(stored))
-            candidate.extra.update(options(candidate.path))
+            refresh_options()
 
     own_button.clicked.connect(edit)
     community = button('Community Results…', '', None, 'Search optional public game compression estimates')
@@ -281,7 +283,7 @@ def _appcompress_options(sec: ToolSection):
         sec._game_results.raise_()
 
     community.clicked.connect(show_results)
-    return [('Algorithm', algorithm), ('Skip file types', skip), ('', own_button), ('', community), ('', samples),
+    return [('Algorithm', group), ('Skip file types', skip), ('', own_button), ('', community), ('', samples),
             ('', watch), ('', idle), ('', tray), ('', startup)]
 
 
@@ -559,13 +561,13 @@ def tools() -> list[Tool]:
              available=lambda: "" if winclean.supported() else "Available on Windows only."),
         Tool("appcompress", "Compress Apps",
              "Compress games and apps transparently on NTFS. They stay usable in place; Windows decompresses files "
-             "when read. Choose speed versus space below. Performance and savings vary by game and hardware.",
-             appcompress.default_folders,
-             lambda s, p, c: appcompress.find_compressible(s.folders, p, c, **s._app_scan_options),
+             "when read.",
+             appcompress.default_sources,
+             lambda s, p, c: appcompress.find_compressible(appcompress.expand_sources(s.folders), p, c, **s._app_scan_options),
              [(actions.COMPACT, "Compress Folders", "primary"), (actions.DECOMPACT, "Decompress Folders", "secondary")],
              note="DirectStorage DLL detection is a warning heuristic, not proof of a performance impact. "
-                  "CPU-limited or streaming games may load slower. Benchmark before/after and use Undo in History. "
-                  "Before/current sizes are local measurements; estimates are not guaranteed.",
+                  "CPU-limited or streaming games may load slower. Benchmark before/after. "
+                  "Undo is available in History.",
              options=_appcompress_options,
              available=lambda: "" if appcompress.supported() else "Available on Windows (NTFS drives) only."),
         Tool("takeout", "Google Takeout",

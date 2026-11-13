@@ -658,6 +658,7 @@ QScrollBar:horizontal {{ background: transparent; border: none; height: {S.M}px;
 QScrollBar::handle:horizontal {{ background: {t.control_border}; border: none; border-radius: {S.XS - 1}px; min-width: {S.XXL}px; margin: {S.XXS}px 0; }}
 QScrollBar::handle:horizontal:hover, QScrollBar::handle:horizontal:pressed {{ background: {t.text3}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+QScrollBar#edgeScrollBar:vertical {{ margin: {R.CARD}px 0 {R.CARD}px 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
 /* ---- segmented control (QTabBar#segmented) */

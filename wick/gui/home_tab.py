@@ -77,7 +77,7 @@ class HomeTab(Page):
         self.qs = window.qsettings
         self.worker: _Analyze | None = None
         saved = self.qs.value("home/folders", None)
-        self.roots = [Path(p) for p in saved] if saved else default_roots()
+        self.roots = [Path(p) for p in saved] if saved is not None else default_roots()
 
         self.analyze_btn = button("Scan", "primary", "refresh", "Look through your folders for files that could be smaller",
                                   "Ctrl+R")
@@ -87,8 +87,8 @@ class HomeTab(Page):
         # folders
         fcard = Card(padding=Space.M)
         self.folder_label = ElidedLabel("", Type.BODY, secondary=True, mode=Qt.ElideRight)      # one line
-        add = button("Add Folder…", "", "folder", "Include another folder")
-        add.clicked.connect(self._add)
+        add = button("Manage Folders…", "", "folder", "View, add or remove scanned folders")
+        add.clicked.connect(self._manage_folders)
         reset = button("Reset", "", None, "Back to your whole user folder")
         reset.clicked.connect(self._reset)
         self.progress = ProgressBar()
@@ -260,10 +260,20 @@ class HomeTab(Page):
     def _show_folders(self) -> None:
         if hasattr(self, "space_card"):
             self._show_drive()
-        home = Path.home()
-        self.folder_label.setText(", ".join("Your user folder" if p == home else (p.name or str(p))
-                                            for p in self.roots) or "No folders")
+        from .folders import summary
+
+        self.folder_label.setText(summary(self.roots))
         self.folder_label.setToolTip("\n".join(str(p) for p in self.roots))
+
+    def _manage_folders(self) -> None:
+        from .folders import FolderManager
+        from PySide6.QtWidgets import QDialog
+
+        dialog = FolderManager(self, self.roots, default_roots, self.qs, read_only=self.busy())
+        if dialog.exec() == QDialog.Accepted and not self.busy():
+            self.roots = dialog.paths()
+            self.qs.setValue("home/folders", [str(p) for p in self.roots])
+            self._show_folders()
 
     def _add(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Include a folder", str(Path.home()))
@@ -498,3 +508,4 @@ class HomeTab(Page):
         if e is None or not e.path.exists():
             return None
         return e.path, e.kind, e.path.name, f"{KIND_LABEL.get(e.kind, e.kind)} · {human(e.size)}"
+
