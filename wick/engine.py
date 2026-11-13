@@ -267,8 +267,9 @@ def process_file(
         too_small = saved_pct < s.min_savings_pct or (st.st_size - new_size) < s.min_savings_kb * 1024
         if s.fit_under_kb and st.st_size > s.fit_under_kb * 1024 >= new_size:
             too_small = False             # made to fit a size limit: that's the point, however small the saving
-        # (Saved As a file the person chose: kept whatever its size; they asked for this result there.)
-        if plan.dest is None and (new_size >= st.st_size or (s.require_savings and too_small)):
+        # Video Save As also honors the savings rule; opting out permits an explicit larger export.
+        if (plan.dest is None or (entry.kind == VIDEO and s.require_savings)) and \
+                (new_size >= st.st_size or (s.require_savings and too_small)):
             remove_quietly(tmp)
             need = f"{s.min_savings_pct:g}%" + (f" and {human(s.min_savings_kb * 1024)}" if s.min_savings_kb else "")
             return FileResult(entry, SKIPPED, f"Would only save {max(saved_pct, 0):.1f}% "
@@ -341,7 +342,8 @@ def process_convert(entry: FileEntry, plan: Plan, s: Settings, writer, cancel=No
                 tmp = convert.turn_video(entry.path, opts, cancel)
             elif entry.kind == VIDEO:
                 assert entry.video is not None
-                vs = dataclasses.replace(s, video_max_height=opts.video_height, video_max_fps=opts.video_fps)
+                vs = dataclasses.replace(s, video_max_height=opts.video_height, video_max_fps=opts.video_fps,
+                                         require_savings=opts.only_if_smaller)
                 tmp = convert.convert_video(entry.path, entry.video, plan.route, vs, on_progress, cancel)
                 if opts.turn or opts.flip:
                     encoded = tmp
@@ -458,6 +460,7 @@ def run_job(
         if cancel.is_set():
             r = FileResult(entry, CANCELLED, "Cancelled")
         else:
+            log.info("Starting %s: %s", tool or "compression", entry.path)
             events.file_started(entry)
             with steps.reporting(functools.partial(events.file_step, entry)):
                 r = processor(entry, plan, s, writer, cancel, functools.partial(events.file_progress, entry))
@@ -467,6 +470,8 @@ def run_job(
             results.append(r)
         if r.status == FAILED:
             log.warning("%s: %s", entry.path, r.message)
+        else:
+            log.info("%s: %s (%s)", entry.path, r.status, r.message)
         events.file_finished(r)
 
     images = [(e, p) for e, p in items if e.kind != VIDEO and p.convert]
@@ -517,6 +522,8 @@ def preview_file(entry: FileEntry, plan: Plan, s: Settings) -> Path:
 def undo_record(run_id: str, rec: journal.FileRecord) -> tuple[bool, str]:
     if rec.undone:
         return True, "Already undone"
+    if rec.mode == "decompact":
+        return False, "Use Compress Apps to choose an algorithm and compress this folder again"
     orig, out = Path(rec.original), Path(rec.output)
 
     if rec.mode in ("hardlink", "compact"):
@@ -658,6 +665,8 @@ def _remove_made_folder(folder: Path) -> str:
 
 def cannot_undo(rec: journal.FileRecord, bin_index: dict) -> str:
     """Why ``rec`` can no longer be undone ("" if it can), given ``trash_restore.index(...)`` of its bin."""
+    if rec.mode == "decompact":
+        return "Use Compress Apps to compress this folder again"
     if rec.undone or rec.mode not in ("replace", "removed", "deleted"):
         return ""
     if rec.mode != "deleted" and trash_restore.in_index(bin_index, rec.original, rec.trashed_at):
@@ -709,3 +718,4 @@ def undo_run(run_id: str, progress: Callable[[journal.FileRecord, bool, str], No
 
 __all__ = ["run_job", "process_file", "undo_run", "undo_record", "preview_file", "output_path",
            "FileResult", "JobEvents", "DONE", "SKIPPED", "FAILED", "CANCELLED", "JPEG"]
+

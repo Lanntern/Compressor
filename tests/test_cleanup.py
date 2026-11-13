@@ -743,8 +743,6 @@ def test_cloud_only_files_are_never_opened(tmp_path, monkeypatch):
     for name, extra in (("cloud.jpg", 1), ("here.jpg", 0)):          # PNGs called .jpg, 3 MB; told apart by size
         (tmp_path / name).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * (3_000_000 + extra))
     is_cloud = lambda st: st.st_size == 3_000_009    # noqa: E731  (Windows listings give no inode to go by)
-    monkeypatch.setattr(extensions, "cloud_only", is_cloud)
-    monkeypatch.setattr(largefiles, "cloud_only", is_cloud)
     monkeypatch.setattr("wick.cleanup.common.cloud_only", is_cloud)
     opened: list[str] = []
     real_sniff = formats.sniff
@@ -900,3 +898,4 @@ def test_block_clone_on_refs():
     with open(b, "r+b") as f:
         f.write(b"changed")
     assert a.read_bytes() == data                          # independent: unlike a hard link
+

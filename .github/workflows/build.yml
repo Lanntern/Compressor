@@ -35,6 +35,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PYTHONUNBUFFERED: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
 jobs:
   lint:
     runs-on: ubuntu-24.04
@@ -45,11 +49,20 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            .github/requirements-lint.txt
       - name: Install (exact versions from requirements.txt, checksums enforced)
         run: |
           pip install --require-hashes -r requirements.txt
-          pip install ruff==0.16.9 mypy==2.3.1
+          pip install -r .github/requirements-lint.txt
+      - name: Restore incremental type-check cache
+        uses: actions/cache@v6
+        with:
+          path: .mypy_cache
+          key: mypy-${{ runner.os }}-py312-${{ hashFiles('.github/requirements-lint.txt', 'requirements.txt', 'pyproject.toml') }}-${{ github.sha }}
+          restore-keys: |
+            mypy-${{ runner.os }}-py312-${{ hashFiles('.github/requirements-lint.txt', 'requirements.txt', 'pyproject.toml') }}-
       - name: Lint and type check (settings in pyproject.toml)
         run: |
           ruff check .
@@ -64,7 +77,9 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            .github/requirements-test.txt
       # ffmpeg comes from a pinned download (fetch_tools.py --ffmpeg), not Ubuntu's mirrors: when those stalled for
       # hours, no pull request could merge. Only what the runner lacks is taken from Ubuntu, and not getting it
       # doesn't stop the job (gifsicle's tests are then skipped; missing Qt libraries fail the GUI tests plainly).
@@ -113,14 +128,39 @@ jobs:
       - name: Download ffmpeg 9.0, libjxl 0.11 (cjxl, djxl, cjpegli) and Pandoc (skipped when cached)
         run: python scripts/fetch_tools.py --ffmpeg --libjxl --pandoc
       - name: Install (exact versions from requirements.txt, checksums enforced)
+        id: dependencies
         run: |
           pip install --require-hashes -r requirements.txt
           pip install --no-deps .
-          pip install pytest
-      - name: Test
+          pip install -r .github/requirements-test.txt
+      # Keep Qt's main-window/layout tests out of the media worker process.
+      - name: Test core and integrations
+        timeout-minutes: 15
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python -m pytest --durations=25
+        run: >-
+          python -u -m pytest -v -ra --durations=25
+          --timeout=300 --timeout-method=thread -o faulthandler_timeout=300 -o faulthandler_exit_on_timeout=True
+          --junitxml=test-results/core.xml
+          --ignore=tests/test_gui.py --ignore=tests/test_layout.py --ignore=tests/test_style.py
+      - name: Test GUI and layouts
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        timeout-minutes: 10
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: >-
+          python -u -m pytest -v -ra --durations=25
+          --timeout=300 --timeout-method=thread -o faulthandler_timeout=300 -o faulthandler_exit_on_timeout=True
+          --junitxml=test-results/gui.xml
+          tests/test_gui.py tests/test_layout.py tests/test_style.py
+      - name: Keep test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-linux
+          path: test-results/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
 
   windows:
     runs-on: windows-latest
@@ -131,34 +171,37 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements*.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+            .github/requirements-test.txt
       - uses: actions/cache@v6
         with:
           path: tools
           key: tools-windows-${{ hashFiles('scripts/fetch_tools.py') }}
+      # Index in the background while pip installs, instead of waiting until after installation to start it.
+      - name: Install and start Everything (voidtools)
+        id: everything_setup
+        timeout-minutes: 3
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          choco install everything -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "Everything installation failed" }
+          $exe = Join-Path $env:ProgramFiles "Everything\Everything.exe"
+          Start-Process $exe -WindowStyle Hidden -ArgumentList "-startup"
       - name: Download encoders (ffmpeg, libjxl, gifsicle), checked against their recorded checksums
         run: |
           pip install --require-hashes -r requirements-build.txt
           python scripts/fetch_tools.py
       - name: Install (exact versions from requirements.txt, checksums enforced)
+        id: dependencies
         run: |
           pip install --require-hashes -r requirements.txt
           pip install --no-deps .
-          pip install pytest
-      - name: Start Everything (voidtools), to test asking it for file lists
-        id: everything
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          choco install everything -y --no-progress
-          $exe = Join-Path $env:ProgramFiles "Everything\Everything.exe"
-          Start-Process $exe -ArgumentList "-startup"
-          # A fresh install indexes every drive first, which on a busy runner has taken over two minutes. Wait for
-          # the index here (up to 5 minutes): when it isn't ready, this optional step fails and the test that asks
-          # Everything is skipped (WICK_REQUIRE_EVERYTHING=0), instead of failing as if Wick were broken.
-          python -c "import sys, time; from wick import everything; ok = any(everything.available() or time.sleep(2) for _ in range(150)); print('Everything index loaded' if ok else 'Everything index not loaded after 5 minutes'); sys.exit(0 if ok else 1)"
-          if ($LASTEXITCODE -ne 0) { throw "Everything didn't load its index in time" }
+          pip install -r .github/requirements-test.txt
       - name: Make a small ReFS drive, to test block cloning
+        timeout-minutes: 3
         continue-on-error: true
         shell: pwsh
         run: |
@@ -171,11 +214,43 @@ jobs:
           diskpart /s $script
           if (-not (Test-Path R:\)) { throw "No ReFS drive" }
           "WICK_REFS_DIR=R:\" >> $env:GITHUB_ENV
-      - name: Test (uses the real Recycle Bin)
+      - name: Wait for Everything's index
+        id: everything
+        if: steps.everything_setup.outcome == 'success'
+        timeout-minutes: 6
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          # Optional integration: report an unavailable index as a skip, while keeping the other tests.
+          python -c "import sys, time; from wick import everything; ok = any(everything.available() or time.sleep(2) for _ in range(150)); print('Everything index loaded' if ok else 'Everything index not loaded after 5 minutes'); sys.exit(0 if ok else 1)"
+          if ($LASTEXITCODE -ne 0) { throw "Everything didn't load its index in time" }
+      - name: Test core and integrations (uses the real Recycle Bin)
+        timeout-minutes: 15
+        env:
+          WICK_REQUIRE_EVERYTHING: ${{ steps.everything.outcome == 'success' && '1' || '0' }}
+        run: >-
+          python -u -m pytest -v -ra --durations=25
+          --timeout=300 --timeout-method=thread -o faulthandler_timeout=300 -o faulthandler_exit_on_timeout=True
+          --junitxml=test-results/core.xml
+          --ignore=tests/test_gui.py --ignore=tests/test_layout.py --ignore=tests/test_style.py
+      - name: Test GUI and layouts
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        timeout-minutes: 10
         env:
           WICK_SHOTS_DIR: ${{ runner.temp }}/window-shots
-          WICK_REQUIRE_EVERYTHING: ${{ steps.everything.outcome == 'success' && '1' || '0' }}
-        run: python -m pytest --durations=25
+        run: >-
+          python -u -m pytest -v -ra --durations=25
+          --timeout=300 --timeout-method=thread -o faulthandler_timeout=300 -o faulthandler_exit_on_timeout=True
+          --junitxml=test-results/gui.xml
+          tests/test_gui.py tests/test_layout.py tests/test_style.py
+      - name: Keep test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-windows
+          path: test-results/*.xml
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Keep window screenshots (title bar check)
         if: always()
         uses: actions/upload-artifact@v7
@@ -430,3 +505,4 @@ jobs:
             Wick-setup.exe
             Wick.mcpb
             SHA256SUMS.txt
+

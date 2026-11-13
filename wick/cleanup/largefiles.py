@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import os
-import stat
 import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
 
 from ..formats import VIDEO_EXTS, human
-from ..scanner import EXCLUDED_DIR_NAMES
-from .common import _CLOUD_ONLY_ATTRS, Candidate, ScanResult, cloud_only
+from .common import _CLOUD_ONLY_ATTRS, Candidate, ScanResult, publish, walk_files
 
 LIMIT = 500                    # the biggest this many are listed
 
@@ -40,36 +38,17 @@ def _label(path: Path) -> str:
     return (ext.lstrip(".").upper() + " file") if ext else "File"
 
 
-def _walk(roots: list[Path], min_size: int, progress, cancel) -> list[tuple[Path, int, float]]:
+def _walk(roots: list[Path], min_size: int, progress, cancel, kind="all") -> list[tuple[Path, int, float]]:
     found: list[tuple[Path, int, float]] = []
-    stack = list(roots)
-    seen = 0
-    while stack:
-        if cancel is not None and cancel.is_set():
-            break
-        d = stack.pop()
-        try:
-            entries = list(os.scandir(d))
-        except OSError:
-            continue
-        seen += 1
-        if progress and seen % 200 == 0:
-            progress(f"Looking in {d}", seen, 0)
-        for e in entries:
-            try:
-                if e.is_symlink():
-                    continue
-                if e.is_dir(follow_symlinks=False):
-                    st = e.stat(follow_symlinks=False)
-                    hidden = e.name.startswith(".") or bool(getattr(st, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_HIDDEN)
-                    if not hidden and e.name.lower() not in EXCLUDED_DIR_NAMES:
-                        stack.append(Path(e.path))
-                elif e.is_file(follow_symlinks=False):
-                    st = e.stat(follow_symlinks=False)
-                    if st.st_size >= min_size and not cloud_only(st):     # (cloud-only: not on this disk)
-                        found.append((Path(e.path), st.st_size, st.st_mtime))
-            except OSError:
-                continue
+    shown = 0
+    for i, (path, st) in enumerate(walk_files(roots, skip_program_folders=False, cancel=cancel), 1):
+        if progress and i % 200 == 0:
+            progress(f"Looking in {path.parent}", i, 0)
+        if st.st_size >= min_size:
+            found.append((path, st.st_size, st.st_mtime))
+            if shown < LIMIT and (kind == "all" or kind_of(path) == kind):
+                publish("large", [Candidate(path, st.st_size, detail=_label(path), selected=False)])
+                shown += 1
     return found
 
 
@@ -102,7 +81,7 @@ def find_large_files(roots: list[Path], min_mb: float, kind: str = "all",
         except Exception:  # noqa: BLE001 - Everything's answer is a bonus: any problem, walk instead
             found = None
     if found is None:
-        found = _walk(roots, min_size, progress, cancel)
+        found = _walk(roots, min_size, progress, cancel, kind)
     if kind != "all":
         found = [f for f in found if kind_of(f[0]) == kind]
     found.sort(key=lambda f: f[1], reverse=True)
@@ -119,3 +98,4 @@ def find_large_files(roots: list[Path], min_mb: float, kind: str = "all",
 
 
 __all__ = ["find_large_files", "KINDS", "kind_of", "LIMIT"]
+

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
@@ -29,6 +30,10 @@ from .widgets import (PROGRESS_ROLE, STATUS_ROLE, Card, DropZone, FlowLayout, Pa
 from .jobstatus import JobStatus, PauseControl
 from .settings_panel import BIN_NAME
 from .workers import JobThread, ScanThread
+
+if TYPE_CHECKING:
+    from .metadata_scan import MetadataScan
+
 
 ROLE_ROW = Qt.UserRole + 30
 ROLE_OUT = Qt.UserRole + 31   # result path once done
@@ -59,7 +64,8 @@ class FileJobPage(Page):
         self.paths: list[Path] = []
         self.entries: list[FileEntry] = []
         self.rows: dict[int, QTreeWidgetItem] = {}
-        self.scan_thread: ScanThread | None = None
+        self._file_steps: dict[int, str] = {}
+        self.scan_thread: ScanThread | MetadataScan | None = None
         self.job_thread: JobThread | None = None
         self._rescan = False
 
@@ -114,10 +120,10 @@ class FileJobPage(Page):
         self.tree.setColumnWidth(0, 260)
         for i in range(1, len(self.COLUMNS) - 1):
             self.tree.setColumnWidth(i, 150)
-        self.tree.itemChanged.connect(lambda *_: self._update())
+        self.tree.itemChanged.connect(self._item_changed)
         make_sortable(self.tree)
         self.tree.sortByColumn(-1, Qt.AscendingOrder)
-        add_header_checkbox(self.tree, 0, self._update)
+        add_header_checkbox(self.tree, 0, self._item_changed)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._menu)
         keyboard_list(self.tree, self._menu)
@@ -243,9 +249,12 @@ class FileJobPage(Page):
                 unticked.add(id(e))
         self.tree.clear()
         self.rows = {}
+        self._append_rows(self.entries, unticked)
+
+    def _append_rows(self, entries, unticked=()) -> None:
         t = tokens()
         size_cols = [c for c, title in enumerate(self.COLUMNS) if title == "Size"]
-        for e in self.entries:
+        for e in entries:
             p = self.plan(e)
             vals = self.row_values(e, p)
             created = created_time(e.path) if not self.tree.isColumnHidden(self.C_CREATED) else None
@@ -308,16 +317,22 @@ class FileJobPage(Page):
                 out.append((e, p))
         return out
 
+    def _item_changed(self, *_):
+        self._update()
+
+    def selection_count(self) -> int:
+        return len(self.selected())
+
     def _update(self) -> None:
         self.stack.setCurrentIndex(1 if (self.entries or self.busy()) else 0)
-        n = len(self.selected()) if self.entries else 0
+        n = self.selection_count() if self.entries else 0
         self.run_btn.setEnabled(n > 0 and not self.busy())
         self.run_btn.setText(f"{self.action_label} {n} File{'s' if n != 1 else ''}" if n else self.action_label)
         self.clear_btn.setEnabled(bool(self.entries) and not self.busy())
         self.update_summary()
 
     def update_summary(self) -> None:
-        n = len(self.selected())
+        n = self.selection_count()
         self.summary.setText(f"{len(self.entries)} file{'s' if len(self.entries) != 1 else ''} · <b>{n} selected</b>")
 
     # ---- running
@@ -346,10 +361,12 @@ class FileJobPage(Page):
         self.pauser.attach(self.job_thread)
 
     def _started_one(self, e) -> None:
+        self._file_steps[id(e)] = "Starting"
         self._set_status(e, "running", "Working…")
         self.job_status.file_started(e)
 
     def _step(self, e, message: str) -> None:
+        self._file_steps[id(e)] = message
         self._set_status(e, "running", f"{message}…")
         self.job_status.file_step(e, message)
 
@@ -363,10 +380,12 @@ class FileJobPage(Page):
         it.setToolTip(self.STATUS_COL, msg)
 
     def _progress(self, e, f: float) -> None:
-        self._set_status(e, "running", f"Working… {f * 100:.0f}%", f)
+        stage = self._file_steps.get(id(e), "Working")
+        self._set_status(e, "running", f"{stage} · {f * 100:.0f}%", f)
         self.job_status.file_progress(e, f)
 
     def _done_one(self, r) -> None:
+        self._file_steps.pop(id(r.entry), None)
         kind = {DONE: "done", FAILED: "failed", CANCELLED: "skipped"}.get(r.status, "skipped")
         msg = f"{r.message} (while {r.step[0].lower() + r.step[1:]})" if r.status == FAILED and r.step else r.message
         self._set_status(r.entry, kind, msg)

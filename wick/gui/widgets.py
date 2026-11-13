@@ -350,17 +350,21 @@ def page_top() -> int:
 class Page(QWidget):
     """A page with a large title, an optional status line, a right-aligned action area and a body."""
 
-    def __init__(self, title: str, subtitle: str = "", parent=None, scrolls: bool = False):
+    def __init__(self, title: str, subtitle: str = "", parent=None, scrolls: bool = False, edge_to_edge: bool = False):
         """``scrolls``: the body is a scroll area that runs to the window's bottom edge (content scrolls out
-        of view there instead of being cut off in mid-air above it)."""
+        of view there instead of being cut off in mid-air above it). ``edge_to_edge`` keeps the header inset
+        while the body reaches the page edges; put the content padding inside that body."""
         super().__init__(parent)
         self.setObjectName("page")
         self.setAttribute(Qt.WA_StyledBackground, True)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(Space.XXL, page_top(), Space.XXL, 0 if scrolls else Space.XL)
+        side = 0 if edge_to_edge else Space.XXL
+        outer.setContentsMargins(side, page_top(), side, 0 if scrolls else Space.XL)
         outer.setSpacing(Space.L)
         head = QHBoxLayout()
         head.setSpacing(Space.S)
+        if edge_to_edge:
+            head.setContentsMargins(Space.XXL, 0, Space.XXL, 0)
         self.title = text(title, Type.TITLE1, bold=True, name="pageTitle")
         self.title.setAccessibleName(title)
         head.addWidget(self.title, 1, Qt.AlignVCenter)
@@ -373,6 +377,8 @@ class Page(QWidget):
         self.subtitle.setFont(ui_font(Type.BODY))
         self.subtitle.setTextFormat(Qt.RichText)
         self.subtitle.setWordWrap(True)
+        if edge_to_edge:
+            self.subtitle.setContentsMargins(Space.XXL, 0, Space.XXL, 0)
         self.subtitle.setText(subtitle)
         outer.addWidget(self.subtitle)
         self.body = QVBoxLayout()
@@ -847,6 +853,8 @@ class ProgressBar(QProgressBar):
         self.setFixedHeight(Space.XS + 2)
         self._clock = QElapsedTimer()
         self._clock.start()
+        self._paused_at: int | None = None
+        self._paused_ms = 0
         self._tick = QTimer(self, interval=16, timerType=Qt.PreciseTimer)
         self._tick.timeout.connect(self.update)
 
@@ -870,10 +878,19 @@ class ProgressBar(QProgressBar):
         self._sync_timer()
 
     def _sync_timer(self) -> None:
-        if self._busy() and self.isVisible():
+        if self._busy() and self.isVisible() and self._paused_at is None:
             self._tick.start()
         else:
             self._tick.stop()
+
+    def set_paused(self, paused: bool) -> None:
+        if paused and self._paused_at is None:
+            self._paused_at = self._clock.elapsed()
+        elif not paused and self._paused_at is not None:
+            self._paused_ms += self._clock.elapsed() - self._paused_at
+            self._paused_at = None
+        self._sync_timer()
+        self.update()
 
     def paintEvent(self, _e) -> None:  # noqa: N802
         t = tokens()
@@ -887,7 +904,8 @@ class ProgressBar(QProgressBar):
         p.setClipPath(track)
         if self._busy():
             span = r.width() * 0.3
-            phase = (self._clock.elapsed() % 1400) / 1400            # one pass every 1.4 s
+            elapsed = self._clock.elapsed() if self._paused_at is None else self._paused_at
+            phase = ((elapsed - self._paused_ms) % 1400) / 1400      # one pass every 1.4 s
             x = -span + (r.width() + span) * phase
             fill = QRectF(x, 0, span, r.height())
         else:
@@ -963,3 +981,4 @@ class SizeInput(QWidget):
         super().setToolTip(tip)
         self.number.setToolTip(tip)
         self.unit.setToolTip(tip)
+

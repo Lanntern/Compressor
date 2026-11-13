@@ -41,6 +41,7 @@ class VideoInfo:
     color: dict = field(default_factory=dict)       # primaries / transfer / matrix / range, as ffmpeg names them
     mastering: dict = field(default_factory=dict)   # HDR10 mastering display + content light levels
     crop: tuple[int, int, int, int] | None = None   # (w, h, x, y) of the picture without black bars, when removed
+    video_bit_rate: int = 0    # main picture only; never use the whole-file rate as a picture budget
 
     @property
     def content_fps(self) -> float:
@@ -62,6 +63,7 @@ class VideoInfo:
             "codec": self.codec, "width": self.width, "height": self.height,
             "pix_fmt": self.pix_fmt, "fps": self.fps, "duration": self.duration,
             "bit_rate": self.bit_rate,
+            "video_bit_rate": self.video_bit_rate,
         }
 
 
@@ -183,11 +185,19 @@ def probe_video(path: Path) -> VideoInfo | None:
         fps=_fps(main.get("avg_frame_rate")) or _fps(main.get("r_frame_rate")),
         duration=duration,
         bit_rate=bit_rate,
+        video_bit_rate=_positive_int(main.get("bit_rate")),
         main_video_index=int(main.get("index", 0)),
         streams=streams,
         tags={str(k).lower(): str(v) for k, v in (fmt.get("tags") or {}).items()},
         creation_time=str((fmt.get("tags") or {}).get("creation_time", "")),
     )
+
+
+def _positive_int(value) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (ValueError, TypeError):
+        return 0
 
 
 # One repeated frame per cycle: 60 from 30 (2), 30 from 24 (5), 30 from 25 (6). Minimum stored fps for each.

@@ -31,6 +31,9 @@ class ScanThread(QThread):
             with power.awake():
                 self.result.emit(scan(self.paths, self.settings, self.progress.emit, self.cancel, picked=True))
         except Exception as e:  # noqa: BLE001
+            from ..log import log
+
+            log.exception("File scan failed")
             self.error.emit(str(e))
 
 
@@ -73,6 +76,9 @@ class JobThread(QThread):
                                       processor=self.processor, tool=self.tool, pause=self.pause)
             self.done.emit(results, run_id)
         except Exception as e:  # noqa: BLE001
+            from ..log import log
+
+            log.exception("%s job failed", self.tool or "Compression")
             self.error.emit(str(e))
 
 
@@ -109,4 +115,7 @@ class EncoderProbeThread(QThread):
         try:
             self.result.emit(available_encoders())
         except Exception:  # noqa: BLE001
+            from ..log import log
+
+            log.exception("Encoder detection failed")
             self.result.emit({})

@@ -702,7 +702,7 @@ def test_after_column_says_size_and_change():
     assert _pct(231, 149) == "−35%" and _pct(100, 110) == "+10%"
 
 
-def test_keyboard_basics(win, tmp_path):
+def test_keyboard_basics(win, tmp_path, monkeypatch):
     from PySide6.QtCore import Qt, QTimer
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
@@ -740,12 +740,23 @@ def test_keyboard_basics(win, tmp_path):
     # The context menu opens for the current row from the keyboard.
     opened = []
 
-    def close_menu():
-        m = QApplication.activePopupWidget()
-        if m is not None:
-            opened.append([a.text() for a in m.actions()])
-            m.close()
-    QTimer.singleShot(300, close_menu)
+    from wick.gui import filejob_page
+
+    original_menu = filejob_page.file_menu
+
+    def closing_menu(*args, **kwargs):
+        menu = original_menu(*args, **kwargs)
+
+        def shown():
+            opened.append([a.text() for a in menu.actions()])
+            # Close this exact menu after its nested event loop starts. The active popup can be a
+            # different widget (or None) on headless runners, so a global single-shot can miss it.
+            QTimer.singleShot(0, menu.close)
+
+        menu.aboutToShow.connect(shown)
+        return menu
+
+    monkeypatch.setattr(filejob_page, "file_menu", closing_menu)
     conv.tree._keyboard.menu_for_current()
     assert opened and "Copy Path" in opened[0]
 
@@ -1518,6 +1529,8 @@ def test_convert_from_the_context_menu(win, tmp_path):
         Image.new("RGB", (64, 48), "teal").save(tmp_path / name)
     conv = win.converter
     conv.clear()
+    smaller = conv.smaller.isChecked()
+    conv.smaller.setChecked(False)         # this test deliberately exports tiny PNGs as larger JPEGs
     conv.output.setCurrentIndex(conv.output.findData("suffix"))       # (the page's choice doesn't apply here)
     conv.add_paths([str(tmp_path / "keep.png")])
     assert _wait(lambda: not conv.busy() and conv.tree.topLevelItemCount() == 1, 30)
@@ -1530,6 +1543,7 @@ def test_convert_from_the_context_menu(win, tmp_path):
     labels = [label for label, _ in integration._convert_items("video")]
     assert labels[-1] == "Other Format…" and "GIF" in labels
     conv.output.setCurrentIndex(conv.output.findData("beside"))
+    conv.smaller.setChecked(smaller)
     conv.clear()
 
 
@@ -1816,3 +1830,485 @@ def test_compress_list_remove_and_turn_on(win, tmp_path, no_dialogs):
     assert sorted(r.entry.path.name for r in page.model.rows) == ["p1.png", "p2.png"]
     page.clear()
     assert not page.removed
+
+
+def test_pausing_freezes_loading_bar_and_resuming_restarts_it(win):
+    from PySide6.QtWidgets import QApplication
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from wick.gui.jobstatus import JobStatus
+
+    status = JobStatus()
+    status.start(1, 100)
+    status.file_started(SimpleNamespace(path=Path("pending.mp4"), size=100))
+    status.show()
+    QApplication.processEvents()
+    assert status.bar._tick.isActive()
+    status.set_paused("Paused by you")
+    assert not status.bar._tick.isActive() and status.bar._paused_at is not None
+    status.set_paused("")
+    assert status.bar._tick.isActive() and status.bar._paused_at is None
+    status._tick.stop()
+    status.close()
+    status.deleteLater()
+
+
+def test_progress_keeps_stage_percentage_and_estimates(win, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from wick.gui import jobstatus
+
+    clock = [100.0]
+    monkeypatch.setattr(jobstatus.time, "monotonic", lambda: clock[0])
+    status = jobstatus.JobStatus(parent=win)
+    entry = SimpleNamespace(path=tmp_path / "clip.mp4", size=100)
+    status.start(1, 100)
+    status.file_started(entry)
+    status.file_step(entry, "Encoding AV1")
+    clock[0] = 108
+    status.file_progress(entry, 0.5)
+    assert "Encoding AV1" in status.detail.text() and "50%" in status.detail.text()
+    assert "left in this stage" in status.detail.text()
+    status.file_step(entry, "Checking the result")
+    assert "50%" not in status.detail.text() and status.bar.maximum() == 0
+    clock[0] = 125
+    status._render()
+    assert "no progress update" in status.detail.text()
+    status._tick.stop()
+    status.close()
+    status.deleteLater()
+
+
+@pytest.mark.parametrize("extension", ["gif", "mp4"])
+@pytest.mark.parametrize("action", ["close", "reject"])
+def test_close_busy_preview_never_waits_on_ui_thread(win, tmp_path, monkeypatch, extension, action):
+    import threading
+
+    from wick.formats import ImageInfo, VIDEO
+    from wick.gui.preview import PreviewDialog, PreviewThread
+    from wick.probe import VideoInfo
+    from wick.scanner import FileEntry
+    from wick.settings import Settings
+
+    path = tmp_path / f"preview.{extension}"
+    if extension == "gif":
+        Image.new("RGB", (32, 24), "red").save(path)
+    else:
+        path.write_bytes(b"test video header")
+    entry = FileEntry(path, path.stat().st_size, VIDEO if extension == "mp4" else "gif", 0,
+                      image=ImageInfo(32, 24),
+                      video=VideoInfo("h264", 32, 24, "yuv420p", 24, 2, 1000, 0), picked=True)
+    release, finished = threading.Event(), threading.Event()
+    monkeypatch.setattr(PreviewThread, "run", lambda self: release.wait(2))
+    dialog = PreviewDialog(entry, Settings(video_encoder="cpu"), win)
+    dialog.show()
+    worker = dialog.worker
+    worker.finished.connect(finished.set)
+    try:
+        assert _wait(worker.isRunning, 1)
+        started = time.monotonic()
+        getattr(dialog, action)()
+        assert time.monotonic() - started < 0.3
+        assert not dialog.isVisible() and worker.cancel.is_set()
+    finally:
+        release.set()
+        assert _wait(finished.is_set, 3)
+        dialog.deleteLater()
+
+
+def test_cleanup_results_are_visible_before_scan_finishes(win, tmp_path):
+    import threading
+
+    from wick.cleanup import actions
+    from wick.cleanup.common import Candidate, ScanResult
+    from wick.gui.cleanup_section import Tool, ToolSection
+
+    release = threading.Event()
+
+    def scan(_section, _progress, cancel):
+        result = ScanResult("stream-test")
+        result.items.append(Candidate(tmp_path / "found.txt", 1))
+        while not release.wait(0.05) and not cancel.is_set():
+            pass
+        return result
+
+    tool = Tool("stream-test", "Streaming test", "Test", lambda: [tmp_path], scan,
+                [(actions.TRASH, "Remove", "primary")])
+    section = ToolSection(tool, win.cleanup)
+    section.scan()
+    try:
+        assert _wait(lambda: section.tree.topLevelItemCount() == 1, 2)
+        assert section.busy()
+        assert "so far" in section.summary.text()
+        assert not section.action_buttons[actions.TRASH].isEnabled()
+    finally:
+        release.set()
+        assert _wait(lambda: not section.busy(), 3)
+        section.deleteLater()
+
+
+def test_sidebar_activity_dashboard_handles_unknown_and_paused_progress(win):
+    from wick.activity import Activity
+
+    task = Activity("test", "Test conversion", "Encoding sample")
+    win.sidebar.set_activity([task])
+    assert not win.sidebar.activity_box.isHidden()
+    assert win.sidebar.activity_bar.maximum() == 0
+    assert "Encoding sample" in win.sidebar.activity_btn.accessibleDescription()
+    task.fraction, task.paused = 0.5, True
+    win.sidebar.set_activity([task])
+    assert win.sidebar.activity_bar.value() == 500
+    assert win.sidebar.activity_bar._paused_at is not None
+    win._activity_monitor.show()
+    assert win._activity_monitor.dialog.isVisible()
+    assert win._activity_monitor.table.columnCount() == 5
+    win._activity_monitor.dialog.close()
+    win.sidebar.set_activity([])
+
+
+def test_app_compression_algorithms_and_explorer_folder_route(win, tmp_path):
+    from wick.cleanup import appcompress
+
+    win.receive_paths([str(tmp_path)], open_target="apps")
+    page = win.cleanup
+    section = page.section(page.tabs.currentIndex())
+    assert section.tool.key == "appcompress"
+    assert tmp_path in section.folders
+    assert not section.busy()                # Explorer adds for review; it never compresses automatically
+    assert {section.app_algorithm.itemData(i) for i in range(section.app_algorithm.count())} == set(appcompress.ALGORITHMS)
+
+
+def test_folder_scope_shows_paths_and_edits_are_staged(win, tmp_path):
+    from wick.gui.folders import FolderManager
+
+    original = win.home.roots
+    roots = [tmp_path / "one", tmp_path / "two"]
+    try:
+        win.home.roots = roots
+        win.home._show_folders()
+        assert str(roots[0]) in win.home.folder_label.text()
+        assert str(roots[1]) in win.home.folder_label.toolTip()
+        dialog = FolderManager(win.home, roots, lambda: [], win.qsettings)
+        assert dialog.list.item(0).text() == str(roots[0])
+        dialog.list.setCurrentRow(0)
+        dialog.remove()
+        assert dialog.paths() == [roots[1]]
+        assert win.home.roots == roots       # a cancelled edit must not change the active scope
+        dialog.reject()
+        dialog.deleteLater()
+    finally:
+        win.home.roots = original
+        win.home._show_folders()
+
+
+def test_app_algorithm_names_and_checkbox_file_types(win):
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QLabel
+    from wick.cleanup import appcompress
+    from wick.gui.app_controls import FileTypePicker, algorithm_picker
+
+    group, combo = algorithm_picker("xpress4k")
+    assert [combo.itemText(i) for i in range(combo.count())] == [v[0] for v in appcompress.ALGORITHMS.values()]
+    combo.setCurrentIndex(combo.findData("lzx"))
+    assert any(label.text() == appcompress.ALGORITHMS["lzx"][1] for label in group.findChildren(QLabel))
+    picker = FileTypePicker(".mp4,.custom")
+    assert picker.values() == [".custom", ".mp4"]
+    item = next(picker.types.item(i) for i in range(picker.types.count()) if picker.types.item(i).text() == ".mp4")
+    item.setCheckState(Qt.Unchecked)
+    assert picker.values() == [".custom"]
+    picker.custom.setText("pak")
+    picker.add_custom()
+    assert picker.values() == [".custom", ".pak"]
+    picker.deleteLater()
+    group.deleteLater()
+
+
+def test_app_table_separates_sizes_savings_and_settings(win, tmp_path, monkeypatch, no_dialogs):
+    from wick.cleanup.common import Candidate, ScanResult
+    from wick.gui.filelist import SORT_ROLE
+
+    page = win.cleanup
+    section = page.section(next(i for i, tool in enumerate(page._tools) if tool.key == "appcompress"))
+    candidate = Candidate(tmp_path / "Game", 40, extra={
+        "disk": 60, "logical": 100, "before_first": None, "algorithm": "xpress4k",
+        "state": "Not compressed", "estimate_source": "rough estimate", "skip_extensions": []})
+    section._scanned(ScanResult("appcompress", [candidate]))
+    assert section.tree.columnCount() == 9 and section.tree.isColumnHidden(3)
+    row = section.tree.topLevelItem(0)
+    assert row.data(2, SORT_ROLE) == 60 and row.data(4, SORT_ROLE) == 40
+    assert row.text(5) == "Rough" and row.text(6) == "XPRESS4K"
+    assert row.text(7) == "Not compressed" and row.text(8) == ""
+    candidate.extra["before_first"] = 100
+    section._scanned(ScanResult("appcompress", [candidate]))
+    assert not section.tree.isColumnHidden(3)
+    original = section.app_algorithm.currentIndex()
+    wanted = "xpress8k" if section.app_algorithm.currentData() == "lzx" else "lzx"
+    section.app_algorithm.setCurrentIndex(section.app_algorithm.findData(wanted))
+    assert candidate.extra["algorithm"] == wanted and candidate.extra["estimate_pending"]
+    assert section.tree.topLevelItem(0).text(4) == "–"
+    assert section.tree.topLevelItem(0).text(5) == "Rescan"
+    section.app_algorithm.setCurrentIndex(original)
+    candidate.group = "Games"
+    other = Candidate(tmp_path / "Other", 20, group="Games", extra={"disk": 80, "before_first": None})
+    section._scanned(ScanResult("appcompress", [candidate, other]))
+    group = section.tree.topLevelItem(0)
+    assert group.text(3) == "–"      # do not sum a partial historical baseline
+    assert group.text(4) == "–"      # do not present incomplete estimates as a group total
+
+    from types import SimpleNamespace
+    from wick.cleanup import actions
+
+    # A second compression must replace a previous decompression's status.
+    candidate.extra.update(before_this_run=60, disk_after=40, last_action="Decompressed")
+    with monkeypatch.context() as patch:
+        patch.setattr(section, "worker", SimpleNamespace(action=actions.COMPACT, isRunning=lambda: False))
+        section._applied([SimpleNamespace(item=candidate, ok=True, freed=20, message="Compressed")], None)
+    assert candidate.extra["state"] == "Compressed"
+
+
+def test_app_algorithm_changes_keep_controls_in_place(win):
+    from PySide6.QtWidgets import QCheckBox, QLabel
+    from PySide6.QtTest import QTest
+
+    page = win.cleanup
+    index = next(i for i, tool in enumerate(page._tools) if tool.key == "appcompress")
+    section = page.section(index)
+    old_page, old_size, old_tab = win.pages.currentWidget(), win.size(), page.tabs.currentIndex()
+    old_algorithm = section.app_algorithm.currentIndex()
+    try:
+        win.go_to(page)
+        page.tabs.setCurrentIndex(index)
+        assert not section.tool.note
+        assert not any(box.text() == "Start Wick with Windows" for box in section.findChildren(QCheckBox))
+        for width in (1000, 1500):
+            win.resize(width, 1000)
+            QTest.qWait(150)
+            group = section.app_algorithm.parentWidget()
+            baseline = (group.geometry(), section.app_skip.geometry(), section.scan_btn.geometry(),
+                        section.tree.mapTo(section, section.tree.rect().topLeft()))
+            for choice in range(section.app_algorithm.count()):
+                section.app_algorithm.setCurrentIndex(choice)
+                QTest.qWait(100)
+                assert (group.geometry(), section.app_skip.geometry(), section.scan_btn.geometry(),
+                        section.tree.mapTo(section, section.tree.rect().topLeft())) == baseline
+                reason = group.findChildren(QLabel)[0]
+                assert reason.text() == section.app_algorithm.toolTip()
+    finally:
+        section.app_algorithm.setCurrentIndex(old_algorithm)
+        page.tabs.setCurrentIndex(old_tab)
+        win.resize(old_size)
+        win.go_to(old_page)
+
+
+def test_community_results_fit_columns_and_sort_numerically(win, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    from wick.cleanup import game_results
+    from wick.gui.game_results import GameResultsDialog
+
+    data = {
+        20: {"name": "Game with a long name", "modes": {
+            mode: {"ratio": 0.92, "samples": 131} for mode in game_results.MODES}},
+        3: {"name": "Another game", "modes": {"xpress4k": {"ratio": 0.45, "samples": 1}}},
+        100: {"name": "No samples yet", "modes": {}},
+    }
+    monkeypatch.setattr(game_results, "load", lambda: data)
+    dialog = GameResultsDialog(win)
+    try:
+        dialog.show()
+        dialog.resize(820, 440)
+        QTest.qWait(100)
+        assert dialog.table.verticalHeader().isHidden()
+        dialog.table.sortItems(1, Qt.AscendingOrder)
+        assert [dialog.table.item(i, 1).text() for i in range(3)] == ["3", "20", "100"]
+        assert dialog.table.item(0, 2).text() == "55%"
+        assert dialog.table.item(0, 2).toolTip() == "55% saved (1 sample)"
+        assert dialog.table.item(1, 2).toolTip() == "8% saved (131 samples)"
+        for column in range(2, 6):
+            item = dialog.table.item(1, column)
+            assert dialog.table.fontMetrics().horizontalAdvance(item.text()) < dialog.table.columnWidth(column) - 8
+        assert dialog.table.horizontalHeader().length() <= dialog.table.viewport().width()
+        dialog.table.sortItems(2, Qt.DescendingOrder)
+        assert dialog.table.item(0, 1).text() == "3"
+        dialog.search.setText("Game with")
+        assert dialog.table.rowCount() == 1
+        assert dialog.table.item(0, 1).text() == "20"
+        assert all(dialog.table.item(0, column).text() == "8%" for column in range(2, 6))
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_settings_scrollbar_reaches_edge_and_top_transition_is_passive(win, monkeypatch):
+    from pathlib import Path
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtGui import QColor
+    from wick.gui import scroll_effects
+    from wick.gui.style import Space, tokens
+
+    previous, size = win.pages.currentWidget(), win.size()
+    page = win.app_settings
+    scroll = page.settings_scroll
+    position = scroll.verticalScrollBar().value()
+    try:
+        win.resize(1100, 760)
+        win.go_to(page)
+        assert _wait(lambda: scroll.verticalScrollBar().maximum() > Space.XXL, 3)
+        assert scroll.mapTo(page, QPoint(scroll.width(), 0)).x() == page.width()
+        assert page.title.mapTo(page, QPoint(0, 0)).x() == Space.XXL
+        scroll.verticalScrollBar().setValue(0)
+        assert _wait(scroll.transition.isHidden, 1)
+        scroll.verticalScrollBar().setValue(Space.XXL * 2)
+        assert _wait(lambda: scroll.transition.isVisible() and bool(scroll.transition.levels), 3)
+        edge = scroll.transition
+        assert edge.testAttribute(Qt.WA_TransparentForMouseEvents) and edge.focusPolicy() == Qt.NoFocus
+        image = edge.grab().toImage()
+        assert image.pixelColor(image.width() // 2, 0).rgb() == QColor(tokens().window).rgb()
+        if folder := os.environ.get("WICK_SHOTS_DIR"):
+            Path(folder).mkdir(parents=True, exist_ok=True)
+            page.grab().save(str(Path(folder) / "settings-scroll-transition.png"))
+        with monkeypatch.context() as patch:
+            patch.setattr(scroll_effects.style, "high_contrast_active", lambda: True)
+            scroll.refresh_transition()
+            assert edge.isHidden()
+    finally:
+        scroll.verticalScrollBar().setValue(position)
+        win.resize(size)
+        win.go_to(previous)
+
+
+
+def test_metadata_streams_bounded_batches_without_recounting_the_table(win, monkeypatch):
+    import threading
+    from pathlib import Path
+
+    from PySide6.QtCore import QTimer, Qt
+
+    from wick import metaclean
+    from wick.gui import metadata_scan
+    from wick.scanner import FileEntry, ScanResult
+
+    page = win.metadata
+    win.go_to(page)
+    page.clear()
+    old_filter = page.show_filter.currentIndex()
+    page.show_filter.setCurrentIndex(0)
+    release = threading.Event()
+    beats = []
+    timer = QTimer(page, interval=5)
+    timer.timeout.connect(lambda: beats.append(True))
+    selected_calls = []
+    original_selected = page.selected
+
+    def selected():
+        selected_calls.append(True)
+        return original_selected()
+
+    def fake_scan(paths, settings, progress, cancel, **kwargs):
+        assert kwargs["probe"] is False
+        result = ScanResult(list(paths))
+        for n in range(4096):
+            if n == 128:
+                while not release.wait(0.01) and not cancel.is_set():
+                    pass
+            if cancel.is_set():
+                result.cancelled = True
+                break
+            entry = FileEntry(Path(paths[0]) / f"{n}.png", 100, "png", 0)
+            result.entries.append(entry)
+            kwargs["found"](entry)
+        return result
+
+    monkeypatch.setattr(metadata_scan, "scan", fake_scan)
+    monkeypatch.setattr(metaclean, "summarize", lambda _: metaclean.MetaSummary(camera="Test camera"))
+    monkeypatch.setattr(page, "selected", selected)
+    timer.start()
+    try:
+        page.add_paths(["synthetic-metadata-folder"])
+        assert _wait(lambda: len(page.entries) >= 32, 10)
+        assert page.busy() and page.scan_thread.isRunning()
+        assert page.scan_thread.batches.maxsize == 4
+        assert not page.run_btn.isEnabled()
+        assert page.paths
+        release.set()
+        assert _wait(lambda: not page.busy(), 30)
+        assert len(page.entries) == page.tree.topLevelItemCount() == 4096
+        assert page.selection_count() == page._cameras == 4096
+        assert len(selected_calls) < 10  # table size no longer multiplies work for every arriving row
+        assert len(beats) > 10
+        assert page.run_btn.isEnabled()
+        page.tree.header()._check[2]()  # header select-none uses blocked itemChanged signals
+        assert page.selection_count() == 0
+        page.tree.header()._check[2]()
+        assert page.selection_count() == 4096
+        page.show_filter.setCurrentIndex(page.show_filter.findData("gps"))
+        assert page.selection_count() == 0
+        assert page._header_state() == Qt.Unchecked
+    finally:
+        release.set()
+        timer.stop()
+        page.stop()
+        assert _wait(lambda: not page.busy(), 10)
+        page.clear()
+        page.show_filter.setCurrentIndex(old_filter)
+
+
+def test_metadata_stop_releases_a_producer_waiting_for_ui_capacity(win, monkeypatch):
+    from pathlib import Path
+
+    from wick import metaclean
+    from wick.gui import metadata_scan
+    from wick.scanner import FileEntry, ScanResult
+    from wick.settings import Settings
+
+    def fake_scan(paths, settings, progress, cancel, **kwargs):
+        for n in range(10000):
+            if cancel.is_set():
+                break
+            kwargs["found"](FileEntry(Path(f"{n}.png"), 1, "png", 0))
+        return ScanResult([])
+
+    monkeypatch.setattr(metadata_scan, "scan", fake_scan)
+    monkeypatch.setattr(metaclean, "summarize", lambda _: metaclean.MetaSummary())
+    worker = metadata_scan.MetadataScan([], Settings())
+    worker.start()
+    try:
+        assert _wait(lambda: worker.batches.full(), 5)
+        assert worker.isRunning()
+    finally:
+        worker.cancel.set()
+        assert worker.wait(2000)
+
+
+def test_metadata_stop_cancels_an_active_probe(win, monkeypatch, tmp_path):
+    import sys
+    from pathlib import Path
+
+    from wick import metaclean, tools
+    from wick.gui import metadata_scan
+    from wick.scanner import FileEntry, ScanResult
+    from wick.settings import Settings
+
+    ready = tmp_path / "probe-started"
+    script = "from pathlib import Path;import sys,time;Path(sys.argv[1]).touch();time.sleep(60)"
+
+    def summarize(_path):
+        tools.run([sys.executable, "-c", script, str(ready)], timeout=90)
+        return metaclean.MetaSummary()
+
+    def scan(paths, settings, progress, cancel, **kwargs):
+        kwargs["found"](FileEntry(Path("probe.mp4"), 1, "video", 0))
+        return ScanResult([])
+
+    monkeypatch.setattr(metadata_scan, "scan", scan)
+    monkeypatch.setattr(metaclean, "summarize", summarize)
+    worker = metadata_scan.MetadataScan([], Settings())
+    worker.start()
+    try:
+        assert _wait(ready.exists, 10)
+    finally:
+        worker.cancel.set()
+        assert worker.wait(3000)
+    assert not worker.error

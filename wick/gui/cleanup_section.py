@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import APP_NAME, cfa
-from ..cleanup import actions, duplicates
+from ..cleanup import actions, appcompress, duplicates
 from ..cleanup.common import Candidate, ScanResult, known_folder
 from ..formats import classify, human
 from ..log import log
@@ -68,6 +68,7 @@ def _existing(*names: str) -> list[Path]:
 
 class _Scan(QThread):
     progress = Signal(str, int, int)
+    partial = Signal(str, object)
     done = Signal(object)
     failed = Signal(str)
 
@@ -75,14 +76,45 @@ class _Scan(QThread):
         super().__init__(parent)
         self.fn = fn
         self.cancel = threading.Event()
+        self._pending: dict[str, list] = {}
+        self._seen: set[tuple] = set()
+        self._sent = 0.0
+        self._lock = threading.RLock()
+
+    def collect(self, key, items) -> None:
+        import time
+
+        with self._lock:
+            for item in items:
+                identity = (key, str(item.path), item.group, item.title)
+                if identity not in self._seen:
+                    self._seen.add(identity)
+                    self._pending.setdefault(key, []).append(item)
+            if time.monotonic() - self._sent >= 0.2 or sum(map(len, self._pending.values())) >= 200:
+                self.flush()
+
+    def flush(self) -> None:
+        import time
+
+        with self._lock:
+            for key, items in self._pending.items():
+                if items:
+                    self.partial.emit(key, list(items))
+            self._pending.clear()
+            self._sent = time.monotonic()
 
     def run(self) -> None:
         from .. import power
+        from ..cleanup.common import stream_results
 
         try:
-            with power.awake():
-                self.done.emit(self.fn(self.progress.emit, self.cancel))
+            with power.awake(), stream_results(self.collect):
+                result = self.fn(self.progress.emit, self.cancel)
+                self.flush()
+                self.done.emit(result)
         except Exception as e:  # noqa: BLE001
+            self.flush()
+            log.exception("Cleanup scan failed")
             self.failed.emit(str(e))
 
 
@@ -149,17 +181,27 @@ class ToolSection(QWidget):
 
         # ------------------------------------------------ setup card
         setup = Card()
+        self.setup = setup
         setup.lay.addWidget(text(tool.description, Type.BODY, wrap=True))
         reason = tool.available()
         if tool.default_folders is not None:
-            saved = self.qs.value(f"cleanup/{tool.key}/folders", None)
-            self.folders = [Path(p) for p in saved] if saved else tool.default_folders()
+            self.folder_key = f"cleanup/{tool.key}/{'sources' if tool.key == 'appcompress' else 'folders'}"
+            saved = self.qs.value(self.folder_key, None)
+            if saved is None and tool.key == "appcompress":
+                legacy = self.qs.value("cleanup/appcompress/folders", None)
+                if legacy:
+                    saved = [str(p) for p in appcompress.migrate_sources([Path(p) for p in legacy])]
+            self.folders = [Path(p) for p in saved] if saved is not None else tool.default_folders()
             self.folder_label = ElidedLabel("", Type.FOOTNOTE, secondary=True, mode=Qt.ElideRight)   # one line
-            add = button("Add Folder…", "", "folder", "Add a folder to look in")
-            add.clicked.connect(self._add_folder)
+            add = button("Manage Folders…", "", "folder", "View, add or remove scan sources")
+            add.clicked.connect(self._manage_folders)
             reset = button("Reset", "", None, "Go back to the suggested folders")
             reset.clicked.connect(self._reset_folders)
-            folder_row = hbox(text(tool.folder_label, Type.BODY, bold=True), self.folder_label, add, reset,
+            drives = button("Add Drives…", "", None, "Choose multiple connected drives to scan")
+            drives.clicked.connect(self._add_drives)
+            if os.name != "nt" or tool.key == "appcompress":
+                drives.hide()
+            folder_row = hbox(text(tool.folder_label, Type.BODY, bold=True), self.folder_label, add, drives, reset,
                                      spacing=Space.M)
             folder_row.setStretchFactor(self.folder_label, 1)   # the list takes the room
             setup.lay.addLayout(folder_row)
@@ -220,7 +262,9 @@ class ToolSection(QWidget):
         results.lay.addLayout(summary_row)
         self.tree = QTreeWidget()
         self.tree.setAccessibleName(f"{tool.tab} results")
-        self.tree.setHeaderLabels(["Name", "Location", "Size", "Details"])
+        self.tree.setHeaderLabels(["Name", "Location", "Current size", "Before compression", "Est. saving",
+                                   "Estimate", "Algorithm", "Status", "Notes"] if tool.key == "appcompress" else
+                                  ["Name", "Location", "Size", "Details"])
         self.tree.setFrameShape(QFrame.NoFrame)
         self.tree.setAlternatingRowColors(True)
         self.tree.setUniformRowHeights(True)
@@ -231,7 +275,11 @@ class ToolSection(QWidget):
         h.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.tree.setColumnWidth(C_NAME, 280)
         self.tree.setColumnWidth(C_WHERE, 240)
-        self.tree.setColumnWidth(C_SIZE, 96)
+        self.tree.setColumnWidth(C_SIZE, 120 if tool.key == "appcompress" else 96)
+        if tool.key == "appcompress":
+            for column, width in ((0, 220), (3, 160), (4, 160), (5, 110), (6, 130), (7, 180)):
+                self.tree.setColumnWidth(column, width)
+            self.tree.setColumnHidden(3, True)
         self.tree.itemChanged.connect(self._item_changed)
         self.tree.itemDoubleClicked.connect(self._open_item)
         self.tree.itemExpanded.connect(self._expand)
@@ -322,22 +370,65 @@ class ToolSection(QWidget):
 
     # ---- folders
     def _show_folders(self) -> None:
-        names = ", ".join(p.name or str(p) for p in self.folders) or (
-            "None (optional)" if self.tool.key == "caches" else "No folders chosen")
-        self.folder_label.setText(names)
-        self.folder_label.setToolTip("\n".join(str(p) for p in self.folders))
+        from .folders import summary
+
+        label = appcompress.source_label if self.tool.key == "appcompress" else str
+        self.folder_label.setText(summary(self.folders, label))
+        self.folder_label.setToolTip("\n".join(label(p) for p in self.folders))
+
+    def save_folders(self) -> None:
+        self.qs.setValue(self.folder_key, [str(p) for p in self.folders])
+
+    def _manage_folders(self) -> None:
+        from .folders import FolderManager
+        from PySide6.QtWidgets import QDialog
+
+        is_apps = self.tool.key == "appcompress"
+        dialog = FolderManager(self, self.folders, self.tool.default_folders, self.qs,
+                               label=appcompress.source_label if is_apps else str,
+                               note=("Steam, Epic and GOG library sources expand to individual games during a scan. "
+                                     "Other selected folders are treated as individual apps/games." if is_apps else ""))
+        if dialog.exec() == QDialog.Accepted:
+            self.folders = dialog.paths()
+            self.save_folders()
+            self._show_folders()
 
     def _add_folder(self) -> None:
         d = QFileDialog.getExistingDirectory(self, "Add a folder", str(self.folders[0] if self.folders else Path.home()))
         if d and Path(d) not in self.folders:
             self.folders.append(Path(os.path.normpath(d)))
-            self.qs.setValue(f"cleanup/{self.tool.key}/folders", [str(p) for p in self.folders])
+            self.save_folders()
             self._show_folders()
 
     def _reset_folders(self) -> None:
         self.folders = self.tool.default_folders() if self.tool.default_folders else []
-        self.qs.remove(f"cleanup/{self.tool.key}/folders")
+        self.qs.remove(self.folder_key)
+        if self.tool.key == "appcompress":
+            self.qs.remove("cleanup/appcompress/folders")
         self._show_folders()
+
+    def _add_drives(self) -> None:
+        from ..cleanup.common import available_drives
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Drives to scan")
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(text("Select drives to add. System folders, links and cloud-only files are skipped.",
+                              Type.BODY, wrap=True))
+        choices = []
+        for drive in available_drives():
+            box = QCheckBox(str(drive))
+            layout.addWidget(box)
+            choices.append((drive, box))
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec() == QDialog.Accepted:
+            self.folders += [p for p, box in choices if box.isChecked() and p not in self.folders]
+            self.save_folders()
+            self._show_folders()
 
     # ---- scanning
     def busy(self) -> bool:
@@ -346,12 +437,17 @@ class ToolSection(QWidget):
     def scan(self) -> None:
         if self.busy():
             return
+        if self.tool.key == "appcompress":
+            self._app_scan_options = self.app_snapshot()
         if self.tool.default_folders is not None and not self.folders and self.tool.key != "caches":
             inform(self, "Add a folder to look in first.")
             return
         self.tree.clear()
+        self.result = None
+        self._scan_complete = False
         self.worker = _Scan(lambda progress, cancel: self.tool.scan(self, progress, cancel), self)
         self.worker.progress.connect(self._progress)
+        self.worker.partial.connect(self._partial)
         self.worker.done.connect(self._scanned)
         self.worker.failed.connect(lambda m: inform(self, "The scan stopped", m))
         self.worker.finished.connect(self._finished)
@@ -371,12 +467,31 @@ class ToolSection(QWidget):
             self.bar.setRange(0, 0)
 
     def _scanned(self, result: ScanResult) -> None:
+        self._scan_complete = True
         self.result = result
         self._fill(result)
         if result.items:
             self.placeholder.clear()
         else:
             self.placeholder.show_message("Nothing found. " + " ".join(result.notes))
+
+    def _partial(self, key: str, items) -> None:
+        if key != self.tool.key or not items or getattr(self, "_scan_complete", False):
+            return
+        if self.result is None:
+            self.result = ScanResult(key)
+        self.result.items.extend(items)
+        if self.tool.key == "appcompress" and any(c.extra.get("before_first") is not None for c in items):
+            self.tree.setColumnHidden(3, False)
+        with filling(self.tree):
+            for candidate in items:
+                row = self._row(candidate)
+                row.setFlags(row.flags() & ~Qt.ItemIsUserCheckable)
+                self.tree.addTopLevelItem(row)
+            self._apply_hidden()
+        self.placeholder.clear()
+        self.summary.setText(f"{len(self.result.items):,} results so far · still scanning. You can browse now.")
+        self._update_buttons()
 
     def _hide_toggled(self, on: bool) -> None:
         self.qs.setValue("cleanup/hide_not_suggested", on)
@@ -407,6 +522,8 @@ class ToolSection(QWidget):
         self.hide_unsuggested.setVisible(any_warned)
 
     def _fill(self, result: ScanResult) -> None:
+        if self.tool.key == "appcompress":
+            self.tree.setColumnHidden(3, not any(c.extra.get("before_first") is not None for c in result.items))
         with filling(self.tree):
             self._fill_items(result)
             self._apply_hidden()
@@ -427,8 +544,18 @@ class ToolSection(QWidget):
         for g, items in groups.items():
             parent = self.tree.invisibleRootItem()
             if g:
-                parent = SortItem([self.tool.group_title(g, items), "", human(sum(i.size for i in items)), ""])
-                set_sort_keys(parent, {C_SIZE: sum(i.size for i in items)})
+                if self.tool.key == "appcompress":
+                    disk = sum(i.extra.get("disk", 0) for i in items)
+                    before = (sum(i.extra["before_first"] for i in items)
+                              if all(i.extra.get("before_first") is not None for i in items) else None)
+                    saving = sum(i.size for i in items)
+                    estimated = human(saving) if not any(i.extra.get("estimate_pending") for i in items) else "–"
+                    parent = SortItem([self.tool.group_title(g, items), "", human(disk),
+                                       human(before) if before is not None else "–", estimated, "", "", "", ""])
+                    set_sort_keys(parent, {2: disk, 3: before or 0, 4: saving})
+                else:
+                    parent = SortItem([self.tool.group_title(g, items), "", human(sum(i.size for i in items)), ""])
+                    set_sort_keys(parent, {C_SIZE: sum(i.size for i in items)})
                 parent.setFont(C_NAME, bold)
                 # The group's box ticks its removable rows (see _sync_groups). Duplicates: the copy that stays
                 # has no box and is never ticked along. (Qt's own tri-state shows no box at all when one row
@@ -465,8 +592,35 @@ class ToolSection(QWidget):
         where = ("Docker" if c.extra.get("docker") else
                  self._where(c.path if c.extra.get("location") else c.path.parent))
         detail = c.warning and f"Not suggested: {c.warning}. {c.detail}" or c.detail
-        it = SortItem([c.title, where, human(c.size) if c.size else "–", detail])
-        set_sort_keys(it, {C_SIZE: c.size})
+        detail_column = C_DETAIL
+        if self.tool.key == "appcompress":
+            disk, before = c.extra.get("disk", 0), c.extra.get("before_first")
+            source = c.extra.get("estimate_source", c.detail)
+            estimate = ("Rescan" if c.extra.get("estimate_pending") else
+                        "Community" if source.startswith("community") else
+                        "Sample" if source.startswith("sample") else "Rough")
+            notes = [c.warning] if c.warning else []
+            if c.extra.get("admin"):
+                notes.append("Needs administrator")
+            if c.extra.get("outcome"):
+                notes.append(c.extra["outcome"])
+            detail = "; ".join(notes)
+            saving = "–" if c.extra.get("estimate_pending") else f"{human(c.size)} ({c.size / max(1, disk):.0%})"
+            it = SortItem([c.title, str(c.path.parent), human(disk), human(before) if before is not None else "–",
+                           saving, estimate, c.extra.get("algorithm", "").upper(), c.extra.get("state", ""), detail])
+            set_sort_keys(it, {2: disk, 3: before or 0, 4: c.size})
+            it.setToolTip(2, f"Storage allocated on disk. File length: {human(c.extra.get('logical', disk))}. "
+                            "These match for many uncompressed files; compressed files can use less disk space.")
+            it.setToolTip(3, "Measured before Wick first compressed this folder; older game versions may differ.")
+            it.setToolTip(5, "Scan again after changing settings" if c.extra.get("estimate_pending") else source)
+            last = c.extra.get("last_algorithm", "")
+            it.setToolTip(6, "Selected for the next compression" + (f"; last used: {last.upper()}" if last else ""))
+            for column in (3, 4):
+                it.setTextAlignment(column, Qt.AlignRight | Qt.AlignVCenter)
+            detail_column = 8
+        else:
+            it = SortItem([c.title, where, human(c.size) if c.size else "–", detail])
+            set_sort_keys(it, {C_SIZE: c.size})
         if c.extra.get("locked"):
             it.setFlags(it.flags() & ~Qt.ItemIsUserCheckable)
         else:
@@ -474,10 +628,10 @@ class ToolSection(QWidget):
             it.setCheckState(C_NAME, Qt.Checked if c.extra.get("checked", c.selected) else Qt.Unchecked)
         it.setData(C_NAME, ROLE_ITEM, c)
         it.setToolTip(C_WHERE, str(c.path))
-        it.setToolTip(C_DETAIL, detail + (" Right-click to keep this copy instead." if c.keeper else ""))
+        it.setToolTip(detail_column, detail + (" Right-click to keep this copy instead." if c.keeper else ""))
         it.setTextAlignment(C_SIZE, Qt.AlignRight | Qt.AlignVCenter)
         if c.warning:
-            it.setForeground(C_DETAIL, QColor(tokens().warning))
+            it.setForeground(detail_column, QColor(tokens().warning))
         if c.extra.get("children"):
             it.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)    # (its rows are made when it opens)
         return it
@@ -646,6 +800,12 @@ class ToolSection(QWidget):
             total = sum(c.size for c in self.result.items)
             msg = (f"{human(total)} in {self._names()}. Open a folder to see where its space goes. "
                    f"<b>{len(chosen):,} selected · {human(size)}</b>")
+        elif self.tool.key == "appcompress" and self.result.items:
+            hidden = sum(c.warning != "" for c in self.result.items) if self.hide_unsuggested.isChecked() else 0
+            known_estimates = not any(c.extra.get("estimate_pending") for c in chosen)
+            msg = (f"{len(self.result.items):,} folders · <b>{len(chosen):,} selected</b>"
+                   + (f" · {hidden:,} not suggested, hidden" if hidden else "")
+                   + (f" · Est. saving {human(size)}" if size and known_estimates else ""))
         elif not all_items:
             msg = "Nothing found. " + " ".join(self.result.notes)
         else:
@@ -671,7 +831,10 @@ class ToolSection(QWidget):
             if action_id == actions.TRASH and any(c.extra.get("docker") or c.extra.get("system") or c.extra.get("vdisk")
                                                   for c in chosen):
                 label = "Clean Up"   # Docker's and Windows' own items don't go to the Recycle Bin: don't say so
-            b.setText(f"{label} ({human(size)})" if chosen and size else label)
+            estimate = "~" if action_id == actions.COMPACT else ""
+            show_size = (chosen and size and action_id != actions.DECOMPACT
+                         and not any(c.extra.get("estimate_pending") for c in chosen))
+            b.setText(f"{label} ({estimate}{human(size)})" if show_size else label)
         rows = bool(self._items()) if self.result is not None else False    # (nothing found: nothing to select)
         self.select_all.setEnabled(rows and not self.busy())
         self.select_all.setVisible(self.result is None or self.result.rebuild is None)   # (folder sizes: none are)
@@ -731,11 +894,17 @@ class ToolSection(QWidget):
                  "Every file stays where it is, but identical contents are stored only once. Note: editing any "
                  "one of the linked files changes all of them. You can undo this later.", "Replace")
         elif action_id == actions.COMPACT:
+            for candidate in items:
+                candidate.extra.update(self.app_options(candidate.path))
             admin = any(c.extra.get("admin") for c in items)
             q = (f"Compress {n} folder{'s' if n != 1 else ''}?",
                  "Programs and games keep working; Windows decompresses files on the fly. This can take a while "
                  "for large games. " + ("Windows will ask for administrator permission. " if admin else "")
                  + "You can undo this later.", "Compress")
+        elif action_id == actions.DECOMPACT:
+            q = (f"Decompress {n} folder{'s' if n != 1 else ''}?",
+                 "Files keep the same contents but may take more disk space. Close running games first. "
+                 "To compress again afterward, choose an algorithm in Compress Apps.", "Decompress")
         elif any(c.extra.get("vdisk") for c in items):
             from ..cleanup import vdisk
 
@@ -819,7 +988,19 @@ class ToolSection(QWidget):
             return
         done_ids = {id(o.item) for o in ok}
         self._remember_checks()
-        if self.result is not None and self.result.rebuild is not None:
+        if self.tool.key == "appcompress" and self.result is not None:
+            for outcome in outcomes:
+                item = outcome.item
+                if "disk_after" in item.extra:
+                    if item.extra.get("before_first") is None:
+                        item.extra["before_first"] = item.extra["before_this_run"]
+                    item.extra.update(disk=item.extra["disk_after"], checked=False, outcome=outcome.message,
+                                      state=("Decompressed" if getattr(self.worker, "action", "") == actions.DECOMPACT else
+                                             "Compressed") if outcome.ok else "Check result")
+                    item.extra["estimate_pending"] = True
+                    item.selected, item.size = False, 0
+            self._fill(self.result)
+        elif self.result is not None and self.result.rebuild is not None:
             for o in ok:
                 if o.item.extra.get("forget"):
                     o.item.extra["forget"]()                     # (sizes above it shrink)
@@ -828,6 +1009,10 @@ class ToolSection(QWidget):
             self.result.items = [c for c in self.result.items if id(c) not in done_ids]
             self._fill(self.result)
         self.page.win.history.refresh()
+        if self.tool.key == "appcompress":
+            self.page.win._refresh_game_watcher()
+            inform(self, "App/game compression finished", "\n".join(f"{o.item.title}: {o.message}" for o in outcomes))
+            return
         freed = sum(o.freed for o in ok)
         info = []
         blocked = [o for o in failed if o.blocked]
@@ -923,11 +1108,17 @@ class ToolSection(QWidget):
         inform(self, "The clean-up stopped", f"{message}\n\nDetails are in the log ({log_file()}).")
 
     def _finished(self) -> None:
+        if self.result is not None and not getattr(self, "_scan_complete", True):
+            self._scan_complete = True
+            self.result.cancelled = True
+            self.result.notes.append("Scan stopped; showing only the results found so far.")
+            self._fill(self.result)
         self._set_busy(False)
         if self.placeholder.loading:   # stopped or failed before results
             self.placeholder.show_message("Press Scan to see what can be cleaned up.")
 
     def _set_busy(self, busy: bool, msg: str = "") -> None:
+        self.setup.setEnabled(not busy)
         self.progress_card.setVisible(busy)
         if busy:
             self.status.setText(msg)
@@ -952,3 +1143,4 @@ class ToolSection(QWidget):
             from .file_model import open_in_file_manager
 
             open_in_file_manager(str(c.path))
+

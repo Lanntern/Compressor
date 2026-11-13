@@ -1,6 +1,7 @@
 """Format conversion, metadata cleanup and the Home overview."""
 
 import os
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,8 @@ def _gps_jpeg(path: Path) -> Path:
 
 
 def _convert_all(d: Path, opts: convert.ConvertOptions, s: Settings):
+    # These tests check formats, including deliberately larger exports; size policy has its own regressions.
+    opts = dataclasses.replace(opts, only_if_smaller=False)
     result = scan(d, s)
     items = []
     for e in result.entries:
@@ -384,7 +387,7 @@ def test_turning_pictures_without_losing_quality(media_dir):
     img.save(media_dir / "photo.jpg", quality=90)
     img.save(media_dir / "shot.png")
     s = Settings(output_mode="beside", min_image_kb=0, output_suffix="_turned")
-    opts = convert.ConvertOptions(image_target="keep", turn=90)
+    opts = convert.ConvertOptions(image_target="keep", turn=90, only_if_smaller=False)
     assert convert.describe("jpeg", opts) == "Same format, turned right"
     entries = {e.path.name: e for e in scan(media_dir, s).entries}
     data = (media_dir / "photo.jpg").read_bytes()
@@ -395,7 +398,7 @@ def test_turning_pictures_without_losing_quality(media_dir):
     with Image.open(r.output) as im:
         assert im.getexif()[0x0112] == 6
     r = process_convert(entries["shot.png"], Plan(True, "", ".png", route="keep"), s, None,
-                        opts=convert.ConvertOptions(image_target="keep", turn=270, flip="h"))
+                        opts=convert.ConvertOptions(image_target="keep", turn=270, flip="h", only_if_smaller=False))
     assert r.status == DONE
     with Image.open(r.output) as im:
         expected = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT).transpose(Image.Transpose.ROTATE_90)
@@ -409,7 +412,7 @@ def test_turning_a_video_without_re_encoding(media_dir):
     s = Settings(output_mode="beside", min_video_mb=0, output_suffix="_turned")
     entry = scan(media_dir, s).entries[0]
     r = process_convert(entry, Plan(True, "", ".mp4", route="keep"), s, None,
-                        opts=convert.ConvertOptions(video_target="keep", turn=90))
+                        opts=convert.ConvertOptions(video_target="keep", turn=90, only_if_smaller=False))
     assert r.status == DONE, r.message
     assert convert.video_rotation(r.output) == -90                     # (ffmpeg counts counter-clockwise)
     assert abs(r.output.stat().st_size - entry.size) < 4096            # copied, not re-encoded

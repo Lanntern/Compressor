@@ -49,6 +49,7 @@ class MetaSummary:
     other: int = 0           # count of other tags
     editable: bool = True
     reason: str = ""         # why not editable
+    error: str = ""          # unreadable is different from no metadata
 
     @property
     def anything(self) -> bool:
@@ -124,10 +125,10 @@ def summarize(path: Path) -> MetaSummary:
         s.editable, s.reason = False, "Can't be edited without re-encoding"
     try:
         if kind == VIDEO:
-            from .probe import probe_video
+            from .probe import probe_raw
 
-            info = probe_video(path)
-            tags = info.tags if info else {}
+            info = probe_raw(path)
+            tags = {str(k).lower(): str(v) for k, v in (info.get("format", {}).get("tags") or {}).items()}
             loc = next((tags[k] for k in ("location", "location-eng", "com.apple.quicktime.location.iso6709")
                         if tags.get(k)), "")
             s.gps = loc.strip("/")
@@ -160,8 +161,13 @@ def summarize(path: Path) -> MetaSummary:
             if comment:
                 c = comment.decode("utf-8", "replace") if isinstance(comment, bytes) else str(comment)
                 s.people.append(f"Comment: {c.strip()[:40]}")
-    except Exception:  # noqa: BLE001 - unreadable: show as unknown
-        pass
+    except tools.Cancelled:
+        raise
+    except Exception as exc:  # noqa: BLE001 - unreadable: show as unknown
+        from .log import log
+
+        s.error = str(exc) or type(exc).__name__
+        log.warning("Could not read metadata for %s: %s", path, s.error)
     return s
 
 

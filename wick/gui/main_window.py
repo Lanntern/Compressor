@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSettings, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPainterPath, QPen, QPixmap, QShortcut
@@ -254,6 +255,9 @@ class MainWindow(QMainWindow):
         self._setup_updates()
         self._setup_power()
         self._setup_monthly()
+        from .activity import ActivityMonitor
+
+        self._activity_monitor = ActivityMonitor(self)
         self.watch.state_changed.connect(self._update_tray)
         from .. import power
 
@@ -580,6 +584,14 @@ class MainWindow(QMainWindow):
         self._recompress: QThread | None = None
         if self.qsettings.value("appcompress/recompress", True, bool):
             QTimer.singleShot(3 * 60 * 1000, self.recompress_updated_games)   # after start-up settles
+        self._recompress_timer = QTimer(self, interval=15 * 60 * 1000)
+        self._recompress_timer.timeout.connect(self.recompress_updated_games)
+        self._recompress_timer.start()
+        self._game_watcher = None
+        self._refresh_game_watcher()
+        self._game_event_timer = QTimer(self, interval=30 * 1000)
+        self._game_event_timer.timeout.connect(self._game_update_event)
+        self._game_event_timer.start()
 
     MONTHLY_DAYS = 30
     MONTHLY_MIN = 1024 ** 3          # only worth a notification from 1 GB
@@ -741,17 +753,37 @@ class MainWindow(QMainWindow):
     def recompress_updated_games(self) -> None:
         """Games this app compressed get uncompressed files when they update: compress those again, in the
         background (games that are running, use DirectStorage or need administrator rights are skipped)."""
+        if not self.qsettings.value("appcompress/recompress", True, bool) or self.battery_pause():
+            return
         import threading
 
         from PySide6.QtCore import QThread, Signal
 
         from ..cleanup import appcompress
+        self._refresh_game_watcher()
+        if self.qsettings.value("appcompress/idle_only", True, bool) and appcompress.idle_seconds() < 300:
+            return
+        import json
+
+        try:
+            folder_preferences = json.loads(str(self.qsettings.value("appcompress/folder_options", "{}", str)))
+            if not isinstance(folder_preferences, dict):
+                folder_preferences = {}
+            folder_preferences = {key: value for key, value in folder_preferences.items() if isinstance(value, dict)}
+        except ValueError:
+            folder_preferences = {}
 
         if not appcompress.supported() or (self._recompress is not None and self._recompress.isRunning()):
             return
+        if self.compress.busy() or any(p.busy() for p in (self.built("converter"), self.built("metadata"),
+                                                         self.built("cleanup")) if p is not None):
+            return
+        if self._game_watcher is not None:
+            self._game_watcher.changed.clear()
 
         class Recompress(QThread):
             done = Signal(object, object)
+            progress = Signal(str)
 
             def __init__(self, parent=None):
                 super().__init__(parent)
@@ -762,7 +794,8 @@ class MainWindow(QMainWindow):
 
                 try:
                     with power.background():
-                        self.done.emit(*appcompress.recompress_updated(cancel=self.cancel))
+                        self.done.emit(*appcompress.recompress_updated(progress=self.progress.emit, cancel=self.cancel,
+                                                                      preferences=folder_preferences))
                 except Exception as e:  # noqa: BLE001 - a background nicety
                     log.warning("Re-compressing updated games failed: %s", e)
 
@@ -779,8 +812,32 @@ class MainWindow(QMainWindow):
                 log.info(note)
 
         self._recompress = Recompress(self)
+        self._recompress.progress.connect(lambda message: setattr(self._recompress, "stage", message))
         self._recompress.done.connect(finished)
         self._recompress.start()
+
+    def _refresh_game_watcher(self):
+        from ..cleanup import appcompress
+        from ..cleanup.gamewatch import GameWatcher
+
+        folders = [p for p, _ in appcompress.compressed_folders()] if self.qsettings.value(
+            "appcompress/recompress", True, bool) else []
+        wanted = tuple(sorted({str(p.resolve()) for p in folders}))
+        previous = getattr(self, "_game_watcher", None)
+        if previous is not None and previous.folders == wanted:
+            return
+        if previous is not None:
+            previous.stop()
+        self._game_watcher = GameWatcher(folders)
+
+    def _game_update_event(self):
+        self._refresh_game_watcher()
+        watcher = self._game_watcher
+        if watcher is not None and watcher.changed.is_set():
+            import time
+
+            if time.monotonic() - watcher.last_change >= 60:
+                self.recompress_updated_games()
 
     def _presets_changed(self) -> None:
         from . import integration
@@ -795,6 +852,12 @@ class MainWindow(QMainWindow):
     def open_target(self, target: str) -> None:
         """Show a page (jump list, tray), or pick files on one: compress-files, convert-files."""
         self.show_window()
+        if target == "apps":
+            page = self.cleanup
+            index = next(i for i, tool in enumerate(page._tools) if tool.key == "appcompress")
+            self.go_to(page)
+            page.tabs.setCurrentIndex(index)
+            return
         if target == "update":                         # a notification's "Details" button
             self._show_update()
             return
@@ -813,6 +876,9 @@ class MainWindow(QMainWindow):
             self.open_target(open_target)
         if show:
             self.show_window()
+        if open_target == "apps":
+            self._queue_app_folders(paths)
+            return
         if convert:                 # Explorer's "Convert with Wick"
             self.go_to(self.converter)
             self.converter.quick_convert(paths, convert)
@@ -830,6 +896,31 @@ class MainWindow(QMainWindow):
 
     def notify_outputs(self, paths) -> None:
         self.watch.ignore(paths)
+
+    def _queue_app_folders(self, paths) -> None:
+        pending = getattr(self, "_app_folder_queue", [])
+        pending += [Path(p) for p in paths if Path(p).is_dir() and Path(p) not in pending]
+        self._app_folder_queue = pending
+        if not pending:
+            return
+        page = self.cleanup
+        index = next(i for i, tool in enumerate(page._tools) if tool.key == "appcompress")
+        sec = page.section(index)
+        if sec.busy():
+            if not getattr(self, "_app_folder_retry", False):
+                self._app_folder_retry = True
+
+                def retry():
+                    self._app_folder_retry = False
+                    self._queue_app_folders([])
+
+                QTimer.singleShot(500, retry)
+            return
+        sec.folders += [p for p in pending if p not in sec.folders]
+        self._app_folder_queue = []
+        sec.save_folders()
+        sec._show_folders()
+        sec.summary.setText("Folders added from Explorer. Choose an algorithm, then Scan to review before compressing.")
 
     def showEvent(self, e) -> None:
         super().showEvent(e)
@@ -923,8 +1014,11 @@ class MainWindow(QMainWindow):
         self.close()
 
     def closeEvent(self, event) -> None:
-        keep_running = (not self._quitting and self.watch.watching and self.tray is not None
-                        and self.qsettings.value("close_to_tray", True, bool))
+        game_watch = (getattr(self, "_game_watcher", None) is not None and bool(self._game_watcher.folders)
+                      and self.qsettings.value("appcompress/recompress", True, bool)
+                      and self.qsettings.value("appcompress/tray", False, bool))
+        keep_running = (not self._quitting and self.tray is not None and
+                        ((self.watch.watching and self.qsettings.value("close_to_tray", True, bool)) or game_watch))
         if keep_running:
             self.save_settings()
             self.qsettings.setValue("geometry", self.saveGeometry())
@@ -962,6 +1056,8 @@ class MainWindow(QMainWindow):
             self._recompress.cancel.set()
             self._recompress.wait(30000)
         self.watch.shutdown()
+        if getattr(self, "_game_watcher", None) is not None:
+            self._game_watcher.stop()
         self.home.stop()
         self.save_settings()
         self.qsettings.setValue("geometry", self.saveGeometry())
@@ -970,7 +1066,10 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
         from PySide6.QtWidgets import QApplication
 
-        QApplication.quit()
+        from .preview import quit_after_previews
+
+        quit_after_previews(QApplication.instance())
 
 
 __all__ = ["MainWindow", "app_icon", "__version__"]
+

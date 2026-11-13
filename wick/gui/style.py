@@ -400,8 +400,10 @@ def _icon_pixmap(name: str, color: str, size: int, dpr: float, stroke: float) ->
     pm = QPixmap(max(1, round(size * dpr)), max(1, round(size * dpr)))
     pm.fill(Qt.transparent)
     p = QPainter(pm)
-    _paint_icon(p, QRectF(0, 0, pm.width(), pm.height()), name, color, stroke)
-    p.end()
+    try:
+        _paint_icon(p, QRectF(0, 0, pm.width(), pm.height()), name, color, stroke)
+    finally:
+        p.end()
     pm.setDevicePixelRatio(dpr)
     return pm
 
@@ -656,6 +658,7 @@ QScrollBar:horizontal {{ background: transparent; border: none; height: {S.M}px;
 QScrollBar::handle:horizontal {{ background: {t.control_border}; border: none; border-radius: {S.XS - 1}px; min-width: {S.XXL}px; margin: {S.XXS}px 0; }}
 QScrollBar::handle:horizontal:hover, QScrollBar::handle:horizontal:pressed {{ background: {t.text3}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+QScrollBar#edgeScrollBar:vertical {{ margin: {R.CARD}px 0 {R.CARD}px 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
 /* ---- segmented control (QTabBar#segmented) */
@@ -981,3 +984,4 @@ def apply_style(mode: str) -> Tokens:
 
 def is_mac() -> bool:
     return sys.platform == "darwin"
+
