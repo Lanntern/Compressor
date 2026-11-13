@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
@@ -219,7 +220,7 @@ class MetadataTab(FileJobPage):
         import queue
         import time
 
-        worker = self.scan_thread
+        worker = cast(MetadataScan, self.scan_thread)
         self.selection_count()  # incorporate any user checkbox changes before appending
         try:
             batch = worker.batches.get_nowait()

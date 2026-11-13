@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
@@ -29,6 +30,10 @@ from .widgets import (PROGRESS_ROLE, STATUS_ROLE, Card, DropZone, FlowLayout, Pa
 from .jobstatus import JobStatus, PauseControl
 from .settings_panel import BIN_NAME
 from .workers import JobThread, ScanThread
+
+if TYPE_CHECKING:
+    from .metadata_scan import MetadataScan
+
 
 ROLE_ROW = Qt.UserRole + 30
 ROLE_OUT = Qt.UserRole + 31   # result path once done
@@ -60,7 +65,7 @@ class FileJobPage(Page):
         self.entries: list[FileEntry] = []
         self.rows: dict[int, QTreeWidgetItem] = {}
         self._file_steps: dict[int, str] = {}
-        self.scan_thread: ScanThread | None = None
+        self.scan_thread: ScanThread | MetadataScan | None = None
         self.job_thread: JobThread | None = None
         self._rescan = False
 

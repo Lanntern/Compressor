@@ -2176,3 +2176,35 @@ def test_metadata_stop_releases_a_producer_waiting_for_ui_capacity(win, monkeypa
     finally:
         worker.cancel.set()
         assert worker.wait(2000)
+
+
+def test_metadata_stop_cancels_an_active_probe(win, monkeypatch, tmp_path):
+    import sys
+    from pathlib import Path
+
+    from wick import metaclean, tools
+    from wick.gui import metadata_scan
+    from wick.scanner import FileEntry, ScanResult
+    from wick.settings import Settings
+
+    ready = tmp_path / "probe-started"
+    script = "from pathlib import Path;import sys,time;Path(sys.argv[1]).touch();time.sleep(60)"
+
+    def summarize(_path):
+        tools.run([sys.executable, "-c", script, str(ready)], timeout=90)
+        return metaclean.MetaSummary()
+
+    def scan(paths, settings, progress, cancel, **kwargs):
+        kwargs["found"](FileEntry(Path("probe.mp4"), 1, "video", 0))
+        return ScanResult([])
+
+    monkeypatch.setattr(metadata_scan, "scan", scan)
+    monkeypatch.setattr(metaclean, "summarize", summarize)
+    worker = metadata_scan.MetadataScan([], Settings())
+    worker.start()
+    try:
+        assert _wait(ready.exists, 10)
+    finally:
+        worker.cancel.set()
+        assert worker.wait(3000)
+    assert not worker.error

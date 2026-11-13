@@ -8,7 +8,7 @@ import time
 
 from PySide6.QtCore import QThread
 
-from .. import metaclean
+from .. import metaclean, tools
 from ..formats import AUDIO, DOCUMENT, JPEG, ImageInfo, has_embedded_video
 from ..scanner import scan
 
@@ -58,8 +58,11 @@ class MetadataScan(QThread):
         from ..log import log
 
         try:
-            self.result = scan(self.paths, self.settings, self._progress, self.cancel,
-                               probe=False, picked=True, found=self._found)
+            with tools.cancelling(self.cancel):
+                self.result = scan(self.paths, self.settings, self._progress, self.cancel,
+                                   probe=False, picked=True, found=self._found)
+        except tools.Cancelled:
+            pass
         except Exception as exc:  # noqa: BLE001 - preserve partial results and report the failure
             log.exception("Metadata scan failed")
             self.error = str(exc)

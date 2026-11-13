@@ -39,6 +39,13 @@ class MetadataDiscoveryTests(unittest.TestCase):
             self.assertTrue(result.cancelled)
             self.assertEqual(len(found), 3)
 
+    def test_video_summary_reads_tags_without_decoding_hdr_frames(self):
+        with patch("wick.probe.probe_raw", return_value={"format": {"tags": {"LOCATION": "59.3+18.0/"}}}):
+            with patch("wick.probe.probe_video", side_effect=AssertionError("unwanted media analysis")):
+                summary = metaclean.summarize(Path("hdr.mp4"))
+        self.assertEqual(summary.gps, "59.3+18.0")
+        self.assertFalse(summary.error)
+
     def test_unreadable_is_not_reported_as_no_metadata(self):
         summary = metaclean.summarize(Path("missing-photo.png"))
         self.assertTrue(summary.error)
