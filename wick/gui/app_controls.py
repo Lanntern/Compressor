@@ -22,7 +22,9 @@ def algorithm_picker(current):
         combo.addItem(name, key)
         combo.setItemData(combo.count() - 1, reason, Qt.ToolTipRole)
     combo.setCurrentIndex(max(0, combo.findData(current)))
-    reason = text("", Type.FOOTNOTE, secondary=True, wrap=True)
+    reason = text("", Type.FOOTNOTE, secondary=True)
+    reason.setWordWrap(True)
+    reason.setAlignment(Qt.AlignLeft | Qt.AlignTop)
     # FlowLayout uses size hints: reserve the widest/tallest explanation up front
     # so changing the algorithm never moves the other controls or the results.
     width = max(combo.sizeHint().width(), round(280 * text_scale()))
