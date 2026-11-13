@@ -2083,15 +2083,28 @@ def test_app_algorithm_changes_keep_controls_in_place(win):
         assert not any(box.text() == "Start Wick with Windows" for box in section.findChildren(QCheckBox))
         for width in (1000, 1500):
             win.resize(width, 1000)
-            QTest.qWait(150)
             group = section.app_algorithm.parentWidget()
-            baseline = (group.geometry(), section.app_skip.geometry(), section.scan_btn.geometry(),
+
+            def placed(group=group):
+                return (group.geometry(), section.app_skip.geometry(), section.scan_btn.geometry(),
                         section.tree.mapTo(section, section.tree.rect().topLeft()))
+
+            def settled():
+                """The layout once it has stopped changing (a resize is applied over several event-loop turns
+                on Windows: a scroll bar appearing late moved the button after a fixed wait)."""
+                last = placed()
+                for _ in range(40):
+                    QTest.qWait(100)
+                    now = placed()
+                    if now == last:
+                        return now
+                    last = now
+                return last
+
+            baseline = settled()
             for choice in range(section.app_algorithm.count()):
                 section.app_algorithm.setCurrentIndex(choice)
-                QTest.qWait(100)
-                assert (group.geometry(), section.app_skip.geometry(), section.scan_btn.geometry(),
-                        section.tree.mapTo(section, section.tree.rect().topLeft())) == baseline
+                assert settled() == baseline
                 reason = group.findChildren(QLabel)[0]
                 assert reason.text() == section.app_algorithm.toolTip()
     finally:
